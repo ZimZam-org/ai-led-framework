@@ -1,5 +1,5 @@
 {
-  "name": "@skeepers/ai-led",
+  "name": "@s2bp/ai-led",
   "version": "0.1.0",
   "description": "Framework de workflow AI-led pour Claude Code : mémoire persistante, agents préfixés ailed-* et skills, installables via npx ai-led init.",
   "bin": {
@@ -8,7 +8,6 @@
   "files": [
     "bin/",
     "templates/",
-    "prompts/",
     "README.md"
   ],
   "scripts": {

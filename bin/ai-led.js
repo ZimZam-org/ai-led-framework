@@ -146,7 +146,11 @@ async function init() {
     copyTree(path.join(skillsSrc, file), path.join(cwd, ".claude", "skills", name, "SKILL.md"), cfg);
   }
 
-  // 3. Memory  ->  memory/
+  // 3. Commands  ->  .claude/commands/
+  console.log("\n" + c.bold("Commands") + c.dim("  → .claude/commands/"));
+  copyTree(path.join(TPL, "claude", "commands"), path.join(cwd, ".claude", "commands"), cfg);
+
+  // 4. Memory  ->  memory/
   console.log("\n" + c.bold("Mémoire") + c.dim("  → memory/"));
   copyTree(path.join(TPL, "memory"), path.join(cwd, "memory"), cfg);
 
@@ -164,11 +168,10 @@ async function init() {
     `\n${c.green("✓")} Terminé : ${c.bold(created)} fichier(s) créé(s), ${skipped} ignoré(s).\n`
   );
   console.log(c.bold("Prochaines étapes :"));
-  console.log(`  1. Ouvre le projet dans Claude Code.`);
+  console.log(`  1. Ouvre le projet dans Claude Code et lance ${c.cyan("/ailed-bootstrap")}.`);
   console.log(`  2. Vérifie/ajuste ${c.cyan("memory/config.md")} (trigramme, intégrations).`);
   console.log(`  3. Projet existant : lance ${c.cyan("@ailed-init-memory")} pour reconstruire la mémoire.`);
-  console.log(`  4. Nouvelle feature : ${c.cyan("@ailed-brainstorm")} puis suis le workflow de memory/process.md.`);
-  console.log(`  5. ${c.cyan("@ailed-knowledge-audit")} pour mesurer la complétude de la mémoire.\n`);
+  console.log(`  4. Nouvelle feature : ${c.cyan("@ailed-brainstorm")} puis suis le workflow de memory/process.md.\n`);
 }
 
 const CLAUDE_MD_STUB = `# Projet piloté par AI-Led
