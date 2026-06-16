@@ -4,7 +4,7 @@ Template prêt à l'emploi qui transforme n'importe quel projet (nouveau ou exis
 projet **piloté par agents IA**, avec :
 
 - 🧠 une **mémoire persistante** (`memory/`) tenue à jour et utilisée comme source de vérité ;
-- 🤖 **16 agents** préfixés `ailed-*` couvrant 3 workflows (Feature, Incident, Security) ;
+- 🤖 **19 agents** préfixés `ailed-*` couvrant 4 workflows (Discovery, Feature, Incident, Security) ;
 - 🛠️ **6 skills** réutilisables pour les tâches récurrentes (ADR, git-flow, quality-gate…).
 
 Installation en une commande :
@@ -17,10 +17,10 @@ npx @s2bp/ai-led init
 
 | Dossier             | Contenu                                                        |
 | ------------------- | -------------------------------------------------------------- |
-| `.claude/agents/`   | 16 agents `ailed-*.md` (invocables via `@ailed-<nom>`)         |
+| `.claude/agents/`   | 19 agents `ailed-*.md` (invocables via `@ailed-<nom>`)         |
 | `.claude/skills/`   | 6 skills `ailed-*` (invocables via `/ailed-<nom>`)             |
 | `.claude/commands/` | slash-command `/ailed-bootstrap` (amorçage du framework)       |
-| `memory/`           | 13 fichiers de mémoire projet (dont `config.md` et `process.md`) |
+| `memory/`           | 14 fichiers de mémoire projet (dont `config.md`, `process.md` et `market-watch.md`), dans la langue choisie |
 | `CLAUDE.md`         | pointeur framework (créé seulement s'il n'existe pas)          |
 
 Les fichiers existants ne sont **jamais écrasés** sauf avec `--force`.
@@ -29,6 +29,19 @@ Les fichiers existants ne sont **jamais écrasés** sauf avec `--force`.
 
 `init` génère `memory/config.md`, **source de vérité de l'outillage** que les agents lisent
 avant d'agir. Deux choses y sont paramétrées :
+
+### Langue des fichiers `memory/`
+
+Les fichiers de mémoire sont installés dans la langue choisie, pour faciliter la relecture
+humaine. **Français par défaut**, anglais disponible :
+
+```bash
+npx @s2bp/ai-led init --lang=en
+```
+
+Seuls les fichiers `memory/` sont traduits ; les agents/skills restent en français. La valeur
+sentinelle d'une intégration désactivée suit la langue (`aucun` en `fr`, `none` en `en`) et
+reste cohérente entre `config.md` et les agents.
 
 ### Trigramme de ticket
 
@@ -50,22 +63,26 @@ npx @s2bp/ai-led init \
   --trigram=SKP \
   --monitoring=Sentry \
   --e2e=Playwright \
-  --promo=Remotion
+  --promo=Remotion \
+  --watch="MCP web search"
 ```
 
-| Domaine            | Agent / skill concerné                 | Exemple d'outil |
-| ------------------ | -------------------------------------- | --------------- |
-| Monitoring / logs  | `@ailed-check-log`                     | Sentry          |
-| Tests end-to-end   | `@ailed-test`, `@ailed-dev`            | Playwright      |
-| Génération promo   | `/ailed-promo`, `@ailed-communication` | Remotion        |
+| Domaine                | Agent / skill concerné                                  | Exemple d'outil   |
+| ---------------------- | ------------------------------------------------------- | ----------------- |
+| Monitoring / logs      | `@ailed-check-log`                                      | Sentry            |
+| Tests end-to-end       | `@ailed-test`, `@ailed-dev`                             | Playwright        |
+| Génération promo       | `/ailed-promo`, `@ailed-communication`                  | Remotion          |
+| Veille concurrentielle | `@ailed-scout`, `@ailed-fact-check`, `@ailed-analyst`   | MCP web / URLs    |
 
 ### Options de `init`
 
 ```
+--lang=fr|en        Langue des fichiers memory/ (défaut : fr)
 --trigram=XYZ       Préfixe de ticket (défaut : 3 lettres du nom du dossier)
---monitoring=NOM    Outil de monitoring ou "aucun" (défaut)
---e2e=NOM           Outil de tests E2E ou "aucun" (défaut)
---promo=NOM         Outil de génération promo ou "aucun" (défaut)
+--monitoring=NOM    Outil de monitoring ou désactivé (défaut)
+--e2e=NOM           Outil de tests E2E ou désactivé (défaut)
+--promo=NOM         Outil de génération promo ou désactivé (défaut)
+--watch=NOM         Canal de veille concurrentielle (MCP web / URLs) ou désactivé (défaut)
 -y, --yes           Mode non interactif (sinon, questions posées en terminal)
 -f, --force         Écrase les fichiers existants
 ```
@@ -74,6 +91,9 @@ npx @s2bp/ai-led init \
 
 | Agent                    | Rôle                                                      |
 | ------------------------ | --------------------------------------------------------- |
+| `@ailed-scout`           | Collecte de veille sourcée (concurrents, tendances)       |
+| `@ailed-fact-check`      | Gate anti-hallucination de la veille                      |
+| `@ailed-analyst`         | Veille → sujets candidats scorés                          |
 | `@ailed-brainstorm`      | Besoin métier → SPEC challengée                           |
 | `@ailed-ux`              | SPEC → 3 wireframes + maquette finale                     |
 | `@ailed-pm`              | SPEC → EPICs + roadmap                                    |
@@ -96,16 +116,37 @@ npx @s2bp/ai-led init \
 `ailed-adr`, `ailed-architecture-map`, `ailed-git-flow`, `ailed-quality-gate`,
 `ailed-release-flow`, `ailed-promo`.
 
-## Les 3 workflows (voir `memory/process.md`)
+## Les 4 workflows (voir `memory/process.md`)
 
 ```
+Discovery : scout → fact-check → analyst → (validation humaine) → brainstorm
 Feature   : brainstorm → ux → pm → architect → planner → dev → review → test → communication → release
 Incident  : check-log → rca → dev → review → test → communication
 Security  : check-secu → security-review → dev → review → test → communication
 ```
 
-Points de validation **humaine** obligatoires : après `brainstorm` (SPEC), après `ux`
-(maquette), avant `release` (tag).
+Points de validation **humaine** obligatoires : après `analyst` (promotion d'un sujet),
+après `brainstorm` (SPEC), après `ux` (maquette), avant `release` (tag).
+
+### Workflow Discovery (veille concurrentielle)
+
+Workflow **exploratoire** qui alimente `memory/market-watch.md` pour faire émerger de
+nouveaux sujets, sans jamais créer de ticket ni écrire dans la roadmap :
+
+1. **Activer la veille** : renseigne l'intégration `Veille` dans `memory/config.md`
+   (un canal de veille : MCP de recherche web, ou liste curée d'URLs concurrents/flux).
+   Tant qu'elle vaut `aucun`/`none`, les agents s'arrêtent proprement.
+2. `@ailed-scout` collecte des **observations sourcées et datées** (section *Observations brutes*).
+3. `@ailed-fact-check` **vérifie/dégrade/rejette** chaque observation (gate anti-hallucination).
+4. `@ailed-analyst` clusterise, **déduplique** contre `features.md`/`roadmap.md` et produit
+   un **backlog de sujets candidats scorés** (Impact/Effort/Alignement).
+5. **Validation humaine** : tu fais passer un sujet de `candidat` à `validé→brainstorm`.
+   Il rejoint alors le workflow Feature via `@ailed-brainstorm`.
+
+**Amélioration continue** : relance `scout → fact-check → analyst` sur une cadence (ex.
+mensuelle, via `/loop` ou un agent planifié) pour rafraîchir la veille et proposer une
+nouvelle shortlist. La **découverte** tourne en boucle ; la **promotion vers la roadmap et
+le déploiement restent une décision humaine** — c'est le garde-fou du framework.
 
 ## Démarrage rapide
 
@@ -126,7 +167,9 @@ qui oriente automatiquement selon le contexte :
 templates/claude/agents/   # source des agents (placeholders {{TICKET_PREFIX}}, {{E2E}}…)
 templates/claude/skills/   # source des skills
 templates/claude/commands/ # source des slash-commands (/ailed-bootstrap)
-templates/memory/          # source de la mémoire (dont config.md)
+templates/memory/fr/       # source de la mémoire en français (défaut)
+templates/memory/en/       # source de la mémoire en anglais
+                           # (ajoute un dossier de langue ici pour en proposer une nouvelle)
 bin/ai-led.js              # CLI d'installation (Node, zéro dépendance)
 ```
 

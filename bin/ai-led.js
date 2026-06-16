@@ -47,37 +47,58 @@ function ask(rl, question, def) {
   });
 }
 
+const LANG_DEFAULT = "fr";
+// sentinel "integration disabled" word, per memory language
+const DISABLED_WORD = { fr: "aucun", en: "none" };
+
+// available memory languages = subfolders of templates/memory/
+function availableLangs() {
+  return fs
+    .readdirSync(path.join(TPL, "memory"))
+    .filter((d) => fs.statSync(path.join(TPL, "memory", d)).isDirectory())
+    .sort();
+}
+
 async function resolveConfig() {
-  const defaults = {
-    trigram: deriveTrigram(),
-    monitoring: "aucun",
-    e2e: "aucun",
-    promo: "aucun",
-  };
+  const langs = availableLangs();
+  let lang = (flag("lang") || LANG_DEFAULT).toLowerCase();
+  if (!langs.includes(lang)) lang = LANG_DEFAULT;
+  let disabled = DISABLED_WORD[lang] || "none";
+
+  const defaults = { trigram: deriveTrigram() };
 
   // explicit flags always win
   const cfg = {
+    lang,
+    disabled,
     trigram: (flag("trigram") || defaults.trigram).toUpperCase(),
-    monitoring: flag("monitoring") || defaults.monitoring,
-    e2e: flag("e2e") || defaults.e2e,
-    promo: flag("promo") || defaults.promo,
+    monitoring: flag("monitoring") || disabled,
+    e2e: flag("e2e") || disabled,
+    promo: flag("promo") || disabled,
+    watch: flag("watch") || disabled,
   };
 
   const interactive =
     !assumeYes &&
     process.stdin.isTTY &&
+    !flag("lang") &&
     !flag("trigram") &&
     !flag("monitoring") &&
     !flag("e2e") &&
-    !flag("promo");
+    !flag("promo") &&
+    !flag("watch");
 
   if (interactive) {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    console.log(c.dim("\nConfiguration (Entrée = valeur par défaut, `aucun` = intégration désactivée)\n"));
+    cfg.lang = (await ask(rl, `Langue des fichiers memory/ [${langs.join("/")}] :`, lang)).toLowerCase();
+    if (!langs.includes(cfg.lang)) cfg.lang = LANG_DEFAULT;
+    disabled = cfg.disabled = DISABLED_WORD[cfg.lang] || "none";
+    console.log(c.dim(`(Entrée = valeur par défaut, \`${disabled}\` = intégration désactivée)\n`));
     cfg.trigram = (await ask(rl, "Trigramme du projet (préfixe de ticket) :", defaults.trigram)).toUpperCase();
-    cfg.monitoring = await ask(rl, "Outil de monitoring / logs :", defaults.monitoring);
-    cfg.e2e = await ask(rl, "Outil de tests end-to-end :", defaults.e2e);
-    cfg.promo = await ask(rl, "Outil de génération promo :", defaults.promo);
+    cfg.monitoring = await ask(rl, "Outil de monitoring / logs :", disabled);
+    cfg.e2e = await ask(rl, "Outil de tests end-to-end :", disabled);
+    cfg.promo = await ask(rl, "Outil de génération promo :", disabled);
+    cfg.watch = await ask(rl, "Canal de veille concurrentielle (MCP web / liste d'URLs) :", disabled);
     rl.close();
   }
 
@@ -94,6 +115,8 @@ function substitute(content, cfg) {
     .replace(/{{MONITORING}}/g, cfg.monitoring)
     .replace(/{{E2E}}/g, cfg.e2e)
     .replace(/{{PROMO}}/g, cfg.promo)
+    .replace(/{{WATCH}}/g, cfg.watch)
+    .replace(/{{DISABLED}}/g, cfg.disabled)
     .replace(/{{DATE}}/g, now);
 }
 
@@ -130,7 +153,7 @@ async function init() {
 
   const cfg = await resolveConfig();
   console.log(
-    `\n${c.dim("Config")} : trigramme=${c.bold(cfg.trigram)} · monitoring=${cfg.monitoring} · e2e=${cfg.e2e} · promo=${cfg.promo}\n`
+    `\n${c.dim("Config")} : langue=${c.bold(cfg.lang)} · trigramme=${c.bold(cfg.trigram)} · monitoring=${cfg.monitoring} · e2e=${cfg.e2e} · promo=${cfg.promo} · veille=${cfg.watch}\n`
   );
 
   // 1. Agents  ->  .claude/agents/
@@ -150,11 +173,11 @@ async function init() {
   console.log("\n" + c.bold("Commands") + c.dim("  → .claude/commands/"));
   copyTree(path.join(TPL, "claude", "commands"), path.join(cwd, ".claude", "commands"), cfg);
 
-  // 4. Memory  ->  memory/
-  console.log("\n" + c.bold("Mémoire") + c.dim("  → memory/"));
-  copyTree(path.join(TPL, "memory"), path.join(cwd, "memory"), cfg);
+  // 4. Memory  ->  memory/  (from the chosen language folder)
+  console.log("\n" + c.bold("Mémoire") + c.dim(`  → memory/ (langue: ${cfg.lang})`));
+  copyTree(path.join(TPL, "memory", cfg.lang), path.join(cwd, "memory"), cfg);
 
-  // 4. CLAUDE.md pointer (only if absent)
+  // 5. CLAUDE.md pointer (only if absent)
   const claudeMd = path.join(cwd, "CLAUDE.md");
   if (!fs.existsSync(claudeMd)) {
     fs.writeFileSync(claudeMd, substitute(CLAUDE_MD_STUB, cfg));
@@ -188,6 +211,8 @@ agents préfixés \`ailed-*\` (\`.claude/agents/\`) et skills (\`.claude/skills/
 
 ## Agents (préfixe \`@ailed-\`)
 
+Discovery : \`@ailed-scout → @ailed-fact-check → @ailed-analyst\` → (validation humaine) → \`@ailed-brainstorm\`
+
 Feature : \`@ailed-brainstorm → @ailed-ux → @ailed-pm → @ailed-architect → @ailed-planner → @ailed-dev → @ailed-review → @ailed-test → @ailed-communication → @ailed-release\`
 
 Incident : \`@ailed-check-log → @ailed-rca → @ailed-dev → ...\`
@@ -210,10 +235,12 @@ ${c.bold("Commands")}
   version         Affiche la version
 
 ${c.bold("Options de init")}
+  --lang=fr|en        Langue des fichiers memory/ (défaut : fr)
   --trigram=XYZ       Préfixe de ticket (défaut : 3 lettres du nom du dossier)
-  --monitoring=NOM    Outil de monitoring (ex. Sentry) ou "aucun" (défaut)
-  --e2e=NOM           Outil de tests E2E (ex. Playwright) ou "aucun" (défaut)
-  --promo=NOM         Outil de génération promo (ex. Remotion) ou "aucun" (défaut)
+  --monitoring=NOM    Outil de monitoring (ex. Sentry) ou désactivé (défaut)
+  --e2e=NOM           Outil de tests E2E (ex. Playwright) ou désactivé (défaut)
+  --promo=NOM         Outil de génération promo (ex. Remotion) ou désactivé (défaut)
+  --watch=NOM         Canal de veille concurrentielle (MCP web / URLs) ou désactivé (défaut)
   -y, --yes           Mode non interactif (valeurs par défaut / flags fournis)
   -f, --force         Écrase les fichiers existants (par défaut : ignorés)
 
