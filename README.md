@@ -20,7 +20,7 @@ npx @s2bp/ai-led init
 | `.claude/agents/`   | 16 agents `ailed-*.md` (invocables via `@ailed-<nom>`)         |
 | `.claude/skills/`   | 6 skills `ailed-*` (invocables via `/ailed-<nom>`)             |
 | `.claude/commands/` | slash-command `/ailed-bootstrap` (amorçage du framework)       |
-| `memory/`           | 13 fichiers de mémoire projet (dont `config.md` et `process.md`) |
+| `memory/`           | 13 fichiers de mémoire projet (dont `config.md` et `process.md`), dans la langue choisie |
 | `CLAUDE.md`         | pointeur framework (créé seulement s'il n'existe pas)          |
 
 Les fichiers existants ne sont **jamais écrasés** sauf avec `--force`.
@@ -29,6 +29,19 @@ Les fichiers existants ne sont **jamais écrasés** sauf avec `--force`.
 
 `init` génère `memory/config.md`, **source de vérité de l'outillage** que les agents lisent
 avant d'agir. Deux choses y sont paramétrées :
+
+### Langue des fichiers `memory/`
+
+Les fichiers de mémoire sont installés dans la langue choisie, pour faciliter la relecture
+humaine. **Français par défaut**, anglais disponible :
+
+```bash
+npx @s2bp/ai-led init --lang=en
+```
+
+Seuls les fichiers `memory/` sont traduits ; les agents/skills restent en français. La valeur
+sentinelle d'une intégration désactivée suit la langue (`aucun` en `fr`, `none` en `en`) et
+reste cohérente entre `config.md` et les agents.
 
 ### Trigramme de ticket
 
@@ -62,10 +75,11 @@ npx @s2bp/ai-led init \
 ### Options de `init`
 
 ```
+--lang=fr|en        Langue des fichiers memory/ (défaut : fr)
 --trigram=XYZ       Préfixe de ticket (défaut : 3 lettres du nom du dossier)
---monitoring=NOM    Outil de monitoring ou "aucun" (défaut)
---e2e=NOM           Outil de tests E2E ou "aucun" (défaut)
---promo=NOM         Outil de génération promo ou "aucun" (défaut)
+--monitoring=NOM    Outil de monitoring ou désactivé (défaut)
+--e2e=NOM           Outil de tests E2E ou désactivé (défaut)
+--promo=NOM         Outil de génération promo ou désactivé (défaut)
 -y, --yes           Mode non interactif (sinon, questions posées en terminal)
 -f, --force         Écrase les fichiers existants
 ```
@@ -126,7 +140,9 @@ qui oriente automatiquement selon le contexte :
 templates/claude/agents/   # source des agents (placeholders {{TICKET_PREFIX}}, {{E2E}}…)
 templates/claude/skills/   # source des skills
 templates/claude/commands/ # source des slash-commands (/ailed-bootstrap)
-templates/memory/          # source de la mémoire (dont config.md)
+templates/memory/fr/       # source de la mémoire en français (défaut)
+templates/memory/en/       # source de la mémoire en anglais
+                           # (ajoute un dossier de langue ici pour en proposer une nouvelle)
 bin/ai-led.js              # CLI d'installation (Node, zéro dépendance)
 ```
 
