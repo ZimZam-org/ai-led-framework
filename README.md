@@ -19,6 +19,7 @@ npx @s2bp/ai-led init
 | ------------------- | -------------------------------------------------------------- |
 | `.claude/agents/`   | 16 agents `ailed-*.md` (invocables via `@ailed-<nom>`)         |
 | `.claude/skills/`   | 6 skills `ailed-*` (invocables via `/ailed-<nom>`)             |
+| `.claude/commands/` | slash-command `/ailed-bootstrap` (amorçage du framework)       |
 | `memory/`           | 13 fichiers de mémoire projet (dont `config.md` et `process.md`) |
 | `CLAUDE.md`         | pointeur framework (créé seulement s'il n'existe pas)          |
 
@@ -113,7 +114,8 @@ cd mon-projet
 npx @s2bp/ai-led init
 ```
 
-Puis dans Claude Code, colle le contenu de `prompts/bootstrap.md`, ou directement :
+Puis dans Claude Code, lance la slash-command **`/ailed-bootstrap`** (installée par `init`),
+qui oriente automatiquement selon le contexte :
 
 - **Projet existant** → `@ailed-init-memory` (reconstruit la mémoire) puis `@ailed-knowledge-audit`.
 - **Nouveau projet** → `@ailed-brainstorm` pour cadrer la première SPEC.
@@ -123,9 +125,9 @@ Puis dans Claude Code, colle le contenu de `prompts/bootstrap.md`, ou directemen
 ```
 templates/claude/agents/   # source des agents (placeholders {{TICKET_PREFIX}}, {{E2E}}…)
 templates/claude/skills/   # source des skills
+templates/claude/commands/ # source des slash-commands (/ailed-bootstrap)
 templates/memory/          # source de la mémoire (dont config.md)
 bin/ai-led.js              # CLI d'installation (Node, zéro dépendance)
-prompts/                   # prompts prêts à coller
 ```
 
 Tester l'installation localement sans publier :
