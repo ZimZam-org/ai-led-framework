@@ -1,5 +1,5 @@
 ---
-description: Amorce le framework AI-Led dans ce projet (à lancer après npx ai-led init).
+description: Amorce le framework AI-Led dans ce projet (à lancer après npx @s2bp/ai-led-framework init).
 ---
 
 Tu travailles désormais selon le framework **AI-Led** installé dans ce projet.
