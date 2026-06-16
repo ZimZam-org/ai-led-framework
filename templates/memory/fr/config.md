@@ -4,7 +4,7 @@ Last Updated: {{DATE}}
 
 Source de vérité des choix d'outillage du projet. Renseigné par `npx ai-led init`,
 modifiable à la main à tout moment. **Les agents lisent ce fichier avant d'agir** et
-adaptent leur comportement (notamment si une intégration vaut `aucun`).
+adaptent leur comportement (notamment si une intégration vaut `{{DISABLED}}`).
 
 ## Identité
 
@@ -19,7 +19,7 @@ adaptent leur comportement (notamment si une intégration vaut `aucun`).
 | Tests end-to-end       | `{{E2E}}`        | `@ailed-test`, `@ailed-dev`       |
 | Génération promo       | `{{PROMO}}`      | `/ailed-promo`, `@ailed-communication` |
 
-> Valeurs possibles : un nom d'outil (ex. `Sentry`, `Playwright`, `Remotion`) ou `aucun`.
-> Si une intégration vaut `aucun`, l'agent correspondant **signale le pré-requis manquant
+> Valeurs possibles : un nom d'outil (ex. `Sentry`, `Playwright`, `Remotion`) ou `{{DISABLED}}`.
+> Si une intégration vaut `{{DISABLED}}`, l'agent correspondant **signale le pré-requis manquant
 > et s'arrête proprement** au lieu de supposer un outil. Pour activer une intégration plus
-> tard, remplace `aucun` par le nom de l'outil ici et configure le MCP/pipeline associé.
+> tard, remplace `{{DISABLED}}` par le nom de l'outil ici et configure le MCP/pipeline associé.
