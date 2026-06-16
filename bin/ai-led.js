@@ -227,7 +227,7 @@ function help() {
 ${c.bold("ai-led")} ${c.dim("v" + pkg.version)} — framework de workflow AI-led pour Claude Code
 
 ${c.bold("Usage")}
-  npx ai-led <command> [options]
+  npx @s2bp/ai-led-framework <command> [options]
 
 ${c.bold("Commands")}
   init            Installe agents, skills et mémoire dans le projet courant

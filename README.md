@@ -10,7 +10,7 @@ projet **piloté par agents IA**, avec :
 Installation en une commande :
 
 ```bash
-npx @s2bp/ai-led init
+npx @s2bp/ai-led-framework init
 ```
 
 ## Ce que `init` installe
@@ -36,7 +36,7 @@ Les fichiers de mémoire sont installés dans la langue choisie, pour faciliter 
 humaine. **Français par défaut**, anglais disponible :
 
 ```bash
-npx @s2bp/ai-led init --lang=en
+npx @s2bp/ai-led-framework init --lang=en
 ```
 
 Seuls les fichiers `memory/` sont traduits ; les agents/skills restent en français. La valeur
@@ -49,7 +49,7 @@ Le préfixe des tickets de dev (ex. `SKP-000001`) est un **trigramme dérivé du
 (3 premières lettres du dossier), surchargeable :
 
 ```bash
-npx @s2bp/ai-led init --trigram=SKP
+npx @s2bp/ai-led-framework init --trigram=SKP
 ```
 
 ### Intégrations (optionnelles)
@@ -59,7 +59,7 @@ intégration vaut `aucun`, l'agent concerné signale le pré-requis manquant et 
 au lieu de supposer un outil. On les active à l'install ou plus tard en éditant `config.md` :
 
 ```bash
-npx @s2bp/ai-led init \
+npx @s2bp/ai-led-framework init \
   --trigram=SKP \
   --monitoring=Sentry \
   --e2e=Playwright \
@@ -152,7 +152,7 @@ le déploiement restent une décision humaine** — c'est le garde-fou du framew
 
 ```bash
 cd mon-projet
-npx @s2bp/ai-led init
+npx @s2bp/ai-led-framework init
 ```
 
 Puis dans Claude Code, lance la slash-command **`/ailed-bootstrap`** (installée par `init`),
