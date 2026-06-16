@@ -28,5 +28,5 @@ Outil de monitoring défini dans `memory/config.md` : **{{MONITORING}}** (via MC
 `memory/incidents.md`, `memory/project-state.md`, `memory/kanban.md`.
 
 > Pré-requis : un environnement déployé et **{{MONITORING}}** configuré. Si la valeur
-> vaut `aucun` dans `memory/config.md`, signale le pré-requis manquant et arrête-toi
+> vaut `{{DISABLED}}` dans `memory/config.md`, signale le pré-requis manquant et arrête-toi
 > proprement (n'invente pas de source de logs).
