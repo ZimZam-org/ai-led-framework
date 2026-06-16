@@ -2,7 +2,7 @@
 
 Last Updated: {{DATE}}
 
-Source de vérité des choix d'outillage du projet. Renseigné par `npx ai-led init`,
+Source de vérité des choix d'outillage du projet. Renseigné par `npx @s2bp/ai-led-framework init`,
 modifiable à la main à tout moment. **Les agents lisent ce fichier avant d'agir** et
 adaptent leur comportement (notamment si une intégration vaut `{{DISABLED}}`).
 
