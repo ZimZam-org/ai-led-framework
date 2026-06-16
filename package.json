@@ -1,18 +1,7 @@
 {
-  "name": "@s2bp/ai-led",
+  "name": "@s2bp/ai-led-framework",
   "version": "0.2.0",
   "description": "Framework de workflow AI-led pour Claude Code : mémoire persistante, agents préfixés ailed-* et skills, installables via npx ai-led init.",
-  "bin": {
-    "ai-led": "./bin/ai-led.js"
-  },
-  "files": [
-    "bin/",
-    "templates/",
-    "README.md"
-  ],
-  "scripts": {
-    "test": "node bin/ai-led.js help"
-  },
   "keywords": [
     "claude",
     "claude-code",
@@ -22,8 +11,30 @@
     "memory",
     "scaffolding"
   ],
+  "homepage": "https://github.com/ZimZam-org/ai-led-framework#readme",
+  "bugs": {
+    "url": "https://github.com/ZimZam-org/ai-led-framework/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ZimZam-org/ai-led-framework.git"
+  },
+  "license": "MIT",
+  "author": "S2b",
+  "type": "commonjs",
+  "main": "index.js",
+  "bin": {
+    "ai-led": "bin/ai-led.js"
+  },
+  "files": [
+    "bin/",
+    "templates/",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node bin/ai-led.js help"
+  },
   "engines": {
     "node": ">=18"
-  },
-  "license": "MIT"
+  }
 }
