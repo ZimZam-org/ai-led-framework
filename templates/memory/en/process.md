@@ -12,6 +12,31 @@ Describes the agent-driven workflows. Each step consumes the artefacts of the pr
 
 ---
 
+## Discovery workflow
+
+`Scout → Fact-Check → Analyst → [human validation] → Brainstorm (entry to Feature workflow)`
+
+```mermaid
+flowchart LR
+    SC[Scout<br/>sourced obs.] --> FC[Fact-Check<br/>anti-hallucination gate]
+    FC --> AN[Analyst<br/>trends + scored topics]
+    AN -. human validation .-> BS[Brainstorm<br/>SPEC]
+```
+
+An **exploratory** workflow feeding `memory/market-watch.md` (competitive intelligence).
+It **never creates** a ticket or roadmap entry: it produces a scored **candidate topics
+backlog**. A human promotes a topic (`candidate` → `validated→brainstorm`), which then
+**joins the Feature workflow** via `@ailed-brainstorm`. Disabled while the **Watch**
+integration is set to `{{DISABLED}}` in `config.md`.
+
+**Human validation point**: after `Analyst` (promotion of a candidate topic).
+
+> Continuous-improvement loop: `Scout → Fact-Check → Analyst` can be re-run on a cadence
+> (e.g. monthly) to refresh the watch and propose a new shortlist. **Discovery** runs in a
+> loop; **promotion to roadmap and deployment remain a human decision**.
+
+---
+
 ## Feature workflow
 
 `Brainstorm → UX → PM → Architect → Planner → Dev → Review → Test → Communication → Release`

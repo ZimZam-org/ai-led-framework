@@ -18,6 +18,7 @@ behaviour (in particular when an integration is set to `{{DISABLED}}`).
 | Monitoring / logs     | `{{MONITORING}}` | `@ailed-check-log`                     |
 | End-to-end tests      | `{{E2E}}`        | `@ailed-test`, `@ailed-dev`            |
 | Promo generation      | `{{PROMO}}`      | `/ailed-promo`, `@ailed-communication` |
+| Market watch          | `{{WATCH}}`      | `@ailed-scout`, `@ailed-fact-check`, `@ailed-analyst` |
 
 > Possible values: a tool name (e.g. `Sentry`, `Playwright`, `Remotion`) or `{{DISABLED}}`.
 > When an integration is set to `{{DISABLED}}`, the matching agent **flags the missing

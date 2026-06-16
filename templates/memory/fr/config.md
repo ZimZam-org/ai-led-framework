@@ -18,6 +18,7 @@ adaptent leur comportement (notamment si une intégration vaut `{{DISABLED}}`).
 | Monitoring / logs      | `{{MONITORING}}` | `@ailed-check-log`                |
 | Tests end-to-end       | `{{E2E}}`        | `@ailed-test`, `@ailed-dev`       |
 | Génération promo       | `{{PROMO}}`      | `/ailed-promo`, `@ailed-communication` |
+| Veille concurrentielle | `{{WATCH}}`      | `@ailed-scout`, `@ailed-fact-check`, `@ailed-analyst` |
 
 > Valeurs possibles : un nom d'outil (ex. `Sentry`, `Playwright`, `Remotion`) ou `{{DISABLED}}`.
 > Si une intégration vaut `{{DISABLED}}`, l'agent correspondant **signale le pré-requis manquant
