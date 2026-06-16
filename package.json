@@ -22,7 +22,6 @@
   "license": "MIT",
   "author": "S2b",
   "type": "commonjs",
-  "main": "index.js",
   "bin": {
     "ai-led": "bin/ai-led.js"
   },
