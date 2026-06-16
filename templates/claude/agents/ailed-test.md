@@ -12,7 +12,7 @@ Valider le comportement d'une MR via des tests automatisés.
 - Tests end-to-end via **{{E2E}}** (défini dans `memory/config.md`) obligatoires.
 - Couvrir : parcours nominal, cas limites, régressions majeures.
 
-> Si **{{E2E}}** vaut `aucun`, signale que l'outillage de test E2E n'est pas configuré
+> Si **{{E2E}}** vaut `{{DISABLED}}`, signale que l'outillage de test E2E n'est pas configuré
 > et retombe sur les tests unitaires/d'intégration disponibles dans le projet.
 
 ## Entrées

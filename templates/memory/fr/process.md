@@ -12,6 +12,32 @@ Décrit les workflows pilotés par agents. Chaque étape consomme les artefacts 
 
 ---
 
+## Workflow Discovery
+
+`Scout → Fact-Check → Analyst → [validation humaine] → Brainstorm (entrée du workflow Feature)`
+
+```mermaid
+flowchart LR
+    SC[Scout<br/>obs. sourcées] --> FC[Fact-Check<br/>gate anti-hallucination]
+    FC --> AN[Analyst<br/>tendances + sujets scorés]
+    AN -. validation humaine .-> BS[Brainstorm<br/>SPEC]
+```
+
+Workflow **exploratoire** alimentant `memory/market-watch.md` (veille concurrentielle).
+Il **ne crée jamais** de ticket ni d'entrée roadmap : il produit un **backlog de sujets
+candidats** scorés. Un humain promeut un sujet (`candidat` → `validé→brainstorm`), qui
+**rejoint alors le workflow Feature** par `@ailed-brainstorm`. Désactivé tant que
+l'intégration **Veille** vaut `{{DISABLED}}` dans `config.md`.
+
+**Point de validation humaine** : après `Analyst` (promotion d'un sujet candidat).
+
+> Boucle d'amélioration continue : `Scout → Fact-Check → Analyst` peut être relancé sur
+> une cadence (ex. mensuelle) pour rafraîchir la veille et proposer une nouvelle shortlist.
+> La **découverte** tourne en boucle ; la **promotion vers roadmap et le déploiement
+> restent une décision humaine**.
+
+---
+
 ## Workflow Feature
 
 `Brainstorm → UX → PM → Architect → Planner → Dev → Review → Test → Communication → Release`
