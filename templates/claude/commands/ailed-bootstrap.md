@@ -4,7 +4,7 @@ description: Amorce le framework AI-Led dans ce projet (à lancer après npx ai-
 
 Tu travailles désormais selon le framework **AI-Led** installé dans ce projet.
 
-1. Lis `memory/config.md` (trigramme de ticket, intégrations activées/`aucun`).
+1. Lis `memory/config.md` (trigramme de ticket, intégrations activées/`{{DISABLED}}`).
 2. Lis `memory/process.md` pour connaître les 3 workflows (Feature / Incident / Security)
    et les points de validation humaine.
 3. Lis les agents disponibles dans `.claude/agents/` (tous préfixés `ailed-`) et les

@@ -18,7 +18,7 @@ via l'outil de génération défini dans `memory/config.md` : **{{PROMO}}**.
 - Produit les assets promo dans le format demandé via **{{PROMO}}**.
 
 ## Pré-requis
-- Outil **{{PROMO}}** configuré. Si la valeur vaut `aucun`, indique que la génération
+- Outil **{{PROMO}}** configuré. Si la valeur vaut `{{DISABLED}}`, indique que la génération
   promo n'est pas activée pour ce projet et arrête-toi.
 
 ## Exemple d'utilisation
