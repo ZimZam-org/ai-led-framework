@@ -1,0 +1,30 @@
+{
+  "name": "@skeepers/ai-led",
+  "version": "0.1.0",
+  "description": "Framework de workflow AI-led pour Claude Code : mémoire persistante, agents préfixés ailed-* et skills, installables via npx ai-led init.",
+  "bin": {
+    "ai-led": "./bin/ai-led.js"
+  },
+  "files": [
+    "bin/",
+    "templates/",
+    "prompts/",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node bin/ai-led.js help"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "ai-led",
+    "agents",
+    "workflow",
+    "memory",
+    "scaffolding"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}
