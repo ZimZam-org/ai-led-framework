@@ -5,7 +5,7 @@ projet **piloté par agents IA**, avec :
 
 - 🧠 une **mémoire persistante** (`memory/`) tenue à jour et utilisée comme source de vérité ;
 - 🤖 **19 agents** préfixés `ailed-*` couvrant 4 workflows (Discovery, Feature, Incident, Security) ;
-- 🛠️ **6 skills** réutilisables pour les tâches récurrentes (ADR, git-flow, quality-gate…).
+- 🛠️ **9 skills** réutilisables pour les tâches récurrentes (ADR, git-flow, quality-gate, design-system…).
 
 Installation en une commande :
 
@@ -18,7 +18,7 @@ npx @s2bp/ai-led-framework init
 | Dossier             | Contenu                                                        |
 | ------------------- | -------------------------------------------------------------- |
 | `.claude/agents/`   | 19 agents `ailed-*.md` (invocables via `@ailed-<nom>`)         |
-| `.claude/skills/`   | 6 skills `ailed-*` (invocables via `/ailed-<nom>`)             |
+| `.claude/skills/`   | 9 skills `ailed-*` (invocables via `/ailed-<nom>`)             |
 | `.claude/commands/` | slash-command `/ailed-bootstrap` (amorçage du framework)       |
 | `memory/`           | 14 fichiers de mémoire projet (dont `config.md`, `process.md` et `market-watch.md`), dans la langue choisie |
 | `CLAUDE.md`         | pointeur framework (créé seulement s'il n'existe pas)          |
@@ -114,7 +114,13 @@ npx @s2bp/ai-led-framework init \
 ## Les skills (préfixe `/ailed-`)
 
 `ailed-adr`, `ailed-architecture-map`, `ailed-git-flow`, `ailed-quality-gate`,
-`ailed-release-flow`, `ailed-promo`.
+`ailed-release-flow`, `ailed-promo`, `ailed-design-system`, `ailed-wireframe`,
+`ailed-mockup-preview`.
+
+Les trois derniers enrichissent `@ailed-ux` (base de design partagée, 3 variantes de
+wireframes, rendu + screenshots de la maquette). Ils s'appuient sur les skills Claude Code
+natifs `frontend-design` et `chrome-devtools` quand ils sont présents dans l'environnement
+cible, et dégradent proprement sinon.
 
 ## Les 4 workflows (voir `memory/process.md`)
 
