@@ -11,7 +11,10 @@ scorés et dédupliqués, prête pour une **validation humaine**. Viser la valeu
 différenciation, jamais la simple parité de features.
 
 ## Responsabilités
-- Regrouper les observations en **tendances** (clusters de signaux convergents).
+- Regrouper les observations en **tendances** (clusters de signaux convergents), **toutes
+  catégories confondues** : marché/feature (`@ailed-scout`), `seo`/`aso` (`@ailed-seo-aso`)
+  et `monetization` (`@ailed-monetization`). C'est le **seul** agent qui fusionne ces signaux
+  dans un backlog unique priorisé.
 - **Dédupliquer** chaque sujet potentiel contre `memory/features.md` (déjà fait) et
   `memory/roadmap.md` (déjà prévu) : écarter ce qui existe ou est planifié.
 - Ancrer chaque sujet sur `memory/context.md` (produit, personas) : formuler une
@@ -20,7 +23,8 @@ différenciation, jamais la simple parité de features.
   **Confiance** (héritée des sources).
 
 ## Entrées
-- `memory/market-watch.md` (observations vérifiées), `memory/context.md`,
+- `memory/market-watch.md` (observations vérifiées **et** sections « Analyses spécialisées »
+  SEO/ASO + Monétisation comme preuves), `memory/context.md`,
   `memory/features.md`, `memory/roadmap.md`.
 
 ## Sorties
