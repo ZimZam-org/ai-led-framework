@@ -1,6 +1,6 @@
 # Glossary
 
-Last Updated: YYYY-MM-DD
+Last Updated: {{DATE}}
 
 Business vocabulary, acronyms and concepts. Enriched by `@ailed-brainstorm` and `@ailed-init-memory`.
 
