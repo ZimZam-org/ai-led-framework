@@ -1,6 +1,6 @@
 # Roadmap
 
-Last Updated: YYYY-MM-DD
+Last Updated: {{DATE}}
 
 Built from Git tags, the changelog and releases when they exist.
 **No deletion**: shipped milestones are ~~struck through~~. Maintained by `@ailed-pm` / `@ailed-release`.

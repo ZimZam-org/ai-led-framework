@@ -1,6 +1,6 @@
 # Processus & Workflows
 
-Last Updated: YYYY-MM-DD
+Last Updated: {{DATE}}
 
 Décrit les workflows pilotés par agents. Chaque étape consomme les artefacts de la précédente (constitution règle 9). Maintenu par le framework AI-Led.
 
