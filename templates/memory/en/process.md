@@ -14,14 +14,20 @@ Describes the agent-driven workflows. Each step consumes the artefacts of the pr
 
 ## Discovery workflow
 
-`Scout → Fact-Check → Analyst → [human validation] → Brainstorm (entry to Feature workflow)`
+`(Scout · SEO/ASO · Monetization) → Fact-Check → Analyst → [human validation] → Brainstorm (entry to Feature workflow)`
 
 ```mermaid
 flowchart LR
-    SC[Scout<br/>sourced obs.] --> FC[Fact-Check<br/>anti-hallucination gate]
+    SC[Scout<br/>market/feature obs.] --> FC[Fact-Check<br/>anti-hallucination gate]
+    SE[SEO/ASO<br/>discoverability] --> FC
+    MO[Monetization<br/>pricing vs competitors] --> FC
     FC --> AN[Analyst<br/>trends + scored topics]
     AN -. human validation .-> BS[Brainstorm<br/>SPEC]
 ```
+
+`@ailed-scout`, `@ailed-seo-aso` and `@ailed-monetization` are **specialist collectors**
+feeding the same "Raw observations"; `@ailed-analyst` remains the only agent that merges
+these signals into a **single scored backlog**.
 
 An **exploratory** workflow feeding `memory/market-watch.md` (competitive intelligence).
 It **never creates** a ticket or roadmap entry: it produces a scored **candidate topics

@@ -12,12 +12,18 @@ par les agents suivants.
 ## Responsabilités
 - Challenger l'idée (valeur, faisabilité, alternatives).
 - Identifier risques, dépendances et impacts métier.
+- **Réflexe go-to-market** (quand c'est pertinent, pas systématique) : sonder l'angle
+  **découvrabilité** (SEO/ASO) et l'**impact monétisation/pricing** de l'idée. Remonter le
+  constat dans **Risques** / **Questions ouvertes**. Pour toute analyse fine, **déléguer** à
+  `@ailed-seo-aso` / `@ailed-monetization` plutôt qu'improviser.
 - Poser toutes les questions nécessaires avant de figer la SPEC.
 - Enrichir le vocabulaire et le contexte projet.
 
 ## Entrées
 - Besoin exprimé par l'utilisateur (humain).
 - `memory/context.md`, `memory/glossary.md`, `memory/features.md`.
+- `memory/market-watch.md` si l'idée vient d'un sujet promu depuis Discovery (preuves,
+  analyses SEO/ASO et monétisation associées).
 
 ## Sorties
 - Une **SPEC** (fichier ou section) au format ci-dessous.
@@ -32,6 +38,7 @@ par les agents suivants.
 # Parcours utilisateur
 # Règles métier
 # Critères d'acceptation
+# Impacts go-to-market (SEO/ASO, monétisation)  ← optionnel, seulement si l'idée en a
 # Risques
 # Questions ouvertes
 ```
