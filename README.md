@@ -1,62 +1,64 @@
-# AI-Led — framework de workflow pour Claude Code
+> 🌍 **Language**: English · [Français](README.fr.md)
 
-Template prêt à l'emploi qui transforme n'importe quel projet (nouveau ou existant) en
-projet **piloté par agents IA**, avec :
+# AI-Led — workflow framework for Claude Code
 
-- 🧠 une **mémoire persistante** (`memory/`) tenue à jour et utilisée comme source de vérité ;
-- 🤖 **19 agents** préfixés `ailed-*` couvrant 4 workflows (Discovery, Feature, Incident, Security) ;
-- 🛠️ **9 skills** réutilisables pour les tâches récurrentes (ADR, git-flow, quality-gate, design-system…).
+A ready-to-use template that turns any project (new or existing) into an **AI-agent-driven**
+project, with:
 
-Installation en une commande :
+- 🧠 a **persistent memory** (`memory/`) kept up to date and used as the source of truth;
+- 🤖 **21 agents** prefixed `ailed-*` covering 4 workflows (Discovery, Feature, Incident, Security);
+- 🛠️ **10 reusable skills** for recurring tasks (status dashboard, ADR, git-flow, quality-gate, design-system…).
+
+One-command install:
 
 ```bash
 npx @s2bp/ai-led-framework init
 ```
 
-## Ce que `init` installe
+## What `init` installs
 
-| Dossier             | Contenu                                                        |
+| Folder              | Contents                                                       |
 | ------------------- | -------------------------------------------------------------- |
-| `.claude/agents/`   | 19 agents `ailed-*.md` (invocables via `@ailed-<nom>`)         |
-| `.claude/skills/`   | 9 skills `ailed-*` (invocables via `/ailed-<nom>`)             |
-| `.claude/commands/` | slash-command `/ailed-bootstrap` (amorçage du framework)       |
-| `memory/`           | 14 fichiers de mémoire projet (dont `config.md`, `process.md` et `market-watch.md`), dans la langue choisie |
-| `CLAUDE.md`         | pointeur framework (créé seulement s'il n'existe pas)          |
+| `.claude/agents/`   | 21 `ailed-*.md` agents (callable via `@ailed-<name>`)          |
+| `.claude/skills/`   | 10 `ailed-*` skills (callable via `/ailed-<name>`)             |
+| `.claude/commands/` | `/ailed-bootstrap` slash-command (framework bootstrap)         |
+| `memory/`           | 14 project memory files (including `config.md`, `process.md` and `market-watch.md`), in the chosen language |
+| `CLAUDE.md`         | framework pointer (created only if absent)                     |
 
-Les fichiers existants ne sont **jamais écrasés** sauf avec `--force`.
+Existing files are **never overwritten** unless you pass `--force`.
 
 ## Configuration (`memory/config.md`)
 
-`init` génère `memory/config.md`, **source de vérité de l'outillage** que les agents lisent
-avant d'agir. Deux choses y sont paramétrées :
+`init` generates `memory/config.md`, the **source of truth for tooling** that agents read
+before acting. Two things are configured there:
 
-### Langue des fichiers `memory/`
+### Language of the `memory/` files
 
-Les fichiers de mémoire sont installés dans la langue choisie, pour faciliter la relecture
-humaine. **Français par défaut**, anglais disponible :
+Memory files are installed in the chosen language to ease human review. **French by default**,
+English available:
 
 ```bash
 npx @s2bp/ai-led-framework init --lang=en
 ```
 
-Seuls les fichiers `memory/` sont traduits ; les agents/skills restent en français. La valeur
-sentinelle d'une intégration désactivée suit la langue (`aucun` en `fr`, `none` en `en`) et
-reste cohérente entre `config.md` et les agents.
+Only the `memory/` files are translated; agents/skills stay in French. The sentinel value of a
+disabled integration follows the language (`aucun` in `fr`, `none` in `en`) and stays consistent
+between `config.md` and the agents.
 
-### Trigramme de ticket
+### Ticket trigram
 
-Le préfixe des tickets de dev (ex. `SKP-000001`) est un **trigramme dérivé du nom du projet**
-(3 premières lettres du dossier), surchargeable :
+The dev ticket prefix (e.g. `SKP-000001`) is a **trigram derived from the project name**
+(first 3 letters of the folder), overridable:
 
 ```bash
 npx @s2bp/ai-led-framework init --trigram=SKP
 ```
 
-### Intégrations (optionnelles)
+### Integrations (optional)
 
-Monitoring, tests E2E et génération promo sont **désactivés par défaut** (`aucun`). Tant qu'une
-intégration vaut `aucun`, l'agent concerné signale le pré-requis manquant et s'arrête proprement
-au lieu de supposer un outil. On les active à l'install ou plus tard en éditant `config.md` :
+Monitoring, E2E tests and promo generation are **disabled by default** (`none`). As long as an
+integration is set to `none`, the matching agent flags the missing prerequisite and stops
+cleanly instead of assuming a tool. Enable them at install time or later by editing `config.md`:
 
 ```bash
 npx @s2bp/ai-led-framework init \
@@ -64,129 +66,160 @@ npx @s2bp/ai-led-framework init \
   --monitoring=Sentry \
   --e2e=Playwright \
   --promo=Remotion \
-  --watch="MCP web search"
+  --watch="MCP web search" \
+  --seo-aso="Search Console + Ahrefs"
 ```
 
-| Domaine                | Agent / skill concerné                                  | Exemple d'outil   |
-| ---------------------- | ------------------------------------------------------- | ----------------- |
-| Monitoring / logs      | `@ailed-check-log`                                      | Sentry            |
-| Tests end-to-end       | `@ailed-test`, `@ailed-dev`                             | Playwright        |
-| Génération promo       | `/ailed-promo`, `@ailed-communication`                  | Remotion          |
-| Veille concurrentielle | `@ailed-scout`, `@ailed-fact-check`, `@ailed-analyst`   | MCP web / URLs    |
+| Area                  | Agent / skill involved                                                  | Example tool          |
+| --------------------- | ----------------------------------------------------------------------- | --------------------- |
+| Monitoring / logs     | `@ailed-check-log`                                                      | Sentry                |
+| End-to-end tests      | `@ailed-test`, `@ailed-dev`                                             | Playwright            |
+| Promo generation      | `/ailed-promo`, `@ailed-communication`                                  | Remotion              |
+| Market watch          | `@ailed-scout`, `@ailed-fact-check`, `@ailed-analyst`, `@ailed-monetization` | MCP web / URLs        |
+| SEO / ASO             | `@ailed-seo-aso`                                                        | Search Console, Ahrefs, App Store Connect |
 
-### Options de `init`
+> `@ailed-monetization` uses the **Watch** channel (no dedicated integration). `@ailed-seo-aso`
+> degrades to **Watch** at low confidence when **SEO / ASO** is disabled.
+
+### `init` options
 
 ```
---lang=fr|en        Langue des fichiers memory/ (défaut : fr)
---trigram=XYZ       Préfixe de ticket (défaut : 3 lettres du nom du dossier)
---monitoring=NOM    Outil de monitoring ou désactivé (défaut)
---e2e=NOM           Outil de tests E2E ou désactivé (défaut)
---promo=NOM         Outil de génération promo ou désactivé (défaut)
---watch=NOM         Canal de veille concurrentielle (MCP web / URLs) ou désactivé (défaut)
--y, --yes           Mode non interactif (sinon, questions posées en terminal)
--f, --force         Écrase les fichiers existants
+--lang=fr|en        Language of the memory/ files (default: fr)
+--trigram=XYZ       Ticket prefix (default: 3 letters of the folder name)
+--monitoring=NAME   Monitoring tool, or disabled (default)
+--e2e=NAME          E2E testing tool, or disabled (default)
+--promo=NAME        Promo generation tool, or disabled (default)
+--watch=NAME        Market-watch channel (web search MCP / URLs), or disabled (default)
+--seo-aso=NAME      SEO / ASO tool (Search Console, Ahrefs, App Store Connect), or disabled (default)
+-y, --yes           Non-interactive mode (otherwise questions are asked in the terminal)
+-f, --force         Overwrite existing files
 ```
 
-## Les agents (préfixe `@ailed-`)
+## The agents (prefix `@ailed-`)
 
-| Agent                    | Rôle                                                      |
-| ------------------------ | --------------------------------------------------------- |
-| `@ailed-scout`           | Collecte de veille sourcée (concurrents, tendances)       |
-| `@ailed-fact-check`      | Gate anti-hallucination de la veille                      |
-| `@ailed-analyst`         | Veille → sujets candidats scorés                          |
-| `@ailed-brainstorm`      | Besoin métier → SPEC challengée                           |
-| `@ailed-ux`              | SPEC → 3 wireframes + maquette finale                     |
-| `@ailed-pm`              | SPEC → EPICs + roadmap                                    |
-| `@ailed-architect`       | Impacts techniques + ADR                                  |
-| `@ailed-planner`         | EPICs → tickets atomiques `<TRIGRAMME>-*`                 |
-| `@ailed-dev`             | Implémente un ticket (branche + MR, ne fusionne jamais)   |
-| `@ailed-review`          | Revue de MR → `PASS` / `CHANGES REQUESTED`                |
-| `@ailed-test`            | Tests E2E (nominal, limites, régressions)                 |
-| `@ailed-communication`   | Changelog, features, release notes                        |
-| `@ailed-release`         | Quality gates → tag → clôture                             |
-| `@ailed-check-log`       | Surveillance logs/erreurs (24 h)                          |
-| `@ailed-rca`             | Root Cause Analysis d'un incident                         |
-| `@ailed-check-secu`      | Scan vulnérabilités (deps, code, config)                  |
-| `@ailed-security-review` | Revue sécurité d'une MR (OWASP)                           |
-| `@ailed-init-memory`     | Reconstruit la mémoire d'un projet existant               |
-| `@ailed-knowledge-audit` | Mesure la complétude de la mémoire                        |
+| Agent                    | Role                                                       |
+| ------------------------ | ---------------------------------------------------------- |
+| `@ailed-scout`           | Sourced market-watch collection (competitors, trends)      |
+| `@ailed-seo-aso`         | SEO (web) / ASO (mobile) audit + competitor benchmark      |
+| `@ailed-monetization`    | Challenges monetization (current/upcoming/absent) vs competitors |
+| `@ailed-fact-check`      | Anti-hallucination gate for the watch                      |
+| `@ailed-analyst`         | Watch → scored candidate topics                            |
+| `@ailed-brainstorm`      | Business need → challenged SPEC                            |
+| `@ailed-ux`              | SPEC → 3 wireframes + final mockup                         |
+| `@ailed-pm`              | SPEC → EPICs + roadmap                                     |
+| `@ailed-architect`       | Technical impacts + ADR                                    |
+| `@ailed-planner`         | EPICs → atomic tickets `<TRIGRAM>-*`                       |
+| `@ailed-dev`             | Implements a ticket (branch + MR, never merges)            |
+| `@ailed-review`          | MR review → `PASS` / `CHANGES REQUESTED`                   |
+| `@ailed-test`            | E2E tests (nominal, edge cases, regressions)               |
+| `@ailed-communication`   | Changelog, features, release notes                         |
+| `@ailed-release`         | Quality gates → tag → close-out                            |
+| `@ailed-check-log`       | Logs/errors monitoring (24 h)                              |
+| `@ailed-rca`             | Root Cause Analysis of an incident                         |
+| `@ailed-check-secu`      | Vulnerability scan (deps, code, config)                    |
+| `@ailed-security-review` | Security review of an MR (OWASP)                           |
+| `@ailed-init-memory`     | Rebuilds the memory of an existing project                 |
+| `@ailed-knowledge-audit` | Measures memory completeness                               |
 
-## Les skills (préfixe `/ailed-`)
+## The skills (prefix `/ailed-`)
 
-`ailed-adr`, `ailed-architecture-map`, `ailed-git-flow`, `ailed-quality-gate`,
+`ailed-status`, `ailed-adr`, `ailed-architecture-map`, `ailed-git-flow`, `ailed-quality-gate`,
 `ailed-release-flow`, `ailed-promo`, `ailed-design-system`, `ailed-wireframe`,
 `ailed-mockup-preview`.
 
-Les trois derniers enrichissent `@ailed-ux` (base de design partagée, 3 variantes de
-wireframes, rendu + screenshots de la maquette). Ils s'appuient sur les skills Claude Code
-natifs `frontend-design` et `chrome-devtools` quand ils sont présents dans l'environnement
-cible, et dégradent proprement sinon.
+The last three enrich `@ailed-ux` (shared design baseline, 3 wireframe variants, mockup render
++ screenshots). They rely on the native Claude Code skills `frontend-design` and
+`chrome-devtools` when present in the target environment, and degrade gracefully otherwise.
 
-## Les 4 workflows (voir `memory/process.md`)
+## Project status & dashboard
+
+Two complementary ways to get a read-only snapshot of the project (state, roadmap, kanban,
+features, market watch, process):
+
+- **`/ailed-status`** (in Claude Code) — an **intelligent synthesis** of `memory/` that
+  highlights **what needs a decision** (pending human validations, candidate topics to
+  promote, stale watch, disabled integrations).
+- **`ai-led status`** (CLI) — a **deterministic, zero-token** terminal snapshot. Add `--html`
+  to generate `ailed-status.html`, a **static** dashboard (kanban columns, tables, process
+  diagrams) you open in a browser — **no server, no data sent anywhere**:
+
+```bash
+npx @s2bp/ai-led-framework status          # terminal snapshot
+npx @s2bp/ai-led-framework status --html   # → ailed-status.html (open in a browser)
+```
+
+The HTML loads `marked` + `mermaid` from a CDN to render markdown and diagrams (internet
+needed at view time).
+
+## The 4 workflows (see `memory/process.md`)
 
 ```
-Discovery : scout → fact-check → analyst → (validation humaine) → brainstorm
+Discovery : (scout · seo-aso · monetization) → fact-check → analyst → (human validation) → brainstorm
 Feature   : brainstorm → ux → pm → architect → planner → dev → review → test → communication → release
 Incident  : check-log → rca → dev → review → test → communication
 Security  : check-secu → security-review → dev → review → test → communication
 ```
 
-Points de validation **humaine** obligatoires : après `analyst` (promotion d'un sujet),
-après `brainstorm` (SPEC), après `ux` (maquette), avant `release` (tag).
+Mandatory **human** validation points: after `analyst` (promoting a topic), after `brainstorm`
+(SPEC), after `ux` (mockup), before `release` (tag).
 
-### Workflow Discovery (veille concurrentielle)
+### Discovery workflow (competitive intelligence)
 
-Workflow **exploratoire** qui alimente `memory/market-watch.md` pour faire émerger de
-nouveaux sujets, sans jamais créer de ticket ni écrire dans la roadmap :
+An **exploratory** workflow that feeds `memory/market-watch.md` to surface new topics, without
+ever creating a ticket or writing to the roadmap:
 
-1. **Activer la veille** : renseigne l'intégration `Veille` dans `memory/config.md`
-   (un canal de veille : MCP de recherche web, ou liste curée d'URLs concurrents/flux).
-   Tant qu'elle vaut `aucun`/`none`, les agents s'arrêtent proprement.
-2. `@ailed-scout` collecte des **observations sourcées et datées** (section *Observations brutes*).
-3. `@ailed-fact-check` **vérifie/dégrade/rejette** chaque observation (gate anti-hallucination).
-4. `@ailed-analyst` clusterise, **déduplique** contre `features.md`/`roadmap.md` et produit
-   un **backlog de sujets candidats scorés** (Impact/Effort/Alignement).
-5. **Validation humaine** : tu fais passer un sujet de `candidat` à `validé→brainstorm`.
-   Il rejoint alors le workflow Feature via `@ailed-brainstorm`.
+1. **Enable the watch**: set the `Watch` integration in `memory/config.md` (a watch channel:
+   web search MCP, or a curated list of competitor URLs/feeds). While it is `aucun`/`none`,
+   the agents stop cleanly.
+2. **Specialist collectors**, all writing to *Raw observations* (sourced + dated):
+   - `@ailed-scout`: market/feature/competitor signals;
+   - `@ailed-seo-aso`: discoverability — SEO (web) or ASO (mobile) audit of our product + gaps vs competitors;
+   - `@ailed-monetization`: current/upcoming/absent monetization model challenged vs competitors (pricing grids).
+   The detail (keyword matrices, pricing grids) goes into the *Specialised analyses* section.
+3. `@ailed-fact-check` **verifies/downgrades/rejects** each observation, whatever its origin (anti-hallucination gate).
+4. `@ailed-analyst` clusters, **deduplicates** against `features.md`/`roadmap.md` and produces a
+   **scored candidate topics backlog** (Impact/Effort/Alignment).
+5. **Human validation**: you move a topic from `candidate` to `validated→brainstorm`. It then
+   joins the Feature workflow via `@ailed-brainstorm`.
 
-**Amélioration continue** : relance `scout → fact-check → analyst` sur une cadence (ex.
-mensuelle, via `/loop` ou un agent planifié) pour rafraîchir la veille et proposer une
-nouvelle shortlist. La **découverte** tourne en boucle ; la **promotion vers la roadmap et
-le déploiement restent une décision humaine** — c'est le garde-fou du framework.
+**Continuous improvement**: re-run `(scout · seo-aso · monetization) → fact-check → analyst` on a
+cadence (e.g. monthly, via `/loop` or a scheduled agent) to refresh the watch and propose a new
+shortlist. **Discovery** runs in a loop; **promotion to the roadmap and deployment remain a human
+decision** — that is the framework's safeguard.
 
-## Démarrage rapide
+## Quick start
 
 ```bash
-cd mon-projet
+cd my-project
 npx @s2bp/ai-led-framework init
 ```
 
-Puis dans Claude Code, lance la slash-command **`/ailed-bootstrap`** (installée par `init`),
-qui oriente automatiquement selon le contexte :
+Then in Claude Code, run the **`/ailed-bootstrap`** slash-command (installed by `init`), which
+routes automatically based on context:
 
-- **Projet existant** → `@ailed-init-memory` (reconstruit la mémoire) puis `@ailed-knowledge-audit`.
-- **Nouveau projet** → `@ailed-brainstorm` pour cadrer la première SPEC.
+- **Existing project** → `@ailed-init-memory` (rebuilds the memory) then `@ailed-knowledge-audit`.
+- **New project** → `@ailed-brainstorm` to frame the first SPEC.
 
-## Développer le framework lui-même
+## Developing the framework itself
 
 ```
-templates/claude/agents/   # source des agents (placeholders {{TICKET_PREFIX}}, {{E2E}}…)
-templates/claude/skills/   # source des skills
-templates/claude/commands/ # source des slash-commands (/ailed-bootstrap)
-templates/memory/fr/       # source de la mémoire en français (défaut)
-templates/memory/en/       # source de la mémoire en anglais
-                           # (ajoute un dossier de langue ici pour en proposer une nouvelle)
-bin/ai-led.js              # CLI d'installation (Node, zéro dépendance)
+templates/claude/agents/   # agent sources (placeholders {{TICKET_PREFIX}}, {{E2E}}…)
+templates/claude/skills/   # skill sources
+templates/claude/commands/ # slash-command sources (/ailed-bootstrap)
+templates/memory/fr/       # French memory source (default)
+templates/memory/en/       # English memory source
+                           # (add a language folder here to offer a new one)
+bin/ai-led.js              # install CLI (Node, zero dependencies)
 ```
 
-Tester l'installation localement sans publier :
+Test the install locally without publishing:
 
 ```bash
-node bin/ai-led.js init --trigram=TST -y   # depuis un projet cible
-# ou
+node bin/ai-led.js init --trigram=TST -y   # from a target project
+# or
 npm link && ai-led init
 ```
 
-## Licence
+## License
 
 MIT.

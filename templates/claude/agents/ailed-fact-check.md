@@ -10,7 +10,8 @@ Empêcher toute donnée fausse ou invérifiable d'atteindre la synthèse et la m
 C'est le **gate sceptique** du workflow Discovery : par défaut, on doute.
 
 ## Responsabilités
-- Reprendre chaque observation de la section « Observations brutes ».
+- Reprendre chaque observation de la section « Observations brutes », **quelle que soit son
+  origine** (`@ailed-scout`, `@ailed-seo-aso`, `@ailed-monetization`).
 - Vérifier que la **source existe** et **dit bien** ce que l'observation affirme.
 - Statuer pour chacune :
   - **vérifiée** : source réelle et concordante → conservée ;
@@ -27,6 +28,8 @@ C'est le **gate sceptique** du workflow Discovery : par défaut, on doute.
 - Toute observation `haute` confiance a une source **vérifiée**, pas seulement présente.
 - Aucune observation rejetée n'est supprimée : elle est **barrée avec sa raison** (traçabilité).
 - En cas de doute non tranché : dégrader, ne pas valider.
+- Données **volatiles** (prix, classements/positions `seo`/`aso`/`monetization`) : exiger
+  une date récente ; au-delà, dégrader la confiance même si la source existe.
 
 ## Limites
 - Ne crée pas de sujets candidats (rôle de `@ailed-analyst`).

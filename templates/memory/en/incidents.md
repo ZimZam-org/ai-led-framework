@@ -1,6 +1,6 @@
 # Incidents
 
-Last Updated: YYYY-MM-DD
+Last Updated: {{DATE}}
 
 Maintained by `@ailed-check-log` (via {{MONITORING}} MCP, Coralogix, ...) and `@ailed-rca`
 
