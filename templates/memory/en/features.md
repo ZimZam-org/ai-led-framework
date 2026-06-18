@@ -1,6 +1,6 @@
 # Feature inventory
 
-Last Updated: YYYY-MM-DD
+Last Updated: {{DATE}}
 
 Classification: **CONFIRMED** (present in code/docs) · **LIKELY** (strongly implied) · **ASSUMED** (hypothesis).
 

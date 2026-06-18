@@ -1,6 +1,6 @@
 # Process & Workflows
 
-Last Updated: YYYY-MM-DD
+Last Updated: {{DATE}}
 
 Describes the agent-driven workflows. Each step consumes the artefacts of the previous one (constitution rule 9). Maintained by the AI-Led framework.
 

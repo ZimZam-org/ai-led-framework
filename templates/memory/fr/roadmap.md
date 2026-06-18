@@ -1,6 +1,6 @@
 # Roadmap
 
-Last Updated: YYYY-MM-DD
+Last Updated: {{DATE}}
 
 Construite à partir des tags Git, du changelog et des releases lorsqu'ils existent.
 **Aucune suppression** : les jalons livrés sont ~~barrés~~. Maintenu par `@ailed-pm` / `@ailed-release`.

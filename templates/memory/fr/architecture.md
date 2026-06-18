@@ -1,6 +1,6 @@
 # Architecture
 
-Last Updated: YYYY-MM-DD
+Last Updated: {{DATE}}
 
 ## Architecture applicative
 

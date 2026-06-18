@@ -1,6 +1,6 @@
 # Security
 
-Last Updated: YYYY-MM-DD
+Last Updated: {{DATE}}
 
 Maintained by `@ailed-check-secu` and `@ailed-security-review`.
 Classification: `CRITICAL` · `HIGH` · `MEDIUM` · `LOW`.

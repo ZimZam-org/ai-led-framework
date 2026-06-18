@@ -1,6 +1,6 @@
 # Kanban
 
-Last Updated: YYYY-MM-DD
+Last Updated: {{DATE}}
 
 Statuses: `TO_CHECK` · `TODO` · `IN_PROGRESS` · `TO_TEST` · `DONE`.
 Dev ticket ID convention: `{{TICKET_PREFIX}}-000001`, `{{TICKET_PREFIX}}-000002`, … (the `{{TICKET_PREFIX}}` prefix is the project trigram, defined in `memory/config.md`)
