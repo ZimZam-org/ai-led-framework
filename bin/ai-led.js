@@ -76,6 +76,7 @@ async function resolveConfig() {
     e2e: flag("e2e") || disabled,
     promo: flag("promo") || disabled,
     watch: flag("watch") || disabled,
+    seo_aso: flag("seo-aso") || disabled,
   };
 
   const interactive =
@@ -86,7 +87,8 @@ async function resolveConfig() {
     !flag("monitoring") &&
     !flag("e2e") &&
     !flag("promo") &&
-    !flag("watch");
+    !flag("watch") &&
+    !flag("seo-aso");
 
   if (interactive) {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -99,6 +101,7 @@ async function resolveConfig() {
     cfg.e2e = await ask(rl, "Outil de tests end-to-end :", disabled);
     cfg.promo = await ask(rl, "Outil de génération promo :", disabled);
     cfg.watch = await ask(rl, "Canal de veille concurrentielle (MCP web / liste d'URLs) :", disabled);
+    cfg.seo_aso = await ask(rl, "Outil SEO / ASO (Search Console, Ahrefs, App Store Connect…) :", disabled);
     rl.close();
   }
 
@@ -116,6 +119,7 @@ function substitute(content, cfg) {
     .replace(/{{E2E}}/g, cfg.e2e)
     .replace(/{{PROMO}}/g, cfg.promo)
     .replace(/{{WATCH}}/g, cfg.watch)
+    .replace(/{{SEO_ASO}}/g, cfg.seo_aso)
     .replace(/{{DISABLED}}/g, cfg.disabled)
     .replace(/{{DATE}}/g, now);
 }
@@ -153,7 +157,7 @@ async function init() {
 
   const cfg = await resolveConfig();
   console.log(
-    `\n${c.dim("Config")} : langue=${c.bold(cfg.lang)} · trigramme=${c.bold(cfg.trigram)} · monitoring=${cfg.monitoring} · e2e=${cfg.e2e} · promo=${cfg.promo} · veille=${cfg.watch}\n`
+    `\n${c.dim("Config")} : langue=${c.bold(cfg.lang)} · trigramme=${c.bold(cfg.trigram)} · monitoring=${cfg.monitoring} · e2e=${cfg.e2e} · promo=${cfg.promo} · veille=${cfg.watch} · seo/aso=${cfg.seo_aso}\n`
   );
 
   // 1. Agents  ->  .claude/agents/
@@ -211,7 +215,7 @@ agents préfixés \`ailed-*\` (\`.claude/agents/\`) et skills (\`.claude/skills/
 
 ## Agents (préfixe \`@ailed-\`)
 
-Discovery : \`@ailed-scout → @ailed-fact-check → @ailed-analyst\` → (validation humaine) → \`@ailed-brainstorm\`
+Discovery : \`(@ailed-scout · @ailed-seo-aso · @ailed-monetization) → @ailed-fact-check → @ailed-analyst\` → (validation humaine) → \`@ailed-brainstorm\`
 
 Feature : \`@ailed-brainstorm → @ailed-ux → @ailed-pm → @ailed-architect → @ailed-planner → @ailed-dev → @ailed-review → @ailed-test → @ailed-communication → @ailed-release\`
 
@@ -241,6 +245,7 @@ ${c.bold("Options de init")}
   --e2e=NOM           Outil de tests E2E (ex. Playwright) ou désactivé (défaut)
   --promo=NOM         Outil de génération promo (ex. Remotion) ou désactivé (défaut)
   --watch=NOM         Canal de veille concurrentielle (MCP web / URLs) ou désactivé (défaut)
+  --seo-aso=NOM       Outil SEO / ASO (Search Console, Ahrefs, App Store Connect) ou désactivé (défaut)
   -y, --yes           Mode non interactif (valeurs par défaut / flags fournis)
   -f, --force         Écrase les fichiers existants (par défaut : ignorés)
 

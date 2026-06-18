@@ -18,9 +18,14 @@ behaviour (in particular when an integration is set to `{{DISABLED}}`).
 | Monitoring / logs     | `{{MONITORING}}` | `@ailed-check-log`                     |
 | End-to-end tests      | `{{E2E}}`        | `@ailed-test`, `@ailed-dev`            |
 | Promo generation      | `{{PROMO}}`      | `/ailed-promo`, `@ailed-communication` |
-| Market watch          | `{{WATCH}}`      | `@ailed-scout`, `@ailed-fact-check`, `@ailed-analyst` |
+| Market watch          | `{{WATCH}}`      | `@ailed-scout`, `@ailed-fact-check`, `@ailed-analyst`, `@ailed-monetization` |
+| SEO / ASO             | `{{SEO_ASO}}`    | `@ailed-seo-aso` |
 
 > Possible values: a tool name (e.g. `Sentry`, `Playwright`, `Remotion`) or `{{DISABLED}}`.
 > When an integration is set to `{{DISABLED}}`, the matching agent **flags the missing
 > prerequisite and stops cleanly** instead of assuming a tool. To enable an integration
 > later, replace `{{DISABLED}}` with the tool name here and configure the associated MCP/pipeline.
+>
+> Watch specifics: `@ailed-monetization` relies on the **Watch** channel (no dedicated
+> integration). `@ailed-seo-aso` **degrades** to **Watch** at low confidence when **SEO / ASO**
+> is `{{DISABLED}}`, and only stops if **Watch** is disabled too.
