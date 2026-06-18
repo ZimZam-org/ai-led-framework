@@ -1,6 +1,6 @@
 # Glossaire
 
-Last Updated: YYYY-MM-DD
+Last Updated: {{DATE}}
 
 Vocabulaire métier, acronymes et concepts. Enrichi par `@ailed-brainstorm` et `@ailed-init-memory`.
 
