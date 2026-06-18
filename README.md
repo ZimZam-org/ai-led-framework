@@ -7,7 +7,7 @@ project, with:
 
 - 🧠 a **persistent memory** (`memory/`) kept up to date and used as the source of truth;
 - 🤖 **21 agents** prefixed `ailed-*` covering 4 workflows (Discovery, Feature, Incident, Security);
-- 🛠️ **9 reusable skills** for recurring tasks (ADR, git-flow, quality-gate, design-system…).
+- 🛠️ **10 reusable skills** for recurring tasks (status dashboard, ADR, git-flow, quality-gate, design-system…).
 
 One-command install:
 
@@ -20,7 +20,7 @@ npx @s2bp/ai-led-framework init
 | Folder              | Contents                                                       |
 | ------------------- | -------------------------------------------------------------- |
 | `.claude/agents/`   | 21 `ailed-*.md` agents (callable via `@ailed-<name>`)          |
-| `.claude/skills/`   | 9 `ailed-*` skills (callable via `/ailed-<name>`)              |
+| `.claude/skills/`   | 10 `ailed-*` skills (callable via `/ailed-<name>`)             |
 | `.claude/commands/` | `/ailed-bootstrap` slash-command (framework bootstrap)         |
 | `memory/`           | 14 project memory files (including `config.md`, `process.md` and `market-watch.md`), in the chosen language |
 | `CLAUDE.md`         | framework pointer (created only if absent)                     |
@@ -123,13 +123,33 @@ npx @s2bp/ai-led-framework init \
 
 ## The skills (prefix `/ailed-`)
 
-`ailed-adr`, `ailed-architecture-map`, `ailed-git-flow`, `ailed-quality-gate`,
+`ailed-status`, `ailed-adr`, `ailed-architecture-map`, `ailed-git-flow`, `ailed-quality-gate`,
 `ailed-release-flow`, `ailed-promo`, `ailed-design-system`, `ailed-wireframe`,
 `ailed-mockup-preview`.
 
 The last three enrich `@ailed-ux` (shared design baseline, 3 wireframe variants, mockup render
 + screenshots). They rely on the native Claude Code skills `frontend-design` and
 `chrome-devtools` when present in the target environment, and degrade gracefully otherwise.
+
+## Project status & dashboard
+
+Two complementary ways to get a read-only snapshot of the project (state, roadmap, kanban,
+features, market watch, process):
+
+- **`/ailed-status`** (in Claude Code) — an **intelligent synthesis** of `memory/` that
+  highlights **what needs a decision** (pending human validations, candidate topics to
+  promote, stale watch, disabled integrations).
+- **`ai-led status`** (CLI) — a **deterministic, zero-token** terminal snapshot. Add `--html`
+  to generate `ailed-status.html`, a **static** dashboard (kanban columns, tables, process
+  diagrams) you open in a browser — **no server, no data sent anywhere**:
+
+```bash
+npx @s2bp/ai-led-framework status          # terminal snapshot
+npx @s2bp/ai-led-framework status --html   # → ailed-status.html (open in a browser)
+```
+
+The HTML loads `marked` + `mermaid` from a CDN to render markdown and diagrams (internet
+needed at view time).
 
 ## The 4 workflows (see `memory/process.md`)
 
