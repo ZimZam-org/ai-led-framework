@@ -1,6 +1,6 @@
 # Context
 
-Last Updated: YYYY-MM-DD
+Last Updated: {{DATE}}
 
 ## Product Overview
 

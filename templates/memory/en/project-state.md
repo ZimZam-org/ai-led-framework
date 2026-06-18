@@ -1,6 +1,6 @@
 # Project state
 
-Last Updated: YYYY-MM-DD
+Last Updated: {{DATE}}
 
 Maintained by `@ailed-pm`, `@ailed-architect`, `@ailed-check-log`, `@ailed-check-secu`, `@ailed-release`.
 
