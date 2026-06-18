@@ -14,14 +14,20 @@ Décrit les workflows pilotés par agents. Chaque étape consomme les artefacts 
 
 ## Workflow Discovery
 
-`Scout → Fact-Check → Analyst → [validation humaine] → Brainstorm (entrée du workflow Feature)`
+`(Scout · SEO/ASO · Monétisation) → Fact-Check → Analyst → [validation humaine] → Brainstorm (entrée du workflow Feature)`
 
 ```mermaid
 flowchart LR
-    SC[Scout<br/>obs. sourcées] --> FC[Fact-Check<br/>gate anti-hallucination]
+    SC[Scout<br/>obs. marché/feature] --> FC[Fact-Check<br/>gate anti-hallucination]
+    SE[SEO/ASO<br/>découvrabilité] --> FC
+    MO[Monétisation<br/>pricing vs concurrence] --> FC
     FC --> AN[Analyst<br/>tendances + sujets scorés]
     AN -. validation humaine .-> BS[Brainstorm<br/>SPEC]
 ```
+
+`@ailed-scout`, `@ailed-seo-aso` et `@ailed-monetization` sont des **collecteurs spécialisés**
+qui alimentent les mêmes « Observations brutes » ; `@ailed-analyst` reste le seul à fusionner
+ces signaux dans un **backlog unique scoré**.
 
 Workflow **exploratoire** alimentant `memory/market-watch.md` (veille concurrentielle).
 Il **ne crée jamais** de ticket ni d'entrée roadmap : il produit un **backlog de sujets

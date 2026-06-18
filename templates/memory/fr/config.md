@@ -18,9 +18,14 @@ adaptent leur comportement (notamment si une intégration vaut `{{DISABLED}}`).
 | Monitoring / logs      | `{{MONITORING}}` | `@ailed-check-log`                |
 | Tests end-to-end       | `{{E2E}}`        | `@ailed-test`, `@ailed-dev`       |
 | Génération promo       | `{{PROMO}}`      | `/ailed-promo`, `@ailed-communication` |
-| Veille concurrentielle | `{{WATCH}}`      | `@ailed-scout`, `@ailed-fact-check`, `@ailed-analyst` |
+| Veille concurrentielle | `{{WATCH}}`      | `@ailed-scout`, `@ailed-fact-check`, `@ailed-analyst`, `@ailed-monetization` |
+| SEO / ASO              | `{{SEO_ASO}}`    | `@ailed-seo-aso` |
 
 > Valeurs possibles : un nom d'outil (ex. `Sentry`, `Playwright`, `Remotion`) ou `{{DISABLED}}`.
 > Si une intégration vaut `{{DISABLED}}`, l'agent correspondant **signale le pré-requis manquant
 > et s'arrête proprement** au lieu de supposer un outil. Pour activer une intégration plus
 > tard, remplace `{{DISABLED}}` par le nom de l'outil ici et configure le MCP/pipeline associé.
+>
+> Cas particuliers de la veille : `@ailed-monetization` s'appuie sur le canal **Veille**
+> (pas d'intégration dédiée). `@ailed-seo-aso`, lui, **dégrade** vers la **Veille** en confiance
+> basse si **SEO / ASO** vaut `{{DISABLED}}`, et ne s'arrête que si la **Veille** l'est aussi.
