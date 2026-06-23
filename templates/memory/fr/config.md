@@ -11,6 +11,13 @@ adaptent leur comportement (notamment si une intégration vaut `{{DISABLED}}`).
 - Trigramme projet (préfixe de ticket) : `{{TICKET_PREFIX}}`
   → les tickets de dev sont nommés `{{TICKET_PREFIX}}-000001`, `{{TICKET_PREFIX}}-000002`, …
 
+## Conventions techniques (facultatif)
+
+Les conventions de code et l'organisation technique **en place** sont décrites dans
+`memory/conventions.md`. Renseignable à l'install (`--conventions=<chemin>`, import brut)
+ou complété à la main / via `@ailed-init-memory`. **Lu par `@ailed-architect`, `@ailed-dev`
+et `@ailed-ux`** avant d'agir. Le fichier peut rester partiellement vide.
+
 ## Intégrations
 
 | Domaine                | Outil          | Agent / skill concerné            |

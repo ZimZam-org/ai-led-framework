@@ -22,7 +22,7 @@ npx @s2bp/ai-led-framework init
 | `.claude/agents/`   | 21 agents `ailed-*.md` (invocables via `@ailed-<nom>`)         |
 | `.claude/skills/`   | 10 skills `ailed-*` (invocables via `/ailed-<nom>`)            |
 | `.claude/commands/` | slash-command `/ailed-bootstrap` (amorçage du framework)       |
-| `memory/`           | 14 fichiers de mémoire projet (dont `config.md`, `process.md` et `market-watch.md`), dans la langue choisie |
+| `memory/`           | 15 fichiers de mémoire projet (dont `config.md`, `process.md`, `conventions.md` et `market-watch.md`), dans la langue choisie |
 | `CLAUDE.md`         | pointeur framework (créé seulement s'il n'existe pas)          |
 
 Les fichiers existants ne sont **jamais écrasés** sauf avec `--force`.
@@ -47,11 +47,11 @@ reste cohérente entre `config.md` et les agents.
 
 ### Trigramme de ticket
 
-Le préfixe des tickets de dev (ex. `SKP-000001`) est un **trigramme dérivé du nom du projet**
+Le préfixe des tickets de dev (ex. `ZZM-000001`) est un **trigramme dérivé du nom du projet**
 (3 premières lettres du dossier), surchargeable :
 
 ```bash
-npx @s2bp/ai-led-framework init --trigram=SKP
+npx @s2bp/ai-led-framework init --trigram=ZZM
 ```
 
 ### Intégrations (optionnelles)
@@ -62,7 +62,7 @@ au lieu de supposer un outil. On les active à l'install ou plus tard en éditan
 
 ```bash
 npx @s2bp/ai-led-framework init \
-  --trigram=SKP \
+  --trigram=ZZM \
   --monitoring=Sentry \
   --e2e=Playwright \
   --promo=Remotion \
@@ -81,6 +81,12 @@ npx @s2bp/ai-led-framework init \
 > `@ailed-monetization` utilise le canal **Veille** (pas d'intégration dédiée). `@ailed-seo-aso`
 > dégrade vers la **Veille** en confiance basse si **SEO / ASO** est désactivé.
 
+**Conventions techniques existantes (facultatif).** Si le projet possède déjà un document décrivant
+ses conventions de code et son organisation technique, importe-le avec `--conventions=<chemin>` : son
+contenu est copié tel quel dans `memory/conventions.md` (avec un en-tête `Source:`). `@ailed-architect`,
+`@ailed-dev` et `@ailed-ux` le lisent avant d'agir. Sans le flag, un stub `TODO` est installé — le
+fichier peut rester partiellement vide et être complété plus tard à la main ou via `@ailed-init-memory`.
+
 ### Options de `init`
 
 ```
@@ -91,6 +97,7 @@ npx @s2bp/ai-led-framework init \
 --promo=NOM         Outil de génération promo ou désactivé (défaut)
 --watch=NOM         Canal de veille concurrentielle (MCP web / URLs) ou désactivé (défaut)
 --seo-aso=NOM       Outil SEO / ASO (Search Console, Ahrefs, App Store Connect) ou désactivé (défaut)
+--conventions=CHEMIN  Importe un fichier de conventions/organisation technique dans memory/conventions.md (facultatif)
 -y, --yes           Mode non interactif (sinon, questions posées en terminal)
 -f, --force         Écrase les fichiers existants
 ```

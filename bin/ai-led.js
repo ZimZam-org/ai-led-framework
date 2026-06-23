@@ -77,6 +77,8 @@ async function resolveConfig() {
     promo: flag("promo") || disabled,
     watch: flag("watch") || disabled,
     seo_aso: flag("seo-aso") || disabled,
+    // optional path to an existing conventions file to import verbatim ("" = none)
+    conventions: flag("conventions") || "",
   };
 
   const interactive =
@@ -88,7 +90,8 @@ async function resolveConfig() {
     !flag("e2e") &&
     !flag("promo") &&
     !flag("watch") &&
-    !flag("seo-aso");
+    !flag("seo-aso") &&
+    !flag("conventions");
 
   if (interactive) {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -102,6 +105,7 @@ async function resolveConfig() {
     cfg.promo = await ask(rl, "Outil de génération promo :", disabled);
     cfg.watch = await ask(rl, "Canal de veille concurrentielle (MCP web / liste d'URLs) :", disabled);
     cfg.seo_aso = await ask(rl, "Outil SEO / ASO (Search Console, Ahrefs, App Store Connect…) :", disabled);
+    cfg.conventions = await ask(rl, "Fichier de conventions / organisation technique à importer (facultatif, Entrée = ignorer) :", "");
     rl.close();
   }
 
@@ -152,12 +156,35 @@ function copyTree(src, dest, cfg) {
   console.log(`  ${c.green("+")}    ${path.relative(cwd, dest)}`);
 }
 
+// ── optional: import an existing conventions file verbatim ────
+// Copies the user-provided file's content into memory/conventions.md, prefixed
+// with a provenance header so agents read it as memory and humans can re-sync.
+function importConventions(cfg) {
+  const src = path.resolve(cwd, cfg.conventions);
+  const dest = path.join(cwd, "memory", "conventions.md");
+  console.log("\n" + c.bold("Conventions") + c.dim("  → memory/conventions.md"));
+  if (!fs.existsSync(src) || fs.statSync(src).isDirectory()) {
+    console.log(`  ${c.yellow("skip")} ${cfg.conventions} ${c.dim("(introuvable — le stub est conservé)")}`);
+    return;
+  }
+  const now = new Date().toISOString().slice(0, 10);
+  const title = cfg.lang === "en" ? "Conventions & technical organization" : "Conventions & organisation technique";
+  const sourceNote =
+    cfg.lang === "en"
+      ? `Source: ${cfg.conventions} (imported at install — re-sync via @ailed-init-memory if the original changes)`
+      : `Source : ${cfg.conventions} (importé à l'install — re-synchroniser via @ailed-init-memory si l'original évolue)`;
+  const header = `# ${title}\n\nLast Updated: ${now}\n${sourceNote}\n\n---\n\n`;
+  fs.writeFileSync(dest, header + fs.readFileSync(src, "utf8"));
+  created++;
+  console.log(`  ${c.green("+")}    memory/conventions.md ${c.dim(`(import: ${cfg.conventions})`)}`);
+}
+
 async function init() {
   console.log(`\n${c.bold("AI-Led")} ${c.dim("v" + pkg.version)} — initialisation dans ${c.cyan(cwd)}`);
 
   const cfg = await resolveConfig();
   console.log(
-    `\n${c.dim("Config")} : langue=${c.bold(cfg.lang)} · trigramme=${c.bold(cfg.trigram)} · monitoring=${cfg.monitoring} · e2e=${cfg.e2e} · promo=${cfg.promo} · veille=${cfg.watch} · seo/aso=${cfg.seo_aso}\n`
+    `\n${c.dim("Config")} : langue=${c.bold(cfg.lang)} · trigramme=${c.bold(cfg.trigram)} · monitoring=${cfg.monitoring} · e2e=${cfg.e2e} · promo=${cfg.promo} · veille=${cfg.watch} · seo/aso=${cfg.seo_aso} · conventions=${cfg.conventions || cfg.disabled}\n`
   );
 
   // 1. Agents  ->  .claude/agents/
@@ -180,6 +207,9 @@ async function init() {
   // 4. Memory  ->  memory/  (from the chosen language folder)
   console.log("\n" + c.bold("Mémoire") + c.dim(`  → memory/ (langue: ${cfg.lang})`));
   copyTree(path.join(TPL, "memory", cfg.lang), path.join(cwd, "memory"), cfg);
+
+  // 4b. Optional: import an existing conventions file verbatim into memory/conventions.md
+  if (cfg.conventions) importConventions(cfg);
 
   // 5. CLAUDE.md pointer (only if absent)
   const claudeMd = path.join(cwd, "CLAUDE.md");
@@ -211,6 +241,7 @@ agents préfixés \`ailed-*\` (\`.claude/agents/\`) et skills (\`.claude/skills/
 - Aucun développement sans ticket ; aucun ticket sans SPEC validée par un humain.
 - La mémoire \`memory/\` est la source de vérité : elle est lue avant et mise à jour après chaque tâche.
 - \`memory/config.md\` fixe le trigramme de ticket (\`{{TICKET_PREFIX}}-*\`) et les intégrations outillage.
+- \`memory/conventions.md\` (facultatif) décrit les conventions et l'organisation technique en place, lues par \`@ailed-architect\`, \`@ailed-dev\` et \`@ailed-ux\`.
 - Les workflows (Feature / Incident / Security) sont décrits dans \`memory/process.md\`.
 
 ## Agents (préfixe \`@ailed-\`)
@@ -229,7 +260,7 @@ Bootstrap : \`@ailed-init-memory\`, \`@ailed-knowledge-audit\`.
 // ── status: aggregate memory into a snapshot (terminal or static HTML) ──
 const MEMORY_ORDER = [
   "project-state", "roadmap", "kanban", "epics", "features",
-  "market-watch", "process", "architecture", "decisions",
+  "market-watch", "process", "architecture", "conventions", "decisions",
   "incidents", "security", "context", "glossary", "config",
 ];
 const STATUSES = ["TO_CHECK", "TODO", "IN_PROGRESS", "TO_TEST", "DONE"];
@@ -456,6 +487,7 @@ ${c.bold("Options de init")}
   --promo=NOM         Outil de génération promo (ex. Remotion) ou désactivé (défaut)
   --watch=NOM         Canal de veille concurrentielle (MCP web / URLs) ou désactivé (défaut)
   --seo-aso=NOM       Outil SEO / ASO (Search Console, Ahrefs, App Store Connect) ou désactivé (défaut)
+  --conventions=CHEMIN  Importe un fichier de conventions/organisation technique dans memory/conventions.md (facultatif)
   -y, --yes           Mode non interactif (valeurs par défaut / flags fournis)
   -f, --force         Écrase les fichiers existants (par défaut : ignorés)
 

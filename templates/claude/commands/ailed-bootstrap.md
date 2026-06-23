@@ -9,6 +9,9 @@ Tu travailles désormais selon le framework **AI-Led** installé dans ce projet.
    et les points de validation humaine.
 3. Lis les agents disponibles dans `.claude/agents/` (tous préfixés `ailed-`) et les
    skills dans `.claude/skills/`.
+3b. Lis `memory/conventions.md` (facultatif) : conventions de code et organisation
+   technique en place, à respecter par `@ailed-architect`, `@ailed-dev` et `@ailed-ux`.
+   S'il est vide, ce n'est pas bloquant.
 4. Si le projet contient déjà du code : lance l'agent `@ailed-init-memory` pour
    reconstruire la mémoire à partir du code, de la doc et de l'historique Git, en
    indiquant un niveau de confiance par section.

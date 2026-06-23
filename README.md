@@ -22,7 +22,7 @@ npx @s2bp/ai-led-framework init
 | `.claude/agents/`   | 21 `ailed-*.md` agents (callable via `@ailed-<name>`)          |
 | `.claude/skills/`   | 10 `ailed-*` skills (callable via `/ailed-<name>`)             |
 | `.claude/commands/` | `/ailed-bootstrap` slash-command (framework bootstrap)         |
-| `memory/`           | 14 project memory files (including `config.md`, `process.md` and `market-watch.md`), in the chosen language |
+| `memory/`           | 15 project memory files (including `config.md`, `process.md`, `conventions.md` and `market-watch.md`), in the chosen language |
 | `CLAUDE.md`         | framework pointer (created only if absent)                     |
 
 Existing files are **never overwritten** unless you pass `--force`.
@@ -47,11 +47,11 @@ between `config.md` and the agents.
 
 ### Ticket trigram
 
-The dev ticket prefix (e.g. `SKP-000001`) is a **trigram derived from the project name**
+The dev ticket prefix (e.g. `ZZM-000001`) is a **trigram derived from the project name**
 (first 3 letters of the folder), overridable:
 
 ```bash
-npx @s2bp/ai-led-framework init --trigram=SKP
+npx @s2bp/ai-led-framework init --trigram=ZZM
 ```
 
 ### Integrations (optional)
@@ -62,7 +62,7 @@ cleanly instead of assuming a tool. Enable them at install time or later by edit
 
 ```bash
 npx @s2bp/ai-led-framework init \
-  --trigram=SKP \
+  --trigram=ZZM \
   --monitoring=Sentry \
   --e2e=Playwright \
   --promo=Remotion \
@@ -81,6 +81,12 @@ npx @s2bp/ai-led-framework init \
 > `@ailed-monetization` uses the **Watch** channel (no dedicated integration). `@ailed-seo-aso`
 > degrades to **Watch** at low confidence when **SEO / ASO** is disabled.
 
+**Existing technical conventions (optional).** If the project already has a document describing its
+coding conventions and technical organization, import it with `--conventions=<path>`: its content is
+copied verbatim into `memory/conventions.md` (with a `Source:` header). `@ailed-architect`, `@ailed-dev`
+and `@ailed-ux` read it before acting. Omit the flag and a `TODO` stub is installed instead — the file
+may stay partially empty and be filled later by hand or via `@ailed-init-memory`.
+
 ### `init` options
 
 ```
@@ -91,6 +97,7 @@ npx @s2bp/ai-led-framework init \
 --promo=NAME        Promo generation tool, or disabled (default)
 --watch=NAME        Market-watch channel (web search MCP / URLs), or disabled (default)
 --seo-aso=NAME      SEO / ASO tool (Search Console, Ahrefs, App Store Connect), or disabled (default)
+--conventions=PATH  Import an existing conventions / technical-organization file into memory/conventions.md (optional)
 -y, --yes           Non-interactive mode (otherwise questions are asked in the terminal)
 -f, --force         Overwrite existing files
 ```

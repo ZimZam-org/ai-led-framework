@@ -18,8 +18,11 @@ description: Reconstruit automatiquement la connaissance du projet dans memory/ 
 
 ## Sorties
 - `memory/context.md`, `memory/glossary.md`, `memory/features.md`,
-  `memory/architecture.md`, `memory/decisions.md`, `memory/project-state.md`,
-  `memory/roadmap.md`, `memory/kanban.md`.
+  `memory/architecture.md`, `memory/conventions.md`, `memory/decisions.md`,
+  `memory/project-state.md`, `memory/roadmap.md`, `memory/kanban.md`.
+- `memory/conventions.md` : conventions de code et organisation technique déduites du
+  repo. Si le fichier a déjà été importé à l'install (en-tête `Source:`), enrichis-le
+  sans écraser l'apport humain.
 
 ## Quality gates
 - Aucune affirmation non sourcée présentée comme certaine.
