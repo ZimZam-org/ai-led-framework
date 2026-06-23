@@ -11,6 +11,13 @@ behaviour (in particular when an integration is set to `{{DISABLED}}`).
 - Project trigram (ticket prefix): `{{TICKET_PREFIX}}`
   → dev tickets are named `{{TICKET_PREFIX}}-000001`, `{{TICKET_PREFIX}}-000002`, …
 
+## Technical conventions (optional)
+
+The coding conventions and technical organization **already in place** are described in
+`memory/conventions.md`. Can be set at install time (`--conventions=<path>`, verbatim import)
+or filled by hand / via `@ailed-init-memory`. **Read by `@ailed-architect`, `@ailed-dev`
+and `@ailed-ux`** before acting. The file may stay partially empty.
+
 ## Integrations
 
 | Area                  | Tool             | Agent / skill involved                 |

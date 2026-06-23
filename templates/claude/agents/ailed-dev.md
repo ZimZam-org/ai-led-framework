@@ -20,6 +20,7 @@ Implémenter **un ticket** précis, dans le respect de la SPEC et de l'architect
 
 ## Entrées
 - Un ticket `{{TICKET_PREFIX}}-*` (avec SPEC + ADR associés).
+- `memory/conventions.md` (conventions et organisation technique en place, si renseigné).
 
 ## Sorties
 - Branche + commits + **MR** (jamais de merge).
@@ -28,6 +29,8 @@ Implémenter **un ticket** précis, dans le respect de la SPEC et de l'architect
 - Conventional Commits obligatoires.
 - Une branche par ticket, une MR par ticket.
 - **Le dev ne fusionne jamais** (constitution règle 4).
+- Respecte les conventions et l'organisation technique de `memory/conventions.md`
+  (structure des dossiers, nommage, patterns imposés, libs autorisées) si le fichier est renseigné.
 
 ## Quality gates
 - Code compilable, lint OK, tests OK avant ouverture de MR.

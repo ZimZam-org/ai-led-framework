@@ -16,6 +16,7 @@ code applicatif.
 
 ## Entrées
 - SPEC validée par `@ailed-brainstorm` (et l'humain).
+- `memory/conventions.md` (conventions front / design en place, si renseigné).
 
 ## Sorties
 - Maquette HTML : `memory/ux/domain_feature_yyyymmdd.html`.
