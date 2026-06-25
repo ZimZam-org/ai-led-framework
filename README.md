@@ -67,7 +67,9 @@ npx @s2bp/ai-led-framework init \
   --e2e=Playwright \
   --promo=Remotion \
   --watch="MCP web search" \
-  --seo-aso="Search Console + Ahrefs"
+  --seo-aso="Search Console + Ahrefs" \
+  --ticketing=Jira \
+  --docs=Confluence
 ```
 
 | Area                  | Agent / skill involved                                                  | Example tool          |
@@ -77,9 +79,28 @@ npx @s2bp/ai-led-framework init \
 | Promo generation      | `/ailed-promo`, `@ailed-communication`                                  | Remotion              |
 | Market watch          | `@ailed-scout`, `@ailed-fact-check`, `@ailed-analyst`, `@ailed-monetization` | MCP web / URLs        |
 | SEO / ASO             | `@ailed-seo-aso`                                                        | Search Console, Ahrefs, App Store Connect |
+| External ticketing    | `@ailed-pm`, `@ailed-planner`, `@ailed-dev`                            | Jira (Atlassian MCP)  |
+| External documentation | `@ailed-communication`                                                 | Confluence (Atlassian MCP) |
 
 > `@ailed-monetization` uses the **Watch** channel (no dedicated integration). `@ailed-seo-aso`
 > degrades to **Watch** at low confidence when **SEO / ASO** is disabled.
+>
+> **External ticketing / documentation** — **mirror** principle: `memory/` stays the local source
+> of truth; when `Jira`/`Confluence` is enabled, agents **additionally sync** to the tool via its
+> MCP (a single **Atlassian MCP** covers both Jira **and** Confluence). Prerequisite: that MCP must
+> be connected in the project's Claude Code, otherwise agents stay in local-file mode. When external
+> ticketing is active, the **ticket ID is the Jira key** (e.g. `ZZM-123`, the trigram being the
+> project key); the `ZZM-000001` format is only the local-file convention.
+>
+> **Where are tickets & docs created?** Everything lives in `memory/config.md` (*Tool coordinates*
+> section). For **Jira**: project key = trigram by default, type *Task* for features
+> (`@ailed-planner`) and *Bug* for incidents (`@ailed-check-log`) and CRITICAL/HIGH
+> vulnerabilities (`@ailed-check-secu`). For **Confluence**: you provide a
+> **single root page URL**; `@ailed-communication` creates an `AI LED FRAMEWORK` sub-page under it
+> (if absent) and maintains **one page per `memory/*.md` file** (mirror, one-way `memory/` →
+> Confluence). While a coordinate is missing, the agent **asks for the value (or lists it via the
+> MCP), then writes it back to `config.md`** — never creation against a guessed target. See the
+> examples below.
 
 **Existing technical conventions (optional).** If the project already has a document describing its
 coding conventions and technical organization, import it with `--conventions=<path>`: its content is
@@ -97,6 +118,8 @@ may stay partially empty and be filled later by hand or via `@ailed-init-memory`
 --promo=NAME        Promo generation tool, or disabled (default)
 --watch=NAME        Market-watch channel (web search MCP / URLs), or disabled (default)
 --seo-aso=NAME      SEO / ASO tool (Search Console, Ahrefs, App Store Connect), or disabled (default)
+--ticketing=NAME    External ticketing (e.g. Jira, via MCP), or disabled (default)
+--docs=NAME         External documentation (e.g. Confluence, via MCP), or disabled (default)
 --conventions=PATH  Import an existing conventions / technical-organization file into memory/conventions.md (optional)
 -y, --yes           Non-interactive mode (otherwise questions are asked in the terminal)
 -f, --force         Overwrite existing files
@@ -206,6 +229,59 @@ routes automatically based on context:
 
 - **Existing project** → `@ailed-init-memory` (rebuilds the memory) then `@ailed-knowledge-audit`.
 - **New project** → `@ailed-brainstorm` to frame the first SPEC.
+
+## Concrete examples: Jira & Confluence on an existing project
+
+Shared prerequisite: the **Atlassian MCP** (covers both Jira **and** Confluence) is connected in
+the project's Claude Code. `memory/` stays the local source of truth; Jira/Confluence are its
+shareable mirror.
+
+### Example 1 — From a need to a Jira ticket (Feature workflow)
+
+```bash
+cd my-existing-project
+npx @s2bp/ai-led-framework init --trigram=ZZM --ticketing=Jira --docs=Confluence
+```
+
+Then in Claude Code:
+
+1. `/ailed-bootstrap` → since the project already exists, it chains `@ailed-init-memory` then
+   `@ailed-knowledge-audit` to rebuild memory from the code.
+2. `@ailed-brainstorm`: you describe the need ("allow PDF export of reports"). The agent produces
+   a **challenged SPEC**. **→ human validation of the SPEC.**
+3. `@ailed-pm` turns the SPEC into **EPICs** (and creates/updates the Jira epics via the MCP),
+   `@ailed-architect` records ADRs in `memory/decisions.md` (mirrored to Confluence later by
+   `@ailed-communication`). The Jira project key already defaults to `ZZM` — no other coordinate
+   is needed at this stage.
+4. `@ailed-planner` splits the EPIC into **atomic tickets**. For each ticket: write to
+   `memory/kanban.md` **then create the Jira issue** via the MCP. The issue comes back with its
+   key `ZZM-123`, which becomes the ticket ID mirrored in `memory/kanban.md`.
+
+Result: a Jira ticket `ZZM-123` created, tracked locally, linked to its EPIC and the SPEC.
+
+### Example 2 — Develop an existing Jira ticket
+
+```bash
+cd my-existing-project
+npx @s2bp/ai-led-framework init --trigram=ZZM --ticketing=Jira --docs=Confluence
+```
+
+Then in Claude Code:
+
+1. `/ailed-bootstrap` (rebuilds memory if not done yet).
+2. `@ailed-dev ZZM-123`: the issue **already exists in Jira** (created by another team, say). The
+   agent **pulls it via the MCP** (title, description, acceptance criteria) and **mirrors it into
+   `memory/kanban.md`** if absent. It moves the issue `TODO → IN_PROGRESS`, creates the branch
+   `feat/ZZM-123-...`, develops, opens the **MR** (never merges), links the MR URL to the issue
+   and moves it to `TO_TEST`.
+3. `@ailed-review` then `@ailed-test` validate the MR; `@ailed-communication` updates the local
+   changelog **and syncs the Confluence mirror**: an `AI LED FRAMEWORK` sub-page (created if absent
+   under the root page), one page per `memory/*.md` file. On the **first** pass, since the root
+   page is `to set`, the agent asks for the **Confluence URL** (e.g.
+   `…/wiki/spaces/RDP/pages/2883387645/Feedback+Management`) and saves it to `config.md`.
+
+> If the Atlassian MCP is **not** connected, each agent flags it and **continues in local-file
+> mode**: no blocking, just no external sync.
 
 ## Developing the framework itself
 

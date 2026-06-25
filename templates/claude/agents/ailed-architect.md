@@ -56,6 +56,11 @@ Impact :
 - Pour tout ticket touchant un monorepo, les impacts inter-solutions (contrats partagés,
   breaking changes) sont évalués explicitement.
 
+## Documentation externe (Confluence)
+Aucune publication Confluence directe ici : les ADR sont écrits dans `memory/decisions.md`, qui
+est **reflété sur Confluence par le miroir `memory/` → Confluence de `@ailed-communication`**
+(si `Documentation externe` ≠ `aucun`). Voir `memory/config.md` § *Coordonnées des outils*.
+
 ## Artefacts mis à jour
 `memory/architecture.md`, `memory/decisions.md` (garder les ADR en vigueur ; déplacer les ADR
 remplacés/obsolètes dans `memory/archive/decisions.md` — cf. `process.md` § Rotation de la mémoire).

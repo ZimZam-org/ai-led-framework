@@ -27,8 +27,10 @@ et `@ailed-ux`** avant d'agir. Le fichier peut rester partiellement vide.
 | Génération promo       | `{{PROMO}}`      | `/ailed-promo`, `@ailed-communication` |
 | Veille concurrentielle | `{{WATCH}}`      | `@ailed-scout`, `@ailed-fact-check`, `@ailed-analyst`, `@ailed-monetization` |
 | SEO / ASO              | `{{SEO_ASO}}`    | `@ailed-seo-aso` |
+| Ticketing externe      | `{{TICKETING}}`  | `@ailed-pm`, `@ailed-planner`, `@ailed-dev`, `@ailed-check-log`, `@ailed-rca`, `@ailed-check-secu` |
+| Documentation externe  | `{{DOCUMENTATION}}` | `@ailed-communication` |
 
-> Valeurs possibles : un nom d'outil (ex. `Sentry`, `Playwright`, `Remotion`) ou `{{DISABLED}}`.
+> Valeurs possibles : un nom d'outil (ex. `Sentry`, `Playwright`, `Remotion`, `Jira`, `Confluence`) ou `{{DISABLED}}`.
 > Si une intégration vaut `{{DISABLED}}`, l'agent correspondant **signale le pré-requis manquant
 > et s'arrête proprement** au lieu de supposer un outil. Pour activer une intégration plus
 > tard, remplace `{{DISABLED}}` par le nom de l'outil ici et configure le MCP/pipeline associé.
@@ -36,3 +38,48 @@ et `@ailed-ux`** avant d'agir. Le fichier peut rester partiellement vide.
 > Cas particuliers de la veille : `@ailed-monetization` s'appuie sur le canal **Veille**
 > (pas d'intégration dédiée). `@ailed-seo-aso`, lui, **dégrade** vers la **Veille** en confiance
 > basse si **SEO / ASO** vaut `{{DISABLED}}`, et ne s'arrête que si la **Veille** l'est aussi.
+
+### Ticketing & documentation externes (Jira / Confluence via MCP)
+
+Principe **miroir** : la `memory/` reste la **source de vérité locale** (hors-ligne, versionnée
+git, lue par `ai-led status`). Quand le **Ticketing externe** (ex. `Jira`) ou la **Documentation
+externe** (ex. `Confluence`) est activé, les agents **synchronisent en plus** vers l'outil via son
+MCP — ils ne remplacent jamais la `memory/`.
+
+- **Pré-requis** : le MCP correspondant (ex. MCP Atlassian, qui couvre Jira **et** Confluence) doit
+  être connecté dans le Claude Code du projet. Sinon l'agent signale le pré-requis manquant et
+  reste en mode fichier-local.
+- **Convention d'ID** : quand le **Ticketing externe** est actif, l'**ID de ticket est la clé de
+  l'outil** (ex. `{{TICKET_PREFIX}}-123`), le trigramme `{{TICKET_PREFIX}}` servant de **clé de
+  projet**. Le format zéro-padded `{{TICKET_PREFIX}}-000001` n'est la convention que du mode
+  fichier-local (Ticketing = `{{DISABLED}}`).
+- **Sens de synchro (Jira)** : un ticket créé par `@ailed-planner` est poussé vers Jira (type
+  *feature*) ; un ticket qui **existe déjà** dans Jira est tiré par `@ailed-dev` et reflété dans
+  `memory/kanban.md`. Les **incidents** (`@ailed-check-log`) et **vulnérabilités CRITICAL/HIGH**
+  (`@ailed-check-secu`) créent des issues de type *bug* ; `@ailed-rca` enrichit le bug lié avec son
+  analyse (cause, impact, reproduction, correction, prévention).
+- **Miroir Confluence** : `@ailed-communication` maintient, sous une **sous-page conteneur
+  `AI LED FRAMEWORK`** créée sous la **page racine** (l'URL fournie ci-dessous), **une page par
+  fichier `memory/*.md`** (titre de page = titre du fichier). La `memory/` reste la source de
+  vérité ; ces pages en sont le miroir lisible/partageable.
+
+**Coordonnées des outils** (lues par les agents avant toute création) :
+
+| Outil      | Champ                                        | Valeur             |
+| ---------- | -------------------------------------------- | ------------------ |
+| Atlassian  | Site (cloud), si plusieurs connectés         | `à renseigner`     |
+| Jira       | Clé de projet (où créer les tickets)         | `{{TICKET_PREFIX}}` |
+| Jira       | Type d'issue — feature (`@ailed-planner`)    | `Task`             |
+| Jira       | Type d'issue — bug (incident / sécurité)     | `Bug`              |
+| Confluence | Page racine (URL de la page parente)         | `à renseigner`     |
+| Confluence | Sous-page conteneur (créée si absente)       | `AI LED FRAMEWORK` |
+
+> Exemple de **page racine** : `https://skeepers.atlassian.net/wiki/spaces/RDP/pages/2883387645/Feedback+Management`.
+> Le MCP en déduit l'espace et la page parente ; la sous-page `AI LED FRAMEWORK` y est créée si
+> absente, puis peuplée d'une page par fichier `memory/*.md`.
+>
+> La **clé de projet Jira** vaut le trigramme par défaut — corrige-la si ton projet Jira a une
+> autre clé. Le **site Atlassian** est en général résolu par le MCP ; précise-le si plusieurs
+> sites sont connectés. Tant que la **page racine** vaut `à renseigner`, `@ailed-communication`
+> **demande l'URL à l'humain (ou la liste des espaces via le MCP), puis réécrit la valeur ici** —
+> la création n'a jamais lieu sur une cible devinée.
