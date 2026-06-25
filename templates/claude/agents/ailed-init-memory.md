@@ -12,6 +12,9 @@ description: Reconstruit automatiquement la connaissance du projet dans memory/ 
 - Analyser repository, doc, historique Git, dépendances, infra.
 - Renseigner les fichiers `memory/` avec un **niveau de confiance** par section.
 - Distinguer confirmé / probable / supposé.
+- Détecter les **cibles déployables** d'un monorepo (app mobile, backoffice web, site
+  institutionnel, packages partagés…) et peupler le registre `## Solutions / cibles
+  déployables` de `memory/architecture.md` (un `ID court` par cible).
 
 ## Entrées
 - Le repository complet.

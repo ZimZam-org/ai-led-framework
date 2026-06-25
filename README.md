@@ -114,7 +114,7 @@ may stay partially empty and be filled later by hand or via `@ailed-init-memory`
 | `@ailed-brainstorm`      | Business need → challenged SPEC                            |
 | `@ailed-ux`              | SPEC → 3 wireframes + final mockup                         |
 | `@ailed-pm`              | SPEC → EPICs + roadmap                                     |
-| `@ailed-architect`       | Technical impacts + ADR                                    |
+| `@ailed-architect`       | Technical impacts + ADR · DDD & deployable targets         |
 | `@ailed-planner`         | EPICs → atomic tickets `<TRIGRAM>-*`                       |
 | `@ailed-dev`             | Implements a ticket (branch + MR, never merges)            |
 | `@ailed-review`          | MR review → `PASS` / `CHANGES REQUESTED`                   |

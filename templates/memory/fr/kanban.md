@@ -7,8 +7,11 @@ Convention d'ID des tickets de dev : `{{TICKET_PREFIX}}-000001`, `{{TICKET_PREFI
 Les tickets de clarification (`TO_CHECK`) portent un préfixe `CK-`.
 Les tickets intégrés dans une release peuvent être supprimés. Maintenu par `@ailed-pm` / `@ailed-planner`.
 
-| ID | Date création | Status | Titre | Description | Détail technique | Maquette |
-| -- | ------------- | ------ | ----- | ----------- | ---------------- | -------- |
+Colonne **EPIC** : EPIC de rattachement (`memory/epics.md`). Colonne **Solution(s)** : `ID court`
+des cibles impactées (registre `memory/architecture.md`).
+
+| ID | Date création | Status | EPIC | Titre | Description | Solution(s) | Détail technique | Maquette |
+| -- | ------------- | ------ | ---- | ----- | ----------- | ----------- | ---------------- | -------- |
 
 
 ## Backlog de développement (tickets {{TICKET_PREFIX}}-*)
@@ -17,5 +20,5 @@ Découpés par `@ailed-planner` depuis `memory/epics.md`. Chaque ticket : indép
 Statut initial : `TODO`. Convention de branche : `feat/{{TICKET_PREFIX}}-00000X-...`.
 
 ### EPIC-1 — Fondations app
-| ID | Date création | Status | Titre | Description | Détail technique | Maquette |
-| -- | ------------- | ------ | ----- | ----------- | ---------------- | -------- |
+| ID | Date création | Status | EPIC | Titre | Description | Solution(s) | Détail technique | Maquette |
+| -- | ------------- | ------ | ---- | ----- | ----------- | ----------- | ---------------- | -------- |

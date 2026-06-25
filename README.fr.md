@@ -114,7 +114,7 @@ fichier peut rester partiellement vide et être complété plus tard à la main 
 | `@ailed-brainstorm`      | Besoin métier → SPEC challengée                           |
 | `@ailed-ux`              | SPEC → 3 wireframes + maquette finale                     |
 | `@ailed-pm`              | SPEC → EPICs + roadmap                                    |
-| `@ailed-architect`       | Impacts techniques + ADR                                  |
+| `@ailed-architect`       | Impacts techniques + ADR · DDD & cibles déployables       |
 | `@ailed-planner`         | EPICs → tickets atomiques `<TRIGRAMME>-*`                 |
 | `@ailed-dev`             | Implémente un ticket (branche + MR, ne fusionne jamais)   |
 | `@ailed-review`          | Revue de MR → `PASS` / `CHANGES REQUESTED`                |
