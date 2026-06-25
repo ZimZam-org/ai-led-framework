@@ -12,6 +12,23 @@ Décrit les workflows pilotés par agents. Chaque étape consomme les artefacts 
 
 ---
 
+## Rotation de la mémoire (fichiers append-only)
+
+`incidents.md`, `decisions.md` et `market-watch.md` grossissent sans limite : chaque lecture
+par un agent devient plus coûteuse. Pour garder les lectures légères, ils sont **scindés en
+actif + archive** :
+
+- Ne garder **inline** que les entrées actives : incidents non clôturés ou < 90 j, ADR encore
+  en vigueur, observations de veille < 6 mois et non écartées.
+- Déplacer le reste vers `memory/archive/<fichier>.md` (même nom, créé à la demande), et
+  laisser en tête du fichier actif une ligne `> Archives : memory/archive/<fichier>.md`.
+- Les agents lisent **uniquement le fichier actif** ; l'archive n'est ouverte que pour une
+  investigation historique explicite.
+- L'archivage se fait **au fil de l'eau** par l'agent mainteneur, au moment où il édite le
+  fichier (rien n'est jamais supprimé, seulement déplacé).
+
+---
+
 ## Workflow Discovery
 
 `(Scout · SEO/ASO · Monétisation) → Fact-Check → Analyst → [validation humaine] → Brainstorm (entrée du workflow Feature)`
