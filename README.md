@@ -125,6 +125,40 @@ may stay partially empty and be filled later by hand or via `@ailed-init-memory`
 -f, --force         Overwrite existing files
 ```
 
+## Updating an existing project
+
+When a project already uses an **older version** of the framework, bump it to the latest with:
+
+```bash
+npx @s2bp/ai-led-framework@latest update
+```
+
+`update` is the safe counterpart of `init` for projects already on board:
+
+| Target                                          | `update` behaviour                          |
+| ----------------------------------------------- | ------------------------------------------- |
+| `.claude/agents/`, `.claude/skills/`, `.claude/commands/` | **always rewritten** to the new version     |
+| `memory/*.md` (your project data)               | **preserved**; only **new** files are added |
+| `CLAUDE.md`                                      | **left untouched**                          |
+
+The config (trigram, integrations, language) is **re-read from `memory/config.md`**, so the
+`{{TICKET_PREFIX}}`, `{{MONITORING}}`, … placeholders are re-applied correctly — you don't pass the
+`init` flags again. Your own non-`ailed-` agents/skills/commands are left alone.
+
+> **Why `@latest`?** `npx` reuses a cached copy of the package; the `@latest` tag forces a fetch of
+> the newest published version instead of re-running the one already cached.
+>
+> **Caveat:** an agent or skill that was **removed or renamed** in a newer version is *not*
+> auto-deleted (it would risk deleting your own files). If you want a pristine framework tree, remove
+> only the framework folders first, then re-run update:
+>
+> ```bash
+> rm -rf .claude/agents .claude/skills .claude/commands
+> npx @s2bp/ai-led-framework@latest update
+> ```
+>
+> `memory/` and `CLAUDE.md` stay safe — they live outside the deleted folders.
+
 ## The agents (prefix `@ailed-`)
 
 | Agent                    | Role                                                       |
