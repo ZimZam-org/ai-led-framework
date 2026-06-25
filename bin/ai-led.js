@@ -77,6 +77,8 @@ async function resolveConfig() {
     promo: flag("promo") || disabled,
     watch: flag("watch") || disabled,
     seo_aso: flag("seo-aso") || disabled,
+    ticketing: flag("ticketing") || disabled,
+    documentation: flag("docs") || disabled,
     // optional path to an existing conventions file to import verbatim ("" = none)
     conventions: flag("conventions") || "",
   };
@@ -91,6 +93,8 @@ async function resolveConfig() {
     !flag("promo") &&
     !flag("watch") &&
     !flag("seo-aso") &&
+    !flag("ticketing") &&
+    !flag("docs") &&
     !flag("conventions");
 
   if (interactive) {
@@ -105,6 +109,8 @@ async function resolveConfig() {
     cfg.promo = await ask(rl, "Outil de génération promo :", disabled);
     cfg.watch = await ask(rl, "Canal de veille concurrentielle (MCP web / liste d'URLs) :", disabled);
     cfg.seo_aso = await ask(rl, "Outil SEO / ASO (Search Console, Ahrefs, App Store Connect…) :", disabled);
+    cfg.ticketing = await ask(rl, "Ticketing externe (ex. Jira, via MCP) :", disabled);
+    cfg.documentation = await ask(rl, "Documentation externe (ex. Confluence, via MCP) :", disabled);
     cfg.conventions = await ask(rl, "Fichier de conventions / organisation technique à importer (facultatif, Entrée = ignorer) :", "");
     rl.close();
   }
@@ -124,6 +130,8 @@ function substitute(content, cfg) {
     .replace(/{{PROMO}}/g, cfg.promo)
     .replace(/{{WATCH}}/g, cfg.watch)
     .replace(/{{SEO_ASO}}/g, cfg.seo_aso)
+    .replace(/{{TICKETING}}/g, cfg.ticketing)
+    .replace(/{{DOCUMENTATION}}/g, cfg.documentation)
     .replace(/{{DISABLED}}/g, cfg.disabled)
     .replace(/{{DATE}}/g, now);
 }
@@ -184,7 +192,7 @@ async function init() {
 
   const cfg = await resolveConfig();
   console.log(
-    `\n${c.dim("Config")} : langue=${c.bold(cfg.lang)} · trigramme=${c.bold(cfg.trigram)} · monitoring=${cfg.monitoring} · e2e=${cfg.e2e} · promo=${cfg.promo} · veille=${cfg.watch} · seo/aso=${cfg.seo_aso} · conventions=${cfg.conventions || cfg.disabled}\n`
+    `\n${c.dim("Config")} : langue=${c.bold(cfg.lang)} · trigramme=${c.bold(cfg.trigram)} · monitoring=${cfg.monitoring} · e2e=${cfg.e2e} · promo=${cfg.promo} · veille=${cfg.watch} · seo/aso=${cfg.seo_aso} · ticketing=${cfg.ticketing} · doc=${cfg.documentation} · conventions=${cfg.conventions || cfg.disabled}\n`
   );
 
   // 1. Agents  ->  .claude/agents/
@@ -480,6 +488,8 @@ ${c.bold("Options de init")}
   --promo=NOM         Outil de génération promo (ex. Remotion) ou désactivé (défaut)
   --watch=NOM         Canal de veille concurrentielle (MCP web / URLs) ou désactivé (défaut)
   --seo-aso=NOM       Outil SEO / ASO (Search Console, Ahrefs, App Store Connect) ou désactivé (défaut)
+  --ticketing=NOM     Ticketing externe (ex. Jira, via MCP) ou désactivé (défaut)
+  --docs=NOM          Documentation externe (ex. Confluence, via MCP) ou désactivé (défaut)
   --conventions=CHEMIN  Importe un fichier de conventions/organisation technique dans memory/conventions.md (facultatif)
   -y, --yes           Mode non interactif (valeurs par défaut / flags fournis)
   -f, --force         Écrase les fichiers existants (par défaut : ignorés)

@@ -39,3 +39,10 @@ roadmap.
 
 ## Artefacts mis à jour
 `memory/project-state.md`, `memory/roadmap.md`, `memory/kanban.md`.
+
+## Sync ticketing externe (si `Ticketing externe` ≠ `aucun` dans `memory/config.md`)
+Si un outil est configuré (ex. **Jira**) et son MCP connecté : après mise à jour des EPICs,
+**créer/mettre à jour les EPICs correspondants** dans l'outil via le MCP, **dans le projet défini
+par les *Coordonnées des outils* de `memory/config.md`** (défaut = trigramme `{{TICKET_PREFIX}}`).
+Les tickets atomiques restent du ressort de `@ailed-planner`.
+Si le MCP est absent : signaler le pré-requis manquant et rester en mode fichier-local.
