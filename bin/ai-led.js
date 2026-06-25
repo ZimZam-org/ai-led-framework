@@ -140,16 +140,18 @@ let created = 0;
 let skipped = 0;
 
 // ── recursive copy with placeholder substitution (.md only) ───
-function copyTree(src, dest, cfg) {
+// forceOverwrite defaults to the global --force flag; callers (e.g. update)
+// can override it per call to overwrite framework files while preserving data.
+function copyTree(src, dest, cfg, forceOverwrite = force) {
   const stat = fs.statSync(src);
   if (stat.isDirectory()) {
     fs.mkdirSync(dest, { recursive: true });
     for (const entry of fs.readdirSync(src)) {
-      copyTree(path.join(src, entry), path.join(dest, entry), cfg);
+      copyTree(path.join(src, entry), path.join(dest, entry), cfg, forceOverwrite);
     }
     return;
   }
-  if (fs.existsSync(dest) && !force) {
+  if (fs.existsSync(dest) && !forceOverwrite) {
     skipped++;
     console.log(`  ${c.yellow("skip")} ${path.relative(cwd, dest)} ${c.dim("(exists)")}`);
     return;
@@ -237,6 +239,119 @@ async function init() {
   console.log(`  2. Vérifie/ajuste ${c.cyan("memory/config.md")} (trigramme, intégrations).`);
   console.log(`  3. Projet existant : lance ${c.cyan("@ailed-init-memory")} pour reconstruire la mémoire.`);
   console.log(`  4. Nouvelle feature : ${c.cyan("@ailed-brainstorm")} puis suis le workflow de memory/process.md.\n`);
+}
+
+// ── re-read the installed config from memory/config.md ────────
+// Lets `update` re-apply the right placeholders without re-asking the user.
+// Returns null if config.md is absent (project not initialized yet).
+function parseInstalledConfig(memDir) {
+  const p = path.join(memDir, "config.md");
+  if (!fs.existsSync(p)) return null;
+  const txt = fs.readFileSync(p, "utf8");
+
+  // language inferred from the title (set at install time, per language)
+  const lang = /#\s*AI-Led Configuration/.test(txt) ? "en" : LANG_DEFAULT;
+  const disabled = DISABLED_WORD[lang] || "none";
+  const unbacktick = (s) => (s || "").replace(/`/g, "").trim();
+
+  // trigram from the Identity section line (fr "Trigramme…" / en "…trigram…")
+  const trig = txt.match(/trigram[^\n]*?`([^`]+)`/i);
+  const trigram = ((trig ? trig[1] : deriveTrigram()).replace(/[^A-Za-z0-9]/g, "").slice(0, 5) || "PRJ").toUpperCase();
+
+  const cfg = {
+    lang,
+    disabled,
+    trigram,
+    monitoring: disabled,
+    e2e: disabled,
+    promo: disabled,
+    watch: disabled,
+    seo_aso: disabled,
+    ticketing: disabled,
+    documentation: disabled,
+    conventions: "",
+  };
+
+  // integration values read from the Integrations table (label → key)
+  const labels = [
+    ["monitoring", /monitoring/i],
+    ["e2e", /end-to-end/i],
+    ["promo", /promo/i],
+    ["watch", /veille|market watch/i],
+    ["seo_aso", /seo/i],
+    ["ticketing", /ticketing/i],
+    ["documentation", /documentation/i],
+  ];
+  const seen = new Set();
+  for (const line of txt.split("\n")) {
+    if (!line.trim().startsWith("|")) continue;
+    const cells = line.split("|").map((s) => s.trim());
+    if (cells.length < 3) continue;
+    const label = cells[1];
+    const value = unbacktick(cells[2]);
+    // skip header/separator rows and the unrelated coordinates table
+    if (!value || /^(outil|tool|---)$/i.test(value)) continue;
+    for (const [key, re] of labels) {
+      if (!seen.has(key) && re.test(label)) {
+        cfg[key] = value;
+        seen.add(key);
+        break;
+      }
+    }
+  }
+  return cfg;
+}
+
+// ── update: refresh framework files, preserve project data ────
+// Overwrites .claude/{agents,skills,commands} (framework-owned) and adds any
+// NEW memory/ files, while leaving existing memory/*.md and CLAUDE.md untouched.
+async function update() {
+  console.log(`\n${c.bold("AI-Led")} ${c.dim("v" + pkg.version)} — mise à jour dans ${c.cyan(cwd)}`);
+
+  const memDir = path.join(cwd, "memory");
+  const cfg = parseInstalledConfig(memDir);
+  if (!cfg) {
+    console.error(`\n${c.yellow("memory/config.md introuvable")} dans ${cwd}.`);
+    console.error(`Ce projet n'a pas encore le framework. Lance d'abord : ${c.cyan("npx @s2bp/ai-led-framework init")}\n`);
+    process.exit(1);
+  }
+
+  console.log(
+    `\n${c.dim("Config relue depuis memory/config.md")} : langue=${c.bold(cfg.lang)} · trigramme=${c.bold(cfg.trigram)} · monitoring=${cfg.monitoring} · e2e=${cfg.e2e} · promo=${cfg.promo} · veille=${cfg.watch} · seo/aso=${cfg.seo_aso} · ticketing=${cfg.ticketing} · doc=${cfg.documentation}\n`
+  );
+
+  // 1. Agents — always overwritten (framework-owned)
+  console.log(c.bold("Agents") + c.dim("  → .claude/agents/ (réécrits)"));
+  copyTree(path.join(TPL, "claude", "agents"), path.join(cwd, ".claude", "agents"), cfg, true);
+
+  // 2. Skills — always overwritten
+  console.log("\n" + c.bold("Skills") + c.dim("  → .claude/skills/ (réécrits)"));
+  const skillsSrc = path.join(TPL, "claude", "skills");
+  for (const file of fs.readdirSync(skillsSrc)) {
+    if (!file.endsWith(".md")) continue;
+    const name = path.basename(file, ".md");
+    copyTree(path.join(skillsSrc, file), path.join(cwd, ".claude", "skills", name, "SKILL.md"), cfg, true);
+  }
+
+  // 3. Commands — always overwritten
+  console.log("\n" + c.bold("Commands") + c.dim("  → .claude/commands/ (réécrits)"));
+  copyTree(path.join(TPL, "claude", "commands"), path.join(cwd, ".claude", "commands"), cfg, true);
+
+  // 4. Memory — only NEW files added; existing project data preserved
+  console.log("\n" + c.bold("Mémoire") + c.dim(`  → memory/ (nouveaux fichiers seulement · langue: ${cfg.lang})`));
+  copyTree(path.join(TPL, "memory", cfg.lang), path.join(cwd, "memory"), cfg, false);
+
+  // CLAUDE.md is left untouched on purpose (user-owned).
+
+  console.log(
+    `\n${c.green("✓")} Mise à jour terminée : ${c.bold(created)} fichier(s) écrit(s), ${skipped} préservé(s).`
+  );
+  console.log(
+    c.dim(`  Framework réécrit en v${pkg.version} ; memory/*.md existants et CLAUDE.md préservés.`)
+  );
+  console.log(
+    c.dim(`  Note : un agent/skill supprimé ou renommé dans une version plus récente n'est pas auto-nettoyé.\n`)
+  );
 }
 
 const CLAUDE_MD_STUB = `# Projet piloté par AI-Led
@@ -476,6 +591,7 @@ ${c.bold("Usage")}
 
 ${c.bold("Commands")}
   init            Installe agents, skills et mémoire dans le projet courant
+  update          Met à jour le framework (agents/skills/commands) en préservant memory/ et CLAUDE.md
   status          Affiche l'état du projet (terminal) ; --html pour un tableau de bord navigateur
   help            Affiche cette aide
   version         Affiche la version
@@ -494,6 +610,12 @@ ${c.bold("Options de init")}
   -y, --yes           Mode non interactif (valeurs par défaut / flags fournis)
   -f, --force         Écrase les fichiers existants (par défaut : ignorés)
 
+${c.bold("update")}
+  Réécrit .claude/agents, .claude/skills et .claude/commands en dernière version,
+  ajoute les nouveaux fichiers memory/, et préserve memory/*.md et CLAUDE.md existants.
+  La config (trigramme, intégrations, langue) est relue depuis memory/config.md.
+  ${c.dim("Astuce : npx @s2bp/ai-led-framework@latest update  pour contourner le cache npx.")}
+
 ${c.bold("Options de status")}
   --html              Génère un tableau de bord HTML statique (ailed-status.html), sans serveur
   --out=CHEMIN        Chemin du fichier HTML généré (défaut : ailed-status.html)
@@ -506,6 +628,9 @@ ${c.dim("Sans flag et en terminal interactif, init pose les questions de configu
   switch (command) {
     case "init":
       await init();
+      break;
+    case "update":
+      await update();
       break;
     case "status":
       status();
