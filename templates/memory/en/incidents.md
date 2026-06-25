@@ -4,6 +4,9 @@ Last Updated: {{DATE}}
 
 Maintained by `@ailed-check-log` (via {{MONITORING}} MCP, Coralogix, ...) and `@ailed-rca`
 
+> Rotation: keep active incidents here (open or < 90 days); archive the rest in
+> `memory/archive/incidents.md` (see `memory/process.md` § Memory rotation).
+
 ## Incident registry
 
 NONE

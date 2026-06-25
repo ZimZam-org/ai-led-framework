@@ -241,20 +241,13 @@ agents préfixés \`ailed-*\` (\`.claude/agents/\`) et skills (\`.claude/skills/
 - Aucun développement sans ticket ; aucun ticket sans SPEC validée par un humain.
 - La mémoire \`memory/\` est la source de vérité : elle est lue avant et mise à jour après chaque tâche.
 - \`memory/config.md\` fixe le trigramme de ticket (\`{{TICKET_PREFIX}}-*\`) et les intégrations outillage.
-- \`memory/conventions.md\` (facultatif) décrit les conventions et l'organisation technique en place, lues par \`@ailed-architect\`, \`@ailed-dev\` et \`@ailed-ux\`.
-- Les workflows (Feature / Incident / Security) sont décrits dans \`memory/process.md\`.
+- \`memory/conventions.md\` (facultatif) décrit les conventions et l'organisation technique en place.
 
-## Agents (préfixe \`@ailed-\`)
+## Démarrage
 
-Discovery : \`(@ailed-scout · @ailed-seo-aso · @ailed-monetization) → @ailed-fact-check → @ailed-analyst\` → (validation humaine) → \`@ailed-brainstorm\`
-
-Feature : \`@ailed-brainstorm → @ailed-ux → @ailed-pm → @ailed-architect → @ailed-planner → @ailed-dev → @ailed-review → @ailed-test → @ailed-communication → @ailed-release\`
-
-Incident : \`@ailed-check-log → @ailed-rca → @ailed-dev → ...\`
-
-Security : \`@ailed-check-secu → @ailed-security-review → @ailed-dev → ...\`
-
-Bootstrap : \`@ailed-init-memory\`, \`@ailed-knowledge-audit\`.
+Lance \`/ailed-bootstrap\`. Les agents disponibles (préfixe \`@ailed-\`, avec leurs entrées/sorties)
+sont dans \`.claude/agents/\` ; les workflows (Discovery / Feature / Incident / Security) et leurs
+points de validation humaine sont décrits dans \`memory/process.md\`.
 `;
 
 // ── status: aggregate memory into a snapshot (terminal or static HTML) ──

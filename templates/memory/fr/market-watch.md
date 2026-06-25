@@ -18,8 +18,11 @@ Règles : toute observation est **sourcée et datée** ; la veille **n'écrit ja
 
 Ajout par `@ailed-scout`, `@ailed-seo-aso`, `@ailed-monetization` ; vérifié par `@ailed-fact-check`.
 Confiance : `haute` / `moyenne` / `basse`. Catégories : `feature`, `pricing`, `tendance`, `ux`,
-`seo`, `aso`, `monetization`… Observations rejetées ~~barrées~~ avec leur raison (jamais
-supprimées). Décote au-delà de 6 mois (plus rapide pour `seo`/`aso`/`monetization`, volatils).
+`seo`, `aso`, `monetization`… Décote au-delà de 6 mois (plus rapide pour
+`seo`/`aso`/`monetization`, volatils).
+Rotation : les observations rejetées (avec leur raison) ou décotées (> 6 mois) sont **déplacées**
+vers `memory/archive/market-watch.md` — jamais supprimées (cf. `memory/process.md` § Rotation
+de la mémoire). On garde ici une table active courte.
 
 | Date | Source (URL) | Confiance | Observation | Catégorie |
 | ---- | ------------ | --------- | ----------- | --------- |

@@ -57,4 +57,5 @@ Impact :
   breaking changes) sont évalués explicitement.
 
 ## Artefacts mis à jour
-`memory/architecture.md`, `memory/decisions.md`.
+`memory/architecture.md`, `memory/decisions.md` (garder les ADR en vigueur ; déplacer les ADR
+remplacés/obsolètes dans `memory/archive/decisions.md` — cf. `process.md` § Rotation de la mémoire).
