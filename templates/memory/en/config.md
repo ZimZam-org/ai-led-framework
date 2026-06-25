@@ -27,8 +27,10 @@ and `@ailed-ux`** before acting. The file may stay partially empty.
 | Promo generation      | `{{PROMO}}`      | `/ailed-promo`, `@ailed-communication` |
 | Market watch          | `{{WATCH}}`      | `@ailed-scout`, `@ailed-fact-check`, `@ailed-analyst`, `@ailed-monetization` |
 | SEO / ASO             | `{{SEO_ASO}}`    | `@ailed-seo-aso` |
+| External ticketing    | `{{TICKETING}}`  | `@ailed-pm`, `@ailed-planner`, `@ailed-dev`, `@ailed-check-log`, `@ailed-rca`, `@ailed-check-secu` |
+| External documentation | `{{DOCUMENTATION}}` | `@ailed-communication` |
 
-> Possible values: a tool name (e.g. `Sentry`, `Playwright`, `Remotion`) or `{{DISABLED}}`.
+> Possible values: a tool name (e.g. `Sentry`, `Playwright`, `Remotion`, `Jira`, `Confluence`) or `{{DISABLED}}`.
 > When an integration is set to `{{DISABLED}}`, the matching agent **flags the missing
 > prerequisite and stops cleanly** instead of assuming a tool. To enable an integration
 > later, replace `{{DISABLED}}` with the tool name here and configure the associated MCP/pipeline.
@@ -36,3 +38,48 @@ and `@ailed-ux`** before acting. The file may stay partially empty.
 > Watch specifics: `@ailed-monetization` relies on the **Watch** channel (no dedicated
 > integration). `@ailed-seo-aso` **degrades** to **Watch** at low confidence when **SEO / ASO**
 > is `{{DISABLED}}`, and only stops if **Watch** is disabled too.
+
+### External ticketing & documentation (Jira / Confluence via MCP)
+
+**Mirror** principle: `memory/` stays the **local source of truth** (offline, git-versioned, read
+by `ai-led status`). When **External ticketing** (e.g. `Jira`) or **External documentation** (e.g.
+`Confluence`) is enabled, agents **additionally sync** to the tool via its MCP — they never replace
+`memory/`.
+
+- **Prerequisite**: the matching MCP (e.g. the Atlassian MCP, which covers both Jira **and**
+  Confluence) must be connected in the project's Claude Code. Otherwise the agent flags the missing
+  prerequisite and stays in local-file mode.
+- **ID convention**: when **External ticketing** is active, the **ticket ID is the tool's key**
+  (e.g. `{{TICKET_PREFIX}}-123`), with the trigram `{{TICKET_PREFIX}}` used as the **project key**.
+  The zero-padded `{{TICKET_PREFIX}}-000001` format is only the local-file convention (Ticketing =
+  `{{DISABLED}}`).
+- **Sync direction (Jira)**: a ticket created by `@ailed-planner` is pushed to Jira (*feature*
+  type); a ticket that **already exists** in Jira is pulled by `@ailed-dev` and mirrored into
+  `memory/kanban.md`. **Incidents** (`@ailed-check-log`) and **CRITICAL/HIGH vulnerabilities**
+  (`@ailed-check-secu`) create *bug*-type issues; `@ailed-rca` enriches the linked bug with its
+  analysis (cause, impact, reproduction, fix, prevention).
+- **Confluence mirror**: `@ailed-communication` maintains, under a **container sub-page
+  `AI LED FRAMEWORK`** created beneath the **root page** (the URL set below), **one page per
+  `memory/*.md` file** (page title = file title). `memory/` stays the source of truth; these pages
+  are its readable/shareable mirror.
+
+**Tool coordinates** (read by agents before any creation):
+
+| Tool       | Field                                        | Value              |
+| ---------- | -------------------------------------------- | ------------------ |
+| Atlassian  | Site (cloud), if several are connected       | `to set`           |
+| Jira       | Project key (where tickets are created)      | `{{TICKET_PREFIX}}` |
+| Jira       | Issue type — feature (`@ailed-planner`)      | `Task`             |
+| Jira       | Issue type — bug (incident / security)       | `Bug`              |
+| Confluence | Root page (URL of the parent page)           | `to set`           |
+| Confluence | Container sub-page (created if absent)        | `AI LED FRAMEWORK` |
+
+> Example **root page**: `https://skeepers.atlassian.net/wiki/spaces/RDP/pages/2883387645/Feedback+Management`.
+> The MCP derives the space and parent page from it; the `AI LED FRAMEWORK` sub-page is created if
+> absent, then populated with one page per `memory/*.md` file.
+>
+> The **Jira project key** defaults to the trigram — fix it if your Jira project uses another key.
+> The **Atlassian site** is usually resolved by the MCP; set it if several sites are connected.
+> While the **root page** is `to set`, `@ailed-communication` **asks the human for the URL (or
+> lists spaces via the MCP), then writes the value back here** — creation never happens against a
+> guessed target.
