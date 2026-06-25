@@ -25,7 +25,9 @@ Outil de monitoring défini dans `memory/config.md` : **{{MONITORING}}** (via MC
 - Toute erreur récurrente ou dégradation donne lieu à une entrée tracée.
 
 ## Artefacts mis à jour
-`memory/incidents.md`, `memory/project-state.md`, `memory/kanban.md`.
+`memory/incidents.md` (table active ; archiver les incidents clôturés > 90 j dans
+`memory/archive/incidents.md` — cf. `process.md` § Rotation de la mémoire),
+`memory/project-state.md`, `memory/kanban.md`.
 
 > Pré-requis : un environnement déployé et **{{MONITORING}}** configuré. Si la valeur
 > vaut `{{DISABLED}}` dans `memory/config.md`, signale le pré-requis manquant et arrête-toi

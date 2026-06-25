@@ -18,8 +18,11 @@ Rules: every observation is **sourced and dated**; the watch **never writes** to
 
 Added by `@ailed-scout`, `@ailed-seo-aso`, `@ailed-monetization`; verified by `@ailed-fact-check`.
 Confidence: `high` / `medium` / `low`. Categories: `feature`, `pricing`, `trend`, `ux`,
-`seo`, `aso`, `monetization`… Rejected observations are ~~struck through~~ with their reason
-(never deleted). Decay beyond 6 months (faster for `seo`/`aso`/`monetization`, volatile).
+`seo`, `aso`, `monetization`… Decay beyond 6 months (faster for `seo`/`aso`/`monetization`,
+volatile).
+Rotation: rejected observations (with their reason) or decayed ones (> 6 months) are **moved**
+to `memory/archive/market-watch.md` — never deleted (see `memory/process.md` § Memory rotation).
+Keep a short active table here.
 
 | Date | Source (URL) | Confidence | Observation | Category |
 | ---- | ------------ | ---------- | ----------- | -------- |

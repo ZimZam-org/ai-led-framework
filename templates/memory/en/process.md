@@ -12,6 +12,22 @@ Describes the agent-driven workflows. Each step consumes the artefacts of the pr
 
 ---
 
+## Memory rotation (append-only files)
+
+`incidents.md`, `decisions.md` and `market-watch.md` grow unbounded: every agent read gets
+more expensive over time. To keep reads light, they are **split into active + archive**:
+
+- Keep **inline** only the active entries: open or < 90-day incidents, ADRs still in force,
+  market-watch observations < 6 months old and not dropped.
+- Move the rest to `memory/archive/<file>.md` (same name, created on demand), and leave a
+  `> Archives: memory/archive/<file>.md` line at the top of the active file.
+- Agents read **only the active file**; the archive is opened solely for explicit historical
+  investigation.
+- Archiving happens **incrementally** by the maintaining agent, when it edits the file
+  (nothing is ever deleted, only moved).
+
+---
+
 ## Discovery workflow
 
 `(Scout · SEO/ASO · Monetization) → Fact-Check → Analyst → [human validation] → Brainstorm (entry to Feature workflow)`
