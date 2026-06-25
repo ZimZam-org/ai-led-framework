@@ -126,6 +126,41 @@ fichier peut rester partiellement vide et être complété plus tard à la main 
 -f, --force         Écrase les fichiers existants
 ```
 
+## Mettre à jour un projet existant
+
+Quand un projet utilise déjà une **version antérieure** du framework, passe-le à la dernière avec :
+
+```bash
+npx @s2bp/ai-led-framework@latest update
+```
+
+`update` est le pendant sûr d'`init` pour les projets déjà embarqués :
+
+| Cible                                                       | Comportement d'`update`                             |
+| ---------------------------------------------------------- | -------------------------------------------------- |
+| `.claude/agents/`, `.claude/skills/`, `.claude/commands/`  | **toujours réécrits** dans la nouvelle version      |
+| `memory/*.md` (tes données projet)                         | **préservés** ; seuls les **nouveaux** fichiers sont ajoutés |
+| `CLAUDE.md`                                                 | **laissé intact**                                  |
+
+La config (trigramme, intégrations, langue) est **relue depuis `memory/config.md`** : les
+placeholders `{{TICKET_PREFIX}}`, `{{MONITORING}}`, … sont donc réappliqués correctement — pas
+besoin de repasser les flags d'`init`. Tes propres agents/skills/commands non `ailed-` ne sont pas
+touchés.
+
+> **Pourquoi `@latest` ?** `npx` réutilise une copie en cache du package ; le tag `@latest` force la
+> récupération de la dernière version publiée au lieu de relancer celle déjà en cache.
+>
+> **Limite :** un agent ou skill **supprimé ou renommé** dans une version plus récente n'est *pas*
+> auto-supprimé (au risque sinon d'effacer tes propres fichiers). Pour repartir d'un arbre framework
+> propre, supprime d'abord uniquement les dossiers du framework, puis relance update :
+>
+> ```bash
+> rm -rf .claude/agents .claude/skills .claude/commands
+> npx @s2bp/ai-led-framework@latest update
+> ```
+>
+> `memory/` et `CLAUDE.md` restent à l'abri — ils sont hors des dossiers supprimés.
+
 ## Les agents (préfixe `@ailed-`)
 
 | Agent                    | Rôle                                                      |
