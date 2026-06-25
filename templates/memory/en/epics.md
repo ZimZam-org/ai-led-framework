@@ -6,5 +6,7 @@ Artefact produced/maintained by `@ailed-pm`. EPICs group functional batches; the
 
 ## Overview
 
-| EPIC | Title | Goal | SPEC features | Priority | Status |
-| ---- | ----- | ---- | ------------- | -------- | ------ |
+| EPIC | Title | Goal | SPEC features | Target solutions | Priority | Status |
+| ---- | ----- | ---- | ------------- | ---------------- | -------- | ------ |
+
+> **Target solutions** column: `short ID` of the impacted targets (registry `memory/architecture.md`).

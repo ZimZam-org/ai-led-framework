@@ -16,6 +16,11 @@ Tu travailles désormais selon le framework **AI-Led** installé dans ce projet.
    reconstruire la mémoire à partir du code, de la doc et de l'historique Git, en
    indiquant un niveau de confiance par section.
 5. Si le projet est vide : démarre par `@ailed-brainstorm` pour cadrer la première SPEC.
+5b. Toujours sur projet vide, **après la première SPEC** et si `memory/conventions.md`
+   n'impose aucun cadre (sections en `TODO`) : lance `@ailed-architect` pour un **découpage
+   DDD initial en domaines métier** (confiance basse, validation humaine) et le registre
+   `## Solutions / cibles déployables` de `memory/architecture.md`. À ne pas faire sur un
+   projet réellement vide : le découpage s'appuie sur le langage métier de la SPEC.
 6. Termine par `@ailed-knowledge-audit` pour mesurer la complétude de la mémoire et
    créer les tickets `TO_CHECK` manquants.
 

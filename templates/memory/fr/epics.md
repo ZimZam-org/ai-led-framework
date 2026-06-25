@@ -6,5 +6,7 @@ Artefact produit/maintenu par `@ailed-pm`. Les EPICs regroupent les lots fonctio
 
 ## Vue d'ensemble
 
-| EPIC | Titre | Objectif | Features SPEC | Priorité | Statut |
-| ---- | ----- | -------- | ------------- | -------- | ------ |
+| EPIC | Titre | Objectif | Features SPEC | Solutions cibles | Priorité | Statut |
+| ---- | ----- | -------- | ------------- | ---------------- | -------- | ------ |
+
+> Colonne **Solutions cibles** : `ID court` des cibles impactées (registre `memory/architecture.md`).
