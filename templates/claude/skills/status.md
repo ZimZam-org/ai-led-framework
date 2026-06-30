@@ -31,6 +31,17 @@ ne modifie aucun fichier.
    - fichiers périmés selon `Last Updated` (veille > ~1 mois, autres > ~2 mois) ;
    - intégrations désactivées ; tickets bloqués / clarifications `TO_CHECK` ouvertes.
 
+## Style de sortie
+Respecter le **Style de sortie** de `memory/config.md` (`concis` · `standard` · `détaillé`) :
+- `concis` : aller droit au but. Ouvrir directement sur l'avancement (`X/Y tickets DONE`) et
+  le compteur kanban, puis la liste « À surveiller ». Que des puces courtes, aucun préambule,
+  aucune phrase de transition, pas de reformulation des sections vides (les omettre ou « — »).
+- `standard` : la synthèse structurée décrite ci-dessus.
+- `détaillé` : ajouter le détail des tickets en cours, les prochains jalons et les risques.
+
+Quel que soit le style, **ne jamais omettre** un blocage, une validation humaine en attente ou
+un risque : la concision coupe le superflu, pas le fond.
+
 ## Règles
 - **Lecture seule** : ne jamais écrire dans `memory/`.
 - Si `memory/` est absent : indiquer de lancer `npx @s2bp/ai-led-framework init`.

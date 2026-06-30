@@ -30,7 +30,7 @@ Existing files are **never overwritten** unless you pass `--force`.
 ## Configuration (`memory/config.md`)
 
 `init` generates `memory/config.md`, the **source of truth for tooling** that agents read
-before acting. Two things are configured there:
+before acting. It configures the language, trigram, output style and integrations:
 
 ### Language of the `memory/` files
 
@@ -53,6 +53,24 @@ The dev ticket prefix (e.g. `ZZM-000001`) is a **trigram derived from the projec
 ```bash
 npx @s2bp/ai-led-framework init --trigram=ZZM
 ```
+
+### Output style
+
+The **verbosity level** of agents and reports — `concise` · `standard` (default) · `detailed`.
+This setting drives *presentation only* (the Claude Code display, `/ailed-status` syntheses, text
+pushed to Jira/Confluence); `memory/` always stays **complete and git-versioned** whatever you pick.
+
+```bash
+npx @s2bp/ai-led-framework init --style=concise
+```
+
+- `concise` — "get to the point" mode: no preamble or restating, short bullets, tables over prose,
+  and on Jira a title + acceptance criteria as bullets. It **never** hides a risk, decision or
+  blocker — cut the fluff, not the substance.
+- `standard` — clear, structured summary (default).
+- `detailed` — full explanations: reasoning, discarded alternatives, extended context.
+
+Editable any time in `memory/config.md`, or forced for a single run: `ai-led status --style=detailed`.
 
 ### Integrations (optional)
 
@@ -120,6 +138,7 @@ may stay partially empty and be filled later by hand or via `@ailed-init-memory`
 --seo-aso=NAME      SEO / ASO tool (Search Console, Ahrefs, App Store Connect), or disabled (default)
 --ticketing=NAME    External ticketing (e.g. Jira, via MCP), or disabled (default)
 --docs=NAME         External documentation (e.g. Confluence, via MCP), or disabled (default)
+--style=LEVEL       Agent/report output style: concise | standard | detailed (default: standard)
 --conventions=PATH  Import an existing conventions / technical-organization file into memory/conventions.md (optional)
 -y, --yes           Non-interactive mode (otherwise questions are asked in the terminal)
 -f, --force         Overwrite existing files
@@ -203,17 +222,21 @@ features, market watch, process):
 - **`/ailed-status`** (in Claude Code) — an **intelligent synthesis** of `memory/` that
   highlights **what needs a decision** (pending human validations, candidate topics to
   promote, stale watch, disabled integrations).
-- **`ai-led status`** (CLI) — a **deterministic, zero-token** terminal snapshot. Add `--html`
-  to generate `ailed-status.html`, a **static** dashboard (kanban columns, tables, process
-  diagrams) you open in a browser — **no server, no data sent anywhere**:
+- **`ai-led status`** (CLI) — a **deterministic, zero-token** terminal snapshot: progress bar,
+  kanban counts and a "watch" list. Add `--html` to generate `ailed-status.html`, a **static**
+  dashboard that opens on a **visual synthesis** (progress donut, kanban board in columns, roadmap
+  timeline, "watch" panel); each `memory/` file's detail sits in **collapsed accordions** (one
+  click expands them) instead of being dumped full-page — **no server, no project data sent**:
 
 ```bash
 npx @s2bp/ai-led-framework status          # terminal snapshot
 npx @s2bp/ai-led-framework status --html   # → ailed-status.html (open in a browser)
 ```
 
-The HTML loads `marked` + `mermaid` from a CDN to render markdown and diagrams (internet
-needed at view time).
+Both honor the **Output style** from `config.md` (`concise` tightens the output, `detailed` adds
+milestones and in-progress tickets and expands the HTML accordions); `--style=…` forces it for a
+run. The HTML loads `marked` + `mermaid` from a CDN to render the accordions' markdown and diagrams
+(internet needed at view time).
 
 ## The 4 workflows (see `memory/process.md`)
 
