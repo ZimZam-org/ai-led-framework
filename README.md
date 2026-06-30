@@ -226,9 +226,11 @@ features, market watch, process):
   promote, stale watch, disabled integrations).
 - **`ai-led status`** (CLI) — a **deterministic, zero-token** terminal snapshot: progress bar,
   kanban counts and a "watch" list. Add `--html` to generate `ailed-status.html`, a **static**
-  dashboard that opens on a **visual synthesis** (progress donut, kanban board in columns, roadmap
-  timeline, "watch" panel); each `memory/` file's detail sits in **collapsed accordions** (one
-  click expands them) instead of being dumped full-page — **no server, no project data sent**:
+  dashboard that opens on a **visual synthesis**: two **pie charts** (global progress + current
+  milestone, approximate), three action counters (**bugs** to handle, open **vulnerabilities**,
+  product **arbitrations** discovery → roadmap), a **chronological EPIC timeline**, and the
+  **current EPIC's breakdown** (tasks done / in progress / upcoming); each `memory/` file's raw
+  detail stays available, **collapsed** at the bottom — **no server, no project data sent**:
 
 ```bash
 npx @s2bp/ai-led-framework status          # terminal snapshot

@@ -49,16 +49,23 @@ un risque : la concision coupe le superflu, pas le fond.
 - Signaler honnêtement les sections vides plutôt que d'inventer du contenu.
 
 ## Vue navigateur (sans serveur)
-Pour un tableau de bord **visuel** (kanban en colonnes, roadmap, diagrammes du process),
-proposer la commande déterministe :
+Pour un tableau de bord **visuel**, proposer la commande déterministe :
 
 ```bash
 npx @s2bp/ai-led-framework status --html
 ```
 
 Elle génère `ailed-status.html` (fichier statique ouvrable dans le navigateur, aucun serveur,
-aucune donnée envoyée). La variante `status` sans option imprime le même snapshot en terminal,
-sans consommer de tokens.
+aucune donnée envoyée) avec, en une page :
+- deux **camemberts** : avancement global (tickets DONE / total) et avancement **approximatif**
+  du **jalon en cours** (tickets des EPICs rattachées au jalon) ;
+- trois compteurs d'action : **bugs à traiter** (registre `incidents.md`), **vulnérabilités ouvertes**
+  (`security.md`) et **sujets en attente d'arbitrage produit** (candidats `market-watch.md`, discovery → roadmap) ;
+- une **timeline chronologique des EPICs** (traitées · en cours · à venir) ;
+- le **détail de l'EPIC en cours** : tâches terminées · en cours · à venir.
+
+Le détail brut de la mémoire reste accessible, replié, en bas de page. La variante `status` sans
+option imprime un snapshot en terminal, sans consommer de tokens.
 
 ## Exemple d'utilisation
 > « /ailed-status » → affiche l'état consolidé du projet + la liste « À surveiller ».
