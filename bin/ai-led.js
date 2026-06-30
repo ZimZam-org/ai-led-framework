@@ -194,6 +194,64 @@ function importConventions(cfg) {
   console.log(`  ${c.green("+")}    memory/conventions.md ${c.dim(`(import: ${cfg.conventions})`)}`);
 }
 
+// ── runtime hook install (feeds `ai-led watch`) ───────────────
+// Copies the hook script, wires the Task PreToolUse/PostToolUse hooks into
+// .claude/settings.json (without clobbering existing settings), and gitignores
+// the .ailed/ runtime state directory.
+function installRuntimeHook(cfg, forceOverwrite) {
+  console.log("\n" + c.bold("Hook") + c.dim("  → .claude/hooks/ (panneau de progression)"));
+  copyTree(
+    path.join(TPL, "claude", "hooks", "ailed-runtime-hook.js"),
+    path.join(cwd, ".claude", "hooks", "ailed-runtime-hook.js"),
+    cfg,
+    forceOverwrite
+  );
+  mergeHookSettings();
+  ensureGitignore();
+}
+
+function mergeHookSettings() {
+  const p = path.join(cwd, ".claude", "settings.json");
+  let s = {};
+  if (fs.existsSync(p)) {
+    try { s = JSON.parse(fs.readFileSync(p, "utf8")) || {}; }
+    catch (_) {
+      console.log(`  ${c.yellow("skip")} .claude/settings.json ${c.dim("(illisible — câble le hook à la main, voir README)")}`);
+      return;
+    }
+  }
+  s.hooks = s.hooks || {};
+  const cmd = (phase) => `node "$CLAUDE_PROJECT_DIR/.claude/hooks/ailed-runtime-hook.js" ${phase}`;
+  const ensure = (event, phase) => {
+    s.hooks[event] = Array.isArray(s.hooks[event]) ? s.hooks[event] : [];
+    const exists = s.hooks[event].some((e) =>
+      (e && Array.isArray(e.hooks) ? e.hooks : []).some((h) => h && typeof h.command === "string" && h.command.includes("ailed-runtime-hook"))
+    );
+    if (exists) return false;
+    s.hooks[event].push({ matcher: "Task", hooks: [{ type: "command", command: cmd(phase) }] });
+    return true;
+  };
+  const a = ensure("PreToolUse", "pre");
+  const b = ensure("PostToolUse", "post");
+  if (a || b) {
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, JSON.stringify(s, null, 2) + "\n");
+    console.log(`  ${c.green("+")}    .claude/settings.json ${c.dim("(hooks Task câblés)")}`);
+  } else {
+    console.log(`  ${c.yellow("skip")} .claude/settings.json ${c.dim("(hooks déjà présents)")}`);
+  }
+}
+
+function ensureGitignore() {
+  const p = path.join(cwd, ".gitignore");
+  let txt = "";
+  if (fs.existsSync(p)) txt = fs.readFileSync(p, "utf8");
+  if (txt.split("\n").some((l) => l.trim() === ".ailed/" || l.trim() === ".ailed")) return;
+  const add = (txt && !txt.endsWith("\n") ? "\n" : "") + "\n# AI-Led runtime (progress sidebar state)\n.ailed/\n";
+  fs.writeFileSync(p, txt + add);
+  console.log(`  ${c.green("+")}    .gitignore ${c.dim("(+ .ailed/)")}`);
+}
+
 async function init() {
   console.log(`\n${c.bold("AI-Led")} ${c.dim("v" + pkg.version)} — initialisation dans ${c.cyan(cwd)}`);
 
@@ -218,6 +276,9 @@ async function init() {
   // 3. Commands  ->  .claude/commands/
   console.log("\n" + c.bold("Commands") + c.dim("  → .claude/commands/"));
   copyTree(path.join(TPL, "claude", "commands"), path.join(cwd, ".claude", "commands"), cfg);
+
+  // 3b. Runtime hook (progress sidebar) -> .claude/hooks/ + settings.json + .gitignore
+  installRuntimeHook(cfg, force);
 
   // 4. Memory  ->  memory/  (from the chosen language folder)
   console.log("\n" + c.bold("Mémoire") + c.dim(`  → memory/ (langue: ${cfg.lang})`));
@@ -348,6 +409,9 @@ async function update() {
   // 3. Commands — always overwritten
   console.log("\n" + c.bold("Commands") + c.dim("  → .claude/commands/ (réécrits)"));
   copyTree(path.join(TPL, "claude", "commands"), path.join(cwd, ".claude", "commands"), cfg, true);
+
+  // 3b. Runtime hook — refreshed and (re)wired into settings.json
+  installRuntimeHook(cfg, true);
 
   // 4. Memory — only NEW files added; existing project data preserved
   console.log("\n" + c.bold("Mémoire") + c.dim(`  → memory/ (nouveaux fichiers seulement · langue: ${cfg.lang})`));
@@ -641,27 +705,9 @@ const HTML_TEMPLATE = `<!doctype html>
   .badge.style { background:var(--panel); color:var(--muted); } .badge b { color:var(--text); }
   main { max-width:1120px; margin:0 auto; padding:24px 28px 80px; }
   h2.sec { font-size:13px; text-transform:uppercase; letter-spacing:.07em; color:var(--accent); margin:28px 0 12px; }
-  .grid { display:grid; grid-template-columns:240px 1fr; gap:16px; align-items:stretch; }
-  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-  @media (max-width:760px){ .grid,.grid2{ grid-template-columns:1fr; } }
   .card { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:16px 18px; }
   .card h3 { margin:0 0 10px; font-size:13px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
-  .donutwrap { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; }
-  .donutwrap .sub { color:var(--muted); font-size:13px; }
-  .summary { font-size:15px; line-height:1.55; }
-  .summary .none { color:var(--muted); font-style:italic; }
-  .board { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; }
-  @media (max-width:760px){ .board{ grid-template-columns:1fr; } }
-  .col { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:8px; min-height:60px; }
-  .colh { font-size:12px; font-weight:600; padding:4px 6px 8px; display:flex; justify-content:space-between; border-bottom:2px solid var(--cc); margin-bottom:6px; }
-  .colh b { font-size:15px; }
-  .ticket { background:var(--panel2); border:1px solid var(--border); border-left:3px solid var(--cc); border-radius:6px; padding:6px 8px; margin-bottom:6px; font-size:13px; }
-  .ticket .tid { display:block; color:var(--muted); font-size:11px; font-family:ui-monospace,monospace; }
-  .col .empty, .tl .empty, .watch .empty { color:var(--muted); font-size:13px; font-style:italic; padding:4px 6px; }
-  .tl { list-style:none; margin:0; padding:0; }
-  .tl li { padding:6px 0 6px 4px; border-left:2px solid var(--border); padding-left:14px; position:relative; }
-  .tl li span { font-weight:500; } .tl li em { color:var(--muted); font-style:normal; font-size:12px; margin-left:8px; }
-  .tl li.done { color:var(--muted); } .tl li.done span { text-decoration:line-through; }
+  .watch .empty { color:var(--muted); font-size:13px; font-style:italic; padding:4px 6px; }
   .watch { list-style:none; margin:0; padding:0; }
   .watch li { padding:6px 0 6px 18px; position:relative; font-size:14px; }
   .watch li:before { content:"•"; color:var(--warn); position:absolute; left:2px; }
@@ -675,8 +721,53 @@ const HTML_TEMPLATE = `<!doctype html>
   details.file > summary .sf { font-family:ui-monospace,monospace; font-size:12px; color:var(--accent); }
   details.file > summary .st { margin-left:auto; color:var(--muted); font-size:12px; }
   details.file .md { padding:2px 18px 16px; border-top:1px solid var(--border); }
-  .toggle { background:var(--panel); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:8px 14px; cursor:pointer; font-size:14px; }
+  .toggle { background:var(--panel); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:8px 14px; cursor:pointer; font-size:14px; margin:8px 0 4px; }
   .toggle:hover { border-color:var(--accent); }
+  .lede { color:var(--muted); font-size:14px; margin:0 0 14px; }
+  /* KPIs : 2 camemberts + bloc de chiffres */
+  .kpis { display:grid; grid-template-columns:1fr 1fr 1.15fr; gap:16px; align-items:stretch; }
+  @media (max-width:880px){ .kpis{ grid-template-columns:1fr; } }
+  .pie-card { display:flex; gap:16px; align-items:center; }
+  .pie-card .piefig { flex:0 0 auto; }
+  .pie-card .pieinfo { min-width:0; flex:1; }
+  .pie-pct { font-size:30px; font-weight:700; line-height:1; }
+  .pie-pct .approx { font-size:12px; font-weight:500; color:var(--muted); margin-left:5px; }
+  .pie-sub { color:var(--muted); font-size:13px; margin-top:3px; }
+  .legend { list-style:none; margin:12px 0 0; padding:0; font-size:12.5px; }
+  .legend li { display:flex; align-items:center; gap:7px; padding:2px 0; color:var(--muted); }
+  .legend .ldot { width:9px; height:9px; border-radius:2px; flex:0 0 auto; }
+  .legend b { color:var(--text); margin-left:auto; font-variant-numeric:tabular-nums; }
+  .stats { display:flex; flex-direction:column; justify-content:center; gap:9px; }
+  .stat { display:flex; align-items:center; gap:13px; text-decoration:none; color:inherit; padding:9px 11px; border-radius:9px; border:1px solid var(--border); background:var(--panel2); transition:border-color .15s; }
+  .stat:hover { border-color:var(--accent); }
+  .stat .num { font-size:26px; font-weight:700; line-height:1; min-width:36px; text-align:center; font-variant-numeric:tabular-nums; }
+  .stat .lab { font-size:13.5px; } .stat .lab small { display:block; color:var(--muted); font-size:11.5px; }
+  .stat.bug .num { color:var(--danger); } .stat.vuln .num { color:var(--warn); } .stat.arb .num { color:var(--accent); }
+  .stat.zero .num { color:var(--ok); }
+  /* Timeline des EPICs */
+  .epic-timeline { list-style:none; margin:0; padding:6px 0 2px; display:flex; gap:0; overflow-x:auto; }
+  .epic-timeline li { position:relative; flex:1 1 0; min-width:128px; padding:0 8px; }
+  .epic-timeline li:not(:last-child):after { content:""; position:absolute; top:13px; left:calc(50% + 16px); right:calc(-50% + 16px); height:2px; background:var(--border); }
+  .epic-timeline li.done:not(:last-child):after { background:var(--ok); }
+  .epic-timeline .node { position:relative; z-index:1; width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:13px; margin:0 auto 9px; background:var(--panel2); border:2px solid var(--border); color:var(--muted); }
+  .epic-timeline li.done .node { background:var(--ok); border-color:var(--ok); color:#06240a; }
+  .epic-timeline li.current .node { border-color:var(--accent); color:var(--accent); box-shadow:0 0 0 4px rgba(110,168,254,.18); }
+  .epic-timeline .ep-id { font-family:ui-monospace,monospace; font-size:11px; color:var(--muted); text-align:center; display:block; }
+  .epic-timeline .ep-title { font-size:12.5px; text-align:center; display:block; line-height:1.35; }
+  .epic-timeline li.current .ep-title { color:var(--accent); font-weight:600; }
+  .epic-timeline li.todo { opacity:.65; }
+  /* EPIC en cours : tâches faites / en cours / à venir */
+  .cur-epic-h { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
+  .cur-epic-h .eid { font-family:ui-monospace,monospace; color:var(--accent); }
+  .cur-epic-h .pill { font-size:12px; color:var(--muted); background:var(--panel2); border:1px solid var(--border); border-radius:999px; padding:2px 9px; margin-left:auto; }
+  .taskcols { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  @media (max-width:680px){ .taskcols{ grid-template-columns:1fr; } }
+  .taskcol h4 { margin:0 0 8px; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); display:flex; justify-content:space-between; }
+  .taskcol.done h4 { color:var(--ok); } .taskcol.cur h4 { color:var(--accent); }
+  .taskcol ul { list-style:none; margin:0; padding:0; }
+  .taskcol li { background:var(--panel2); border:1px solid var(--border); border-left:3px solid var(--cc); border-radius:6px; padding:6px 8px; margin-bottom:6px; font-size:13px; }
+  .taskcol li .tid { display:block; color:var(--muted); font-size:11px; font-family:ui-monospace,monospace; }
+  .taskcol .empty { color:var(--muted); font-style:italic; font-size:12.5px; }
   .md table { border-collapse:collapse; width:100%; margin:12px 0; font-size:14px; display:block; overflow-x:auto; }
   .md th, .md td { border:1px solid var(--border); padding:6px 10px; text-align:left; vertical-align:top; }
   .md th { background:var(--panel2); }
@@ -694,9 +785,11 @@ const HTML_TEMPLATE = `<!doctype html>
 </header>
 <main>
   <div id="synth"></div>
-  <h2 class="sec">Détail de la mémoire</h2>
-  <div id="toc" class="toc"></div>
-  <div id="detail"></div>
+  <button id="toggleDetail" class="toggle" type="button" aria-expanded="false">▸ Détail de la mémoire (lecture des fichiers bruts)</button>
+  <div id="detailWrap" hidden>
+    <div id="toc" class="toc"></div>
+    <div id="detail"></div>
+  </div>
 </main>
 <script>
   var DATA = /*__DATA__*/;
@@ -726,23 +819,6 @@ const HTML_TEMPLATE = `<!doctype html>
     });
     return cols;
   }
-  function parseMilestones(md){
-    var out=[]; if(!md) return out; var map=null;
-    md.split('\\n').forEach(function(line){
-      if(line.trim().charAt(0)!=='|'){ map=null; return; }
-      var cs=cells(line), lo=cs.map(function(c){ return c.toLowerCase(); });
-      if(lo.some(function(c){return /jalon|milestone/.test(c);}) && lo.some(function(c){return /livraison|delivery/.test(c);})){
-        map={ name:lo.findIndex(function(c){return /jalon|milestone/.test(c);}), target:lo.findIndex(function(c){return /cible|target/.test(c);}), deliv:lo.findIndex(function(c){return /livraison|delivery/.test(c);}) };
-        return;
-      }
-      if(isSep(line)||!map) return;
-      var raw=map.name>=0?cs[map.name]:''; var name=raw.replace(/~~/g,'').trim();
-      if(!name||name==='—') return;
-      var d=map.deliv>=0?cs[map.deliv]:'';
-      out.push({ name:name, target:map.target>=0?cs[map.target]:'', delivered:(!!d && d!=='—')||/~~/.test(raw) });
-    });
-    return out;
-  }
   function parseIntegrations(md){
     var out=[]; if(!md) return out; var inSec=false;
     md.split('\\n').forEach(function(line){
@@ -766,15 +842,155 @@ const HTML_TEMPLATE = `<!doctype html>
     var s=buf.join(' ').trim();
     if(!s || /^TO IDENTIFY/i.test(s)) return ''; return s;
   }
-  function donut(pct){
-    var r=44, cir=2*Math.PI*r, off=cir*(1-pct/100);
-    return '<svg width="120" height="120" viewBox="0 0 120 120">'
-      +'<circle cx="60" cy="60" r="'+r+'" fill="none" stroke="var(--border)" stroke-width="12"/>'
-      +'<circle cx="60" cy="60" r="'+r+'" fill="none" stroke="var(--ok)" stroke-width="12" stroke-linecap="round" stroke-dasharray="'+cir+'" stroke-dashoffset="'+off+'" transform="rotate(-90 60 60)"/>'
-      +'<text x="60" y="60" text-anchor="middle" dominant-baseline="central" font-size="24" font-weight="700" fill="var(--text)">'+pct+'%</text></svg>';
+  var SCOL={TO_CHECK:'#c08be8',TODO:'#8b929e',IN_PROGRESS:'#6ea8fe',TO_TEST:'#f0c674',DONE:'#6cc070'};
+  // camembert (pie) à partir de segments [{value,color}] ; tranche DONE en tête
+  function pieSvg(segs){
+    var tot=segs.reduce(function(n,s){ return n+s.value; },0);
+    if(!tot) return '<svg width="128" height="128" viewBox="0 0 128 128"><circle cx="64" cy="64" r="56" fill="var(--panel2)" stroke="var(--border)"/><text x="64" y="68" text-anchor="middle" fill="var(--muted)" font-size="13">aucun</text></svg>';
+    var cx=64, cy=64, r=56, a=-Math.PI/2, parts='';
+    segs.forEach(function(s){
+      if(!s.value) return;
+      var frac=s.value/tot, a2=a+frac*2*Math.PI;
+      if(frac>=0.99999){ parts+='<circle cx="64" cy="64" r="'+r+'" fill="'+s.color+'"/>'; a=a2; return; }
+      var x1=cx+r*Math.cos(a), y1=cy+r*Math.sin(a), x2=cx+r*Math.cos(a2), y2=cy+r*Math.sin(a2);
+      parts+='<path d="M'+cx+' '+cy+' L'+x1.toFixed(2)+' '+y1.toFixed(2)+' A'+r+' '+r+' 0 '+(frac>0.5?1:0)+' 1 '+x2.toFixed(2)+' '+y2.toFixed(2)+' Z" fill="'+s.color+'"/>';
+      a=a2;
+    });
+    return '<svg width="128" height="128" viewBox="0 0 128 128">'+parts+'<circle cx="64" cy="64" r="56" fill="none" stroke="var(--border)"/></svg>';
+  }
+  function classifyEpic(s){
+    var v=(s||'').toUpperCase();
+    if(/DONE|TERMIN|LIVR|CLOS/.test(v)) return 'done';
+    if(/IN[_ ]?PROGRESS|EN COURS|WIP|DOING/.test(v)) return 'current';
+    return 'todo';
+  }
+  // epics.md → [{id,title,status}] dans l'ordre de déclaration
+  function parseEpics(md){
+    var out=[]; if(!md) return out; var map=null;
+    md.split('\\n').forEach(function(line){
+      if(line.trim().charAt(0)!=='|'){ map=null; return; }
+      var cs=cells(line), lo=cs.map(function(c){ return c.toLowerCase(); });
+      var ei=lo.indexOf('epic');
+      if(ei>=0 && (lo.indexOf('titre')>=0||lo.indexOf('title')>=0)){
+        map={ epic:ei, title:lo.indexOf('titre')>=0?lo.indexOf('titre'):lo.indexOf('title'), status:lo.indexOf('statut')>=0?lo.indexOf('statut'):lo.indexOf('status') };
+        return;
+      }
+      if(isSep(line)||!map) return;
+      var id=(cs[map.epic]||'').replace(/\`/g,'').trim();
+      if(!id||id==='—') return;
+      out.push({ id:id, title:(map.title>=0?cs[map.title]:'')||'', status:classifyEpic(map.status>=0?cs[map.status]:'') });
+    });
+    return out;
+  }
+  // kanban.md → [{id,title,status,epic}]
+  function parseKanbanFull(md){
+    var out=[]; if(!md) return out; var map=null;
+    md.split('\\n').forEach(function(line){
+      if(line.trim().charAt(0)!=='|'){ map=null; return; }
+      var cs=cells(line), lo=cs.map(function(c){ return c.toLowerCase(); });
+      if(lo.indexOf('status')>=0 && (lo.indexOf('titre')>=0||lo.indexOf('title')>=0)){
+        map={ status:lo.indexOf('status'), title:lo.indexOf('titre')>=0?lo.indexOf('titre'):lo.indexOf('title'), id:lo.indexOf('id'), epic:lo.indexOf('epic') };
+        return;
+      }
+      if(isSep(line)||!map) return;
+      var st=cs[map.status];
+      if(STATUSES.indexOf(st)<0) return;
+      out.push({ id:map.id>=0?cs[map.id]:'', title:map.title>=0?cs[map.title]:'', status:st, epic:map.epic>=0?(cs[map.epic]||'').replace(/\`/g,'').trim().toUpperCase():'' });
+    });
+    return out;
+  }
+  // statut effectif d'une epic : dérivé de ses tickets, sinon valeur du fichier
+  function epicEff(epic, tickets){
+    var ts=tickets.filter(function(t){ return t.epic && t.epic===epic.id.toUpperCase(); });
+    if(ts.length){
+      if(ts.some(function(t){ return t.status==='IN_PROGRESS'; })) return 'current';
+      if(ts.every(function(t){ return t.status==='DONE'; })) return 'done';
+      return 'todo';
+    }
+    return epic.status||'todo';
+  }
+  // jalons + colonne EPICs, pour estimer l'avancement du jalon en cours
+  function parseMilestonesFull(md){
+    var out=[]; if(!md) return out; var map=null;
+    md.split('\\n').forEach(function(line){
+      if(line.trim().charAt(0)!=='|'){ map=null; return; }
+      var cs=cells(line), lo=cs.map(function(c){ return c.toLowerCase(); });
+      if(lo.some(function(c){return /jalon|milestone/.test(c);}) && lo.some(function(c){return /livraison|delivery/.test(c);})){
+        map={ name:lo.findIndex(function(c){return /jalon|milestone/.test(c);}), target:lo.findIndex(function(c){return /cible|target/.test(c);}), deliv:lo.findIndex(function(c){return /livraison|delivery/.test(c);}), epics:lo.findIndex(function(c){return /epic/.test(c);}) };
+        return;
+      }
+      if(isSep(line)||!map) return;
+      var raw=map.name>=0?cs[map.name]:''; var name=raw.replace(/~~/g,'').trim();
+      if(!name||name==='—') return;
+      var d=map.deliv>=0?cs[map.deliv]:'';
+      var ec=map.epics>=0?cs[map.epics]:'';
+      out.push({ name:name, target:map.target>=0?cs[map.target]:'', delivered:(!!d && d!=='—')||/~~/.test(raw), epics:(ec.match(/EPIC-?\\d+/gi)||[]).map(function(s){ return s.toUpperCase(); }) });
+    });
+    return out;
+  }
+  function milestoneProgress(roadmapMd, epics, tickets){
+    var miles=parseMilestonesFull(roadmapMd);
+    var cur=miles.filter(function(m){ return !m.delivered; })[0] || miles[miles.length-1];
+    if(!cur) return null;
+    var done=0, total=0;
+    if(cur.epics.length){
+      var tk=tickets.filter(function(t){ return t.epic && cur.epics.indexOf(t.epic)>=0; });
+      if(tk.length){ total=tk.length; done=tk.filter(function(t){ return t.status==='DONE'; }).length; }
+      else {
+        var eps=epics.filter(function(e){ return cur.epics.indexOf(e.id.toUpperCase())>=0; });
+        total=eps.length; done=eps.filter(function(e){ return epicEff(e,tickets)==='done'; }).length;
+      }
+    }
+    return { name:cur.name, target:cur.target, done:done, total:total, pct:total?Math.round(done/total*100):0 };
+  }
+  // bugs à traiter : entrées INC- actives du registre incidents.md
+  function countIncidents(md){
+    if(!md) return 0; var inReg=false, n=0;
+    md.split('\\n').forEach(function(l){
+      if(/^##\\s/.test(l)){ inReg=/registre des incidents|incident registry/i.test(l); return; }
+      if(inReg && /^###\\s+INC-/i.test(l)) n++;
+    });
+    return n;
+  }
+  // vulnérabilités ouvertes du tableau security.md
+  function countVulns(md){
+    var res={open:0,crit:0}; if(!md) return res; var inSec=false, map=null;
+    md.split('\\n').forEach(function(l){
+      if(/^##\\s/.test(l)){ inSec=/vulnérabilit|vulnerabilit/i.test(l); map=null; return; }
+      if(!inSec) return;
+      if(l.trim().charAt(0)!=='|'){ map=null; return; }
+      var cs=cells(l), lo=cs.map(function(c){ return c.toLowerCase(); });
+      if(lo.indexOf('id')>=0 && lo.some(function(c){ return /sévérité|severit/.test(c); })){
+        map={ sev:lo.findIndex(function(c){ return /sévérité|severit/.test(c); }), stat:lo.findIndex(function(c){ return /statut|status/.test(c); }) };
+        return;
+      }
+      if(isSep(l)||!map) return;
+      var stat=(map.stat>=0?cs[map.stat]:'').toLowerCase().trim();
+      if(!stat || /corrig|résolu|resolved|fixed|clos|closed|accept|^n\\.?a|^—$/.test(stat)) return;
+      res.open++;
+      if(/CRITICAL|HIGH/.test((map.sev>=0?cs[map.sev]:'').toUpperCase())) res.crit++;
+    });
+    return res;
+  }
+  // sujets en attente d'arbitrage produit (discovery → roadmap)
+  function countCandidates(md){
+    if(!md) return 0; var inSec=false, map=null, n=0;
+    md.split('\\n').forEach(function(l){
+      if(/^##\\s/.test(l)){ inSec=/sujets candidats|candidate topics/i.test(l); map=null; return; }
+      if(!inSec) return;
+      if(l.trim().charAt(0)!=='|'){ map=null; return; }
+      var cs=cells(l), lo=cs.map(function(c){ return c.toLowerCase(); });
+      if(lo.indexOf('id')>=0 && lo.some(function(c){ return /statut|status/.test(c); })){
+        map={ stat:lo.findIndex(function(c){ return /statut|status/.test(c); }) };
+        return;
+      }
+      if(isSep(l)||!map) return;
+      if(/^candidat/.test((map.stat>=0?cs[map.stat]:'').toLowerCase().trim())) n++;
+    });
+    return n;
   }
 
-  // ── Synthèse ──────────────────────────────────────────────
+  // ── En-tête / badges ──────────────────────────────────────
   var cfg=get('config'); var integ=parseIntegrations(cfg&&cfg.content);
   var badges = integ.map(function(it){
     return it.on ? '<span class="badge on">'+esc(it.area)+' <b>'+esc(it.tool)+'</b></span>'
@@ -783,24 +999,98 @@ const HTML_TEMPLATE = `<!doctype html>
   document.getElementById('badges').innerHTML = badges;
 
   var board = parseBoard((get('kanban')||{}).content);
+  var tickets = parseKanbanFull((get('kanban')||{}).content);
+  var epics = parseEpics((get('epics')||{}).content);
   var total = STATUSES.reduce(function(n,s){ return n+board[s].length; },0);
   var done = board.DONE.length;
   var pct = total ? Math.round(done/total*100) : 0;
   var summary = stateSummary((get('project-state')||{}).content);
 
-  var boardHtml = STATUSES.map(function(s){
-    var cssVar = 'var(--s'+s+')';
-    var cards = board[s].length ? board[s].map(function(t){
-      return '<div class="ticket" style="--cc:'+cssVar+'">'+(t.id?'<span class="tid">'+esc(t.id)+'</span>':'')+esc(t.title||'(sans titre)')+'</div>';
-    }).join('') : '<div class="empty">—</div>';
-    return '<div class="col" style="--cc:'+cssVar+'"><div class="colh" style="--cc:'+cssVar+'"><span>'+LABEL[s]+'</span><b>'+board[s].length+'</b></div>'+cards+'</div>';
-  }).join('');
+  // ── Camemberts : avancement global + jalon en cours ───────
+  var globalSegs = STATUSES.slice().reverse().map(function(s){ return { value:board[s].length, color:SCOL[s], label:LABEL[s], st:s }; });
+  var globalLegend = STATUSES.slice().reverse().filter(function(s){ return board[s].length; })
+    .map(function(s){ return '<li><span class="ldot" style="background:'+SCOL[s]+'"></span>'+LABEL[s]+'<b>'+board[s].length+'</b></li>'; }).join('');
+  var globalCard =
+    '<div class="card pie-card">'
+    + '<div class="piefig">'+pieSvg(globalSegs)+'</div>'
+    + '<div class="pieinfo"><div class="pie-pct">'+pct+'%</div><div class="pie-sub">'+done+' / '+total+' tickets terminés</div>'
+    +   '<ul class="legend">'+(globalLegend||'<li class="empty">Aucun ticket</li>')+'</ul></div>'
+    + '</div>';
 
-  var miles = parseMilestones((get('roadmap')||{}).content);
-  var milesHtml = miles.length ? miles.map(function(m){
-    return '<li class="'+(m.delivered?'done':'')+'">'+(m.delivered?'✓ ':'◷ ')+'<span>'+esc(m.name)+'</span>'+(m.target&&!m.delivered?'<em>'+esc(m.target)+'</em>':'')+'</li>';
-  }).join('') : '<li class="empty">Aucun jalon défini</li>';
+  var ms = milestoneProgress((get('roadmap')||{}).content, epics, tickets);
+  var msCard;
+  if(ms){
+    var msSegs=[{ value:ms.done, color:SCOL.DONE },{ value:Math.max(0,ms.total-ms.done), color:'var(--border)' }];
+    msCard =
+      '<div class="card pie-card">'
+      + '<div class="piefig">'+pieSvg(msSegs)+'</div>'
+      + '<div class="pieinfo"><div class="pie-pct">'+ms.pct+'%<span class="approx">~ approx.</span></div>'
+      +   '<div class="pie-sub">'+esc(ms.name)+'</div>'
+      +   '<ul class="legend"><li><span class="ldot" style="background:'+SCOL.DONE+'"></span>Couvert<b>'+ms.done+'</b></li>'
+      +     '<li><span class="ldot" style="background:var(--border)"></span>Restant<b>'+Math.max(0,ms.total-ms.done)+'</b></li>'
+      +     (ms.target?'<li><span class="ldot" style="background:transparent"></span>Cible<b>'+esc(ms.target)+'</b></li>':'')+'</ul></div>'
+      + '</div>';
+  } else {
+    msCard = '<div class="card pie-card"><div class="pieinfo"><div class="pie-sub">Aucun jalon défini (roadmap.md)</div></div></div>';
+  }
 
+  // ── Chiffres d'action : bugs / vulnérabilités / arbitrages ─
+  var inc = countIncidents((get('incidents')||{}).content);
+  var vul = countVulns((get('security')||{}).content);
+  var arb = countCandidates((get('market-watch')||{}).content);
+  function statTile(cls,target,num,label,sub){
+    return '<a class="stat '+cls+(num?'':' zero')+'" href="#f-'+target+'" data-rev="f-'+target+'">'
+      + '<span class="num">'+num+'</span>'
+      + '<span class="lab">'+label+'<small>'+sub+'</small></span></a>';
+  }
+  var statsCard =
+    '<div class="card stats">'
+    + statTile('bug','incidents',inc,'Bugs à traiter','workflow incident')
+    + statTile('vuln','security',vul.open,'Vulnérabilités',(vul.crit?vul.crit+' critiques/élevées · ':'')+'workflow sécurité')
+    + statTile('arb','market-watch',arb,'Arbitrages produit','discovery → roadmap')
+    + '</div>';
+
+  // ── Timeline des EPICs ────────────────────────────────────
+  var epList = epics.length ? epics : (function(){
+    var seen=[]; tickets.forEach(function(t){ if(t.epic && !seen.find(function(e){return e.id===t.epic;})) seen.push({ id:t.epic, title:'', status:'todo' }); }); return seen;
+  })();
+  var epEff = epList.map(function(e){ var o={ id:e.id, title:e.title, eff:epicEff(e,tickets) }; return o; });
+  var timelineHtml = epEff.length ? epEff.map(function(e){
+    var g=e.eff==='done'?'✓':(e.eff==='current'?'▶':'·');
+    return '<li class="'+e.eff+'"><span class="node">'+g+'</span><span class="ep-id">'+esc(e.id)+'</span><span class="ep-title">'+esc(e.title||'')+'</span></li>';
+  }).join('') : '<li class="todo"><span class="node">·</span><span class="ep-title">Aucune EPIC définie</span></li>';
+
+  // ── EPIC en cours : tâches faites / en cours / à venir ────
+  var ci=epEff.findIndex(function(e){ return e.eff==='current'; });
+  if(ci<0) ci=epEff.findIndex(function(e){ return e.eff!=='done'; });
+  if(ci<0) ci=epEff.length-1;
+  var curEpic=epEff[ci];
+  var curEpicHtml='';
+  if(curEpic){
+    var linked=tickets.filter(function(t){ return curEpic.id && t.epic===curEpic.id.toUpperCase(); });
+    var pool=linked.length?linked:(epics.length?[]:tickets);
+    var doneT=pool.filter(function(t){ return t.status==='DONE'; });
+    var curT=pool.filter(function(t){ return t.status==='IN_PROGRESS'; });
+    var nextT=pool.filter(function(t){ return t.status!=='DONE' && t.status!=='IN_PROGRESS'; });
+    function tcol(cls,label,arr,col){
+      var items=arr.length?arr.map(function(t){
+        return '<li style="--cc:'+col+'">'+(t.id?'<span class="tid">'+esc(t.id)+'</span>':'')+esc(t.title||'(sans titre)')+'</li>';
+      }).join(''):'<div class="empty">—</div>';
+      return '<div class="taskcol '+cls+'"><h4><span>'+label+'</span><span>'+arr.length+'</span></h4><ul>'+items+'</ul></div>';
+    }
+    curEpicHtml =
+      '<div class="card"><div class="cur-epic-h"><strong><span class="eid">'+esc(curEpic.id)+'</span> '+esc(curEpic.title||'')+'</strong>'
+      + '<span class="pill">'+doneT.length+'/'+pool.length+' tâches terminées</span></div>'
+      + '<div class="taskcols">'
+      +   tcol('done','Terminées',doneT,SCOL.DONE)
+      +   tcol('cur','En cours',curT,SCOL.IN_PROGRESS)
+      +   tcol('next','À venir',nextT,SCOL.TODO)
+      + '</div></div>';
+  } else {
+    curEpicHtml = '<div class="card"><div class="empty">Aucune EPIC en cours.</div></div>';
+  }
+
+  // ── À surveiller ──────────────────────────────────────────
   var watch=[];
   DATA.forEach(function(e){ if(e.age!==null && e.age>staleLimit(e.name)) watch.push(esc(e.file)+' — '+e.age+' j sans mise à jour'); });
   var off = integ.filter(function(it){ return !it.on; }).map(function(it){ return esc(it.area); });
@@ -809,16 +1099,15 @@ const HTML_TEMPLATE = `<!doctype html>
   var watchHtml = watch.length ? watch.map(function(w){ return '<li>'+w+'</li>'; }).join('') : '<li class="empty">Rien à signaler</li>';
 
   document.getElementById('synth').innerHTML =
-    '<h2 class="sec">Synthèse</h2>'
-    + '<div class="grid">'
-    +   '<div class="card donutwrap">'+donut(pct)+'<div class="sub">'+done+' / '+total+' tickets terminés</div></div>'
-    +   '<div class="card"><h3>État actuel</h3><div class="summary">'+(summary?esc(summary):'<span class="none">Non renseigné (project-state.md)</span>')+'</div></div>'
-    + '</div>'
-    + '<h2 class="sec">Kanban</h2><div class="board">'+boardHtml+'</div>'
-    + '<div class="grid2" style="margin-top:16px">'
-    +   '<div class="card"><h3>Roadmap — jalons</h3><ul class="tl">'+milesHtml+'</ul></div>'
-    +   '<div class="card"><h3>À surveiller</h3><ul class="watch">'+watchHtml+'</ul></div>'
-    + '</div>';
+    '<h2 class="sec">Vue d\\'ensemble</h2>'
+    + (summary?'<p class="lede">'+esc(summary)+'</p>':'')
+    + '<div class="kpis">'+globalCard+msCard+statsCard+'</div>'
+    + '<h2 class="sec">Timeline des EPICs</h2>'
+    + '<div class="card"><ol class="epic-timeline">'+timelineHtml+'</ol></div>'
+    + '<h2 class="sec">EPIC en cours</h2>'
+    + curEpicHtml
+    + '<h2 class="sec">À surveiller</h2>'
+    + '<div class="card"><ul class="watch">'+watchHtml+'</ul></div>';
 
   // ── Détail (replié) ───────────────────────────────────────
   var open = STYLE==='detailed' ? ' open' : '';
@@ -832,10 +1121,28 @@ const HTML_TEMPLATE = `<!doctype html>
   document.getElementById('toc').innerHTML = toc;
   document.getElementById('detail').innerHTML = det;
 
+  // bouton repliable du détail de la mémoire (déplié d'office en style détaillé)
+  var detailWrap=document.getElementById('detailWrap');
+  var toggleBtn=document.getElementById('toggleDetail');
+  function setDetail(show){
+    detailWrap.hidden=!show;
+    toggleBtn.setAttribute('aria-expanded', show?'true':'false');
+    toggleBtn.textContent=(show?'▾':'▸')+' Détail de la mémoire (lecture des fichiers bruts)';
+  }
+  setDetail(STYLE==='detailed');
+  toggleBtn.addEventListener('click', function(){ setDetail(detailWrap.hidden); });
+
   // clic sur une puce du sommaire → ouvre l'accordéon ciblé
   document.getElementById('toc').addEventListener('click', function(ev){
     var a = ev.target.closest('a'); if(!a) return;
     var el = document.getElementById(a.getAttribute('data-t')); if(el) el.open = true;
+  });
+
+  // clic sur un chiffre d'action → déplie le détail et ouvre le fichier concerné
+  document.querySelector('.stats').addEventListener('click', function(ev){
+    var a=ev.target.closest('.stat'); if(!a) return;
+    setDetail(true);
+    var el=document.getElementById(a.getAttribute('data-rev')); if(el) el.open=true;
   });
 
   document.querySelectorAll('code.language-mermaid').forEach(function(code){
@@ -846,6 +1153,320 @@ const HTML_TEMPLATE = `<!doctype html>
 </script>
 </body>
 </html>`;
+
+// ── progress sidebar (watch / dashboard) ─────────────────────
+// Linear agent chains per workflow (see memory/process.md). Used to project the
+// agents that "will work" after the current/last one.
+const WORKFLOW_CHAINS = {
+  discovery: ["ailed-scout", "ailed-seo-aso", "ailed-monetization", "ailed-fact-check", "ailed-analyst", "ailed-brainstorm"],
+  feature: ["ailed-brainstorm", "ailed-ux", "ailed-pm", "ailed-architect", "ailed-planner", "ailed-dev", "ailed-review", "ailed-test", "ailed-communication", "ailed-release"],
+  incident: ["ailed-check-log", "ailed-rca", "ailed-dev", "ailed-review", "ailed-test", "ailed-communication"],
+  security: ["ailed-check-secu", "ailed-security-review", "ailed-dev", "ailed-review", "ailed-test", "ailed-communication"],
+};
+
+function safeRead(p) {
+  try { return fs.readFileSync(p, "utf8"); } catch (_) { return ""; }
+}
+
+function classifyEpicStatus(s) {
+  const v = (s || "").toUpperCase();
+  if (/DONE|TERMIN|LIVR|CLOS/.test(v)) return "done";
+  if (/IN[_ ]?PROGRESS|EN COURS|WIP|DOING/.test(v)) return "current";
+  return "todo";
+}
+
+// parse memory/epics.md overview table → [{id,title,status}] in declaration order
+function parseEpics(content) {
+  const out = [];
+  if (!content) return out;
+  let map = null;
+  for (const line of content.split("\n")) {
+    if (line.trim().charAt(0) !== "|") { map = null; continue; }
+    const cs = tableCells(line);
+    const lo = cs.map((c) => c.toLowerCase());
+    const epicIdx = lo.indexOf("epic");
+    if (epicIdx >= 0 && (lo.indexOf("title") >= 0 || lo.indexOf("titre") >= 0)) {
+      map = {
+        epic: epicIdx,
+        title: lo.indexOf("title") >= 0 ? lo.indexOf("title") : lo.indexOf("titre"),
+        status: lo.indexOf("status") >= 0 ? lo.indexOf("status") : lo.indexOf("statut"),
+      };
+      continue;
+    }
+    if (isSeparatorRow(line) || !map) continue;
+    const id = (cs[map.epic] || "").replace(/`/g, "").trim();
+    if (!id || /^—$/.test(id)) continue;
+    out.push({
+      id,
+      title: (map.title >= 0 ? cs[map.title] : "") || "",
+      status: classifyEpicStatus(map.status >= 0 ? cs[map.status] : ""),
+    });
+  }
+  return out;
+}
+
+// parse memory/kanban.md → [{id,title,status,epic}] keeping the EPIC link
+function parseKanbanFull(content) {
+  const out = [];
+  if (!content) return out;
+  let map = null;
+  for (const line of content.split("\n")) {
+    if (line.trim().charAt(0) !== "|") { map = null; continue; }
+    const cs = tableCells(line);
+    const lo = cs.map((c) => c.toLowerCase());
+    if (lo.indexOf("status") >= 0 && (lo.indexOf("titre") >= 0 || lo.indexOf("title") >= 0)) {
+      map = {
+        status: lo.indexOf("status"),
+        title: lo.indexOf("titre") >= 0 ? lo.indexOf("titre") : lo.indexOf("title"),
+        id: lo.indexOf("id"),
+        epic: lo.indexOf("epic"),
+      };
+      continue;
+    }
+    if (isSeparatorRow(line) || !map) continue;
+    const st = cs[map.status];
+    if (STATUSES.indexOf(st) < 0) continue;
+    out.push({
+      id: map.id >= 0 ? cs[map.id] : "",
+      title: map.title >= 0 ? cs[map.title] : "",
+      status: st,
+      epic: map.epic >= 0 ? (cs[map.epic] || "").replace(/`/g, "").trim() : "",
+    });
+  }
+  return out;
+}
+
+function readRuntime(projectDir) {
+  try {
+    const p = path.join(projectDir, ".ailed", "runtime.json");
+    if (!fs.existsSync(p)) return null;
+    return JSON.parse(fs.readFileSync(p, "utf8"));
+  } catch (_) { return null; }
+}
+
+// effective epic status: derived from its tickets, falling back to the file value
+function epicEffStatus(epic, tickets) {
+  const ts = tickets.filter((t) => t.epic && t.epic === epic.id);
+  if (ts.length) {
+    if (ts.some((t) => t.status === "IN_PROGRESS")) return "current";
+    if (ts.every((t) => t.status === "DONE")) return "done";
+    return "todo";
+  }
+  return epic.status || "todo";
+}
+
+// build the vertical progress tree as an array of ready-to-print colored lines
+function buildSidebar(epics, tickets, rt, width) {
+  const L = [];
+  const w = Math.max(16, width);
+  const cur = (s) => `\x1b[1;33m${s}\x1b[0m`; // bold yellow = active
+  const short = (a) => "@" + String(a || "").replace(/^ailed-/, "");
+  const clip = (s) => (s.length > w ? s.slice(0, Math.max(1, w - 1)) + "…" : s);
+  const row = (indent, glyph, text, paint) => {
+    const plain = " ".repeat(indent) + (glyph ? glyph + " " : "") + text;
+    L.push(paint ? paint(clip(plain)) : clip(plain));
+  };
+  const G = { done: "✓", current: "▶", todo: "·" };
+  const paintOf = { done: c.green, current: cur, todo: c.dim };
+  const epLabel = (e) => `${e.id}${e.title ? "  " + e.title : ""}`;
+  const tkLabel = (t) => `${t.id ? t.id + " " : ""}${t.title || ""}`.trim() || "(sans titre)";
+
+  L.push(c.bold("AI-LED") + c.dim(" · progress"));
+  L.push(c.dim("─".repeat(Math.min(w, 28))));
+
+  // derive epic list (fall back to distinct epics referenced by tickets)
+  let withStatus = epics.map((e) => ({ ...e, eff: epicEffStatus(e, tickets) }));
+  if (!withStatus.length) {
+    const seen = [];
+    for (const t of tickets) {
+      if (t.epic && !seen.find((e) => e.id === t.epic)) seen.push({ id: t.epic, title: "", status: "todo" });
+    }
+    withStatus = seen.map((e) => ({ ...e, eff: epicEffStatus(e, tickets) }));
+  }
+
+  if (!withStatus.length && !tickets.length) {
+    L.push("");
+    L.push(c.dim("Aucune epic ni tâche."));
+    L.push(c.dim("→ @ailed-brainstorm"));
+    return L;
+  }
+
+  // current epic: first in-progress, else first not-done, else last
+  let ci = withStatus.findIndex((e) => e.eff === "current");
+  if (ci < 0) ci = withStatus.findIndex((e) => e.eff !== "done");
+  if (ci < 0) ci = withStatus.length - 1;
+  const curEpic = withStatus[ci];
+
+  // previous (last treated) epic
+  const prev = [...withStatus.slice(0, ci)].reverse().find((e) => e.eff === "done") || withStatus[ci - 1];
+  if (prev) row(0, G[prev.eff], epLabel(prev), paintOf[prev.eff]);
+
+  // current epic
+  if (curEpic) {
+    row(0, G[curEpic.eff], epLabel(curEpic), paintOf[curEpic.eff]);
+
+    const linked = tickets.filter((t) => curEpic.id && t.epic === curEpic.id);
+    const etx = linked.length ? linked : (epics.length ? [] : tickets);
+    const doneTk = etx.filter((t) => t.status === "DONE");
+    const lastDone = doneTk[doneTk.length - 1];
+    const curTk = etx.find((t) => t.status === "IN_PROGRESS");
+    const nextTk = etx.filter((t) => t.status !== "DONE" && t.status !== "IN_PROGRESS");
+
+    if (lastDone) row(2, G.done, tkLabel(lastDone), c.green);
+
+    if (curTk) {
+      row(2, G.current, tkLabel(curTk), cur);
+      renderAgents(4);
+    } else {
+      // agents may run without an in-progress ticket recorded yet
+      if (rt && ((rt.running || []).length || (rt.history || []).length)) renderAgents(2);
+    }
+
+    for (const t of nextTk.slice(0, 4)) row(2, G.todo, tkLabel(t), c.dim);
+    if (nextTk.length > 4) row(2, "", c.dim(`+${nextTk.length - 4} autres tâches`));
+  }
+
+  // next epic
+  const next = withStatus.slice(ci + 1).find((e) => e.eff !== "done") || withStatus[ci + 1];
+  if (next && next !== curEpic) row(0, G[next.eff], epLabel(next), paintOf[next.eff]);
+
+  // footer
+  const total = tickets.length;
+  const done = tickets.filter((t) => t.status === "DONE").length;
+  const wf = rt && rt.workflow ? rt.workflow : null;
+  L.push("");
+  L.push(c.dim(`${done}/${total} tickets DONE${wf ? " · " + wf : ""}`));
+  return L;
+
+  function renderAgents(indent) {
+    const running = rt && rt.running && rt.running[0];
+    const hist = (rt && rt.history) || [];
+    const lastAg = hist.length ? hist[hist.length - 1] : null;
+    const wfChain = WORKFLOW_CHAINS[(rt && rt.workflow) || "feature"] || WORKFLOW_CHAINS.feature;
+    const anchor = running ? running.agent : (lastAg ? lastAg.agent : null);
+    let nextAg = [];
+    if (anchor) {
+      const idx = wfChain.indexOf(anchor);
+      if (idx >= 0) nextAg = wfChain.slice(idx + 1);
+    }
+    if (lastAg && (!running || lastAg.agent !== running.agent)) {
+      row(indent, G.done, short(lastAg.agent) + c.dim(" (fini)"), c.green);
+    }
+    if (running) {
+      row(indent, G.current, short(running.agent) + (running.desc ? "  " + running.desc : ""), cur);
+    }
+    for (const a of nextAg.slice(0, 5)) row(indent, G.todo, short(a), c.dim);
+    if (!running && !lastAg) row(indent, G.todo, "aucun agent actif", c.dim);
+  }
+}
+
+function watchRequireMemory(projectDir) {
+  if (fs.existsSync(path.join(projectDir, "memory"))) return;
+  console.error(`\n${c.yellow("memory/ introuvable")} dans ${projectDir}.`);
+  console.error(`Lance d'abord : ${c.cyan("npx @s2bp/ai-led-framework init")}\n`);
+  process.exit(1);
+}
+
+function watch() {
+  const projectDir = cwd;
+  watchRequireMemory(projectDir);
+  const memDir = path.join(projectDir, "memory");
+  const once = argv.includes("--once");
+  const widthFlag = parseInt(flag("width") || "", 10);
+
+  const frame = () => {
+    const epics = parseEpics(safeRead(path.join(memDir, "epics.md")));
+    const tickets = parseKanbanFull(safeRead(path.join(memDir, "kanban.md")));
+    const rt = readRuntime(projectDir);
+    const w = widthFlag > 0 ? widthFlag : Math.max(20, process.stdout.columns || 34);
+    return buildSidebar(epics, tickets, rt, w).join("\n");
+  };
+
+  if (once) { console.log(frame()); return; }
+
+  process.stdout.write("\x1b[?25l"); // hide cursor
+  let last = null;
+  const tick = () => {
+    try {
+      const out = frame();
+      if (out !== last) { last = out; process.stdout.write("\x1b[H\x1b[2J" + out + "\n"); }
+    } catch (_) { /* keep the loop alive */ }
+  };
+  tick();
+  const iv = setInterval(tick, 800);
+  const stop = () => { clearInterval(iv); process.stdout.write("\x1b[?25h\n"); process.exit(0); };
+  process.on("SIGINT", stop);
+  process.on("SIGTERM", stop);
+}
+
+function shQuote(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'"; }
+
+function writeZellijLayout(projectDir, width, scriptCmd, rightCmd) {
+  const dir = path.join(projectDir, ".ailed");
+  const nodeBin = process.execPath;
+  const kdl = `// Generated by ai-led dashboard — run with: zellij --layout .ailed/dashboard.kdl
+layout {
+    pane size=${width} {
+        command "${nodeBin}"
+        args "${__filename}" "watch"
+    }
+    pane {
+        command "${rightCmd}"
+    }
+}
+`;
+  try { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, "dashboard.kdl"), kdl); } catch (_) {}
+}
+
+function dashboard() {
+  const projectDir = cwd;
+  watchRequireMemory(projectDir);
+  const cp = require("child_process");
+  const width = parseInt(flag("width") || "34", 10) || 34;
+  const rightCmd = flag("cmd") || "claude";
+  const scriptCmd = `${process.execPath} ${shQuote(__filename)} watch`;
+  const has = (bin) => {
+    try { return cp.spawnSync("sh", ["-c", "command -v " + bin], { stdio: "ignore" }).status === 0; }
+    catch (_) { return false; }
+  };
+
+  writeZellijLayout(projectDir, width, scriptCmd, rightCmd);
+
+  if (has("tmux")) {
+    if (process.env.TMUX) {
+      // already inside tmux → add the sidebar to the LEFT of the current pane
+      console.log(c.dim("Ouverture du panneau de progression à gauche (tmux)…"));
+      cp.spawnSync("tmux", ["split-window", "-hb", "-l", String(width), scriptCmd], { stdio: "inherit" });
+      cp.spawnSync("tmux", ["select-pane", "-R"], { stdio: "ignore" });
+      return;
+    }
+    // fresh tmux session: pane0 = watch (left), pane1 = claude (right, focused)
+    const script = [
+      `tmux new-session -d -s ailed ${shQuote(scriptCmd)}`,
+      `tmux split-window -h -t ailed ${shQuote(rightCmd)}`,
+      `tmux resize-pane -t ailed.0 -x ${width}`,
+      `tmux select-pane -t ailed.1`,
+      `tmux attach -t ailed`,
+    ].join(" && ");
+    console.log(c.dim(`Lancement du dashboard tmux (gauche: progression · droite: ${rightCmd})…`));
+    const r = cp.spawnSync("sh", ["-c", script], { stdio: "inherit" });
+    if (r.status !== 0) console.error(c.yellow("\ntmux a échoué. Essaie le repli zellij ci-dessous."));
+    return;
+  }
+
+  if (has("zellij")) {
+    console.log(c.dim("tmux absent — lancement via zellij…"));
+    cp.spawnSync("zellij", ["--layout", path.join(projectDir, ".ailed", "dashboard.kdl")], { stdio: "inherit" });
+    return;
+  }
+
+  console.error(`\n${c.yellow("Ni tmux ni zellij détectés.")}`);
+  console.error("Installe l'un des deux, ou ouvre deux panneaux manuellement :");
+  console.error(`  gauche : ${c.cyan("npx @s2bp/ai-led-framework watch")}`);
+  console.error(`  droite : ${c.cyan(rightCmd)}\n`);
+  console.error(c.dim(`Un layout zellij a été généré : .ailed/dashboard.kdl`));
+  process.exit(1);
+}
 
 function help() {
   console.log(`
@@ -858,6 +1479,8 @@ ${c.bold("Commands")}
   init            Installe agents, skills et mémoire dans le projet courant
   update          Met à jour le framework (agents/skills/commands) en préservant memory/ et CLAUDE.md
   status          Affiche l'état du projet (terminal) ; --html pour un tableau de bord navigateur
+  watch           Panneau de progression vertical (epics → tâches → agents), rafraîchi en continu
+  dashboard       Ouvre un split (gauche: watch figé · droite: claude) via tmux ou zellij
   help            Affiche cette aide
   version         Affiche la version
 
@@ -890,6 +1513,14 @@ ${c.bold("Options de status")}
   Le terminal et le HTML montrent d'abord une synthèse (avancement, board kanban, jalons,
   « à surveiller ») ; le HTML met le détail des fichiers memory/ dans des accordéons repliés.
 
+${c.bold("Options de watch / dashboard")}
+  --once              (watch) Affiche le panneau une fois puis quitte (utile pour scripter)
+  --width=N           Largeur du panneau de progression (défaut : largeur du terminal / 34)
+  --cmd=COMMANDE      (dashboard) Commande lancée à droite du split (défaut : claude)
+
+  Le panneau « agent en cours / suivant » est alimenté par le hook .claude/hooks/ailed-runtime-hook.js
+  (installé par init/update) qui écrit .ailed/runtime.json à chaque appel d'un sous-agent ailed-*.
+
 ${c.dim("Sans flag et en terminal interactif, init pose les questions de configuration.")}
 `);
 }
@@ -904,6 +1535,12 @@ ${c.dim("Sans flag et en terminal interactif, init pose les questions de configu
       break;
     case "status":
       status();
+      break;
+    case "watch":
+      watch();
+      break;
+    case "dashboard":
+      dashboard();
       break;
     case "version":
     case "--version":

@@ -22,10 +22,12 @@ npx @s2bp/ai-led-framework init
 | `.claude/agents/`   | 21 agents `ailed-*.md` (invocables via `@ailed-<nom>`)         |
 | `.claude/skills/`   | 10 skills `ailed-*` (invocables via `/ailed-<nom>`)            |
 | `.claude/commands/` | slash-command `/ailed-bootstrap` (amorçage du framework)       |
+| `.claude/hooks/`    | `ailed-runtime-hook.js` + hooks `Task` dans `settings.json` qui alimentent le panneau de progression (`watch`/`dashboard`) |
 | `memory/`           | 15 fichiers de mémoire projet (dont `config.md`, `process.md`, `conventions.md` et `market-watch.md`), dans la langue choisie |
 | `CLAUDE.md`         | pointeur framework (créé seulement s'il n'existe pas)          |
 
-Les fichiers existants ne sont **jamais écrasés** sauf avec `--force`.
+Les fichiers existants ne sont **jamais écrasés** sauf avec `--force` (les hooks de `settings.json`
+sont fusionnés sans rien casser, et `.ailed/` est ajouté au `.gitignore`).
 
 ## Configuration (`memory/config.md`)
 
@@ -229,10 +231,12 @@ roadmap, kanban, fonctionnalités, veille, process) :
   à promouvoir, veille périmée, intégrations désactivées).
 - **`ai-led status`** (CLI) — un snapshot terminal **déterministe et sans token** : barre
   d'avancement, compteurs kanban et liste « À surveiller ». Ajoute `--html` pour générer
-  `ailed-status.html`, un tableau de bord **statique** qui ouvre sur une **synthèse visuelle**
-  (donut d'avancement, board kanban en colonnes, timeline roadmap, panneau « à surveiller ») ;
-  le détail de chaque fichier `memory/` est rangé dans des **accordéons repliés** (un clic les
-  ouvre) plutôt que déroulé en pleine page — **aucun serveur, aucune donnée projet envoyée** :
+  `ailed-status.html`, un tableau de bord **statique** qui ouvre sur une **synthèse visuelle** :
+  deux **camemberts** (avancement global + jalon en cours, approximatif), trois compteurs d'action
+  (**bugs** à traiter, **vulnérabilités** ouvertes, **arbitrages produit** discovery → roadmap),
+  une **timeline chronologique des EPICs** et le **détail de l'EPIC en cours** (tâches terminées /
+  en cours / à venir) ; le détail brut de chaque fichier `memory/` reste accessible, **replié** en
+  bas de page — **aucun serveur, aucune donnée projet envoyée** :
 
 ```bash
 npx @s2bp/ai-led-framework status          # snapshot terminal
@@ -243,6 +247,57 @@ Les deux respectent le **Style de sortie** de `config.md` (`concis` resserre la 
 ajoute jalons et tickets en cours et déplie les accordéons HTML) ; `--style=…` le force pour un run.
 Le HTML charge `marked` + `mermaid` via CDN pour le rendu markdown et les diagrammes des
 accordéons (connexion internet nécessaire à l'affichage).
+
+## Panneau de progression en direct (`watch` / `dashboard`)
+
+Pour **suivre l'avancement pendant une session Claude Code** — quelle epic / tâche est en cours,
+quel agent vient de finir, travaille, ou va travailler — sans relancer `status`, le framework
+fournit un **panneau vertical** rafraîchi en continu :
+
+```bash
+npx @s2bp/ai-led-framework watch        # le panneau seul (à mettre dans un terminal à gauche)
+npx @s2bp/ai-led-framework dashboard    # split tmux/zellij : panneau à gauche · claude à droite
+```
+
+Le panneau affiche, de haut en bas, exactement la hiérarchie demandée :
+
+```
+AI-LED · progress
+────────────────────────────
+✓ EPIC-1  Fondations          ← dernière epic traitée
+▶ EPIC-2  Paiement            ← epic en cours
+  ✓ ZZM-000011 Modèle paiement  ← dernière tâche traitée
+  ▶ ZZM-000012 Tunnel checkout  ← tâche en cours
+    ✓ @architect (fini)         ← dernier agent
+    ▶ @dev  impl checkout       ← agent en cours
+    · @review                   ← agents à venir (chaîne du workflow)
+    · @test
+    · @communication
+  · ZZM-000013 Remboursement    ← tâches suivantes
+  · ZZM-000014 Webhooks
+· EPIC-3  Reporting           ← epic suivante
+
+2/6 tickets DONE · feature
+```
+
+> ⚠️ **Pourquoi un panneau séparé et pas une zone figée *dans* la fenêtre Claude Code ?**
+> Claude Code est une TUI fermée dont on ne contrôle pas le rendu : on ne peut pas y injecter une
+> colonne figée. La vraie colonne verticale figée à gauche s'obtient donc par un **split de
+> terminal** (tmux ou zellij), Claude Code occupant la zone de droite — d'où `dashboard`.
+
+**Source des données :**
+
+- **Epics / tâches** : lus dans `memory/epics.md` et `memory/kanban.md` (statuts `DONE`,
+  `IN_PROGRESS`, `TODO`…). Fonctionne même sans hook.
+- **Agents (dernier / en cours / à venir)** : alimentés par le hook
+  `.claude/hooks/ailed-runtime-hook.js` (installé par `init`/`update`), câblé sur l'outil `Task`
+  via `.claude/settings.json`. À chaque appel d'un sous-agent `ailed-*`, il écrit l'agent actif
+  dans `.ailed/runtime.json` (gitignoré) ; les **agents à venir** sont projetés depuis la chaîne du
+  workflow détecté (Discovery / Feature / Incident / Security, voir `memory/process.md`).
+
+**Options :** `--width=N` (largeur du panneau), `--once` (affiche une fois puis quitte),
+`dashboard --cmd="…"` (commande lancée à droite du split, défaut `claude`). Un layout zellij
+est généré dans `.ailed/dashboard.kdl`.
 
 ## Les 4 workflows (voir `memory/process.md`)
 
