@@ -194,6 +194,64 @@ function importConventions(cfg) {
   console.log(`  ${c.green("+")}    memory/conventions.md ${c.dim(`(import: ${cfg.conventions})`)}`);
 }
 
+// ── runtime hook install (feeds `ai-led watch`) ───────────────
+// Copies the hook script, wires the Task PreToolUse/PostToolUse hooks into
+// .claude/settings.json (without clobbering existing settings), and gitignores
+// the .ailed/ runtime state directory.
+function installRuntimeHook(cfg, forceOverwrite) {
+  console.log("\n" + c.bold("Hook") + c.dim("  → .claude/hooks/ (panneau de progression)"));
+  copyTree(
+    path.join(TPL, "claude", "hooks", "ailed-runtime-hook.js"),
+    path.join(cwd, ".claude", "hooks", "ailed-runtime-hook.js"),
+    cfg,
+    forceOverwrite
+  );
+  mergeHookSettings();
+  ensureGitignore();
+}
+
+function mergeHookSettings() {
+  const p = path.join(cwd, ".claude", "settings.json");
+  let s = {};
+  if (fs.existsSync(p)) {
+    try { s = JSON.parse(fs.readFileSync(p, "utf8")) || {}; }
+    catch (_) {
+      console.log(`  ${c.yellow("skip")} .claude/settings.json ${c.dim("(illisible — câble le hook à la main, voir README)")}`);
+      return;
+    }
+  }
+  s.hooks = s.hooks || {};
+  const cmd = (phase) => `node "$CLAUDE_PROJECT_DIR/.claude/hooks/ailed-runtime-hook.js" ${phase}`;
+  const ensure = (event, phase) => {
+    s.hooks[event] = Array.isArray(s.hooks[event]) ? s.hooks[event] : [];
+    const exists = s.hooks[event].some((e) =>
+      (e && Array.isArray(e.hooks) ? e.hooks : []).some((h) => h && typeof h.command === "string" && h.command.includes("ailed-runtime-hook"))
+    );
+    if (exists) return false;
+    s.hooks[event].push({ matcher: "Task", hooks: [{ type: "command", command: cmd(phase) }] });
+    return true;
+  };
+  const a = ensure("PreToolUse", "pre");
+  const b = ensure("PostToolUse", "post");
+  if (a || b) {
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, JSON.stringify(s, null, 2) + "\n");
+    console.log(`  ${c.green("+")}    .claude/settings.json ${c.dim("(hooks Task câblés)")}`);
+  } else {
+    console.log(`  ${c.yellow("skip")} .claude/settings.json ${c.dim("(hooks déjà présents)")}`);
+  }
+}
+
+function ensureGitignore() {
+  const p = path.join(cwd, ".gitignore");
+  let txt = "";
+  if (fs.existsSync(p)) txt = fs.readFileSync(p, "utf8");
+  if (txt.split("\n").some((l) => l.trim() === ".ailed/" || l.trim() === ".ailed")) return;
+  const add = (txt && !txt.endsWith("\n") ? "\n" : "") + "\n# AI-Led runtime (progress sidebar state)\n.ailed/\n";
+  fs.writeFileSync(p, txt + add);
+  console.log(`  ${c.green("+")}    .gitignore ${c.dim("(+ .ailed/)")}`);
+}
+
 async function init() {
   console.log(`\n${c.bold("AI-Led")} ${c.dim("v" + pkg.version)} — initialisation dans ${c.cyan(cwd)}`);
 
@@ -218,6 +276,9 @@ async function init() {
   // 3. Commands  ->  .claude/commands/
   console.log("\n" + c.bold("Commands") + c.dim("  → .claude/commands/"));
   copyTree(path.join(TPL, "claude", "commands"), path.join(cwd, ".claude", "commands"), cfg);
+
+  // 3b. Runtime hook (progress sidebar) -> .claude/hooks/ + settings.json + .gitignore
+  installRuntimeHook(cfg, force);
 
   // 4. Memory  ->  memory/  (from the chosen language folder)
   console.log("\n" + c.bold("Mémoire") + c.dim(`  → memory/ (langue: ${cfg.lang})`));
@@ -348,6 +409,9 @@ async function update() {
   // 3. Commands — always overwritten
   console.log("\n" + c.bold("Commands") + c.dim("  → .claude/commands/ (réécrits)"));
   copyTree(path.join(TPL, "claude", "commands"), path.join(cwd, ".claude", "commands"), cfg, true);
+
+  // 3b. Runtime hook — refreshed and (re)wired into settings.json
+  installRuntimeHook(cfg, true);
 
   // 4. Memory — only NEW files added; existing project data preserved
   console.log("\n" + c.bold("Mémoire") + c.dim(`  → memory/ (nouveaux fichiers seulement · langue: ${cfg.lang})`));
@@ -847,6 +911,320 @@ const HTML_TEMPLATE = `<!doctype html>
 </body>
 </html>`;
 
+// ── progress sidebar (watch / dashboard) ─────────────────────
+// Linear agent chains per workflow (see memory/process.md). Used to project the
+// agents that "will work" after the current/last one.
+const WORKFLOW_CHAINS = {
+  discovery: ["ailed-scout", "ailed-seo-aso", "ailed-monetization", "ailed-fact-check", "ailed-analyst", "ailed-brainstorm"],
+  feature: ["ailed-brainstorm", "ailed-ux", "ailed-pm", "ailed-architect", "ailed-planner", "ailed-dev", "ailed-review", "ailed-test", "ailed-communication", "ailed-release"],
+  incident: ["ailed-check-log", "ailed-rca", "ailed-dev", "ailed-review", "ailed-test", "ailed-communication"],
+  security: ["ailed-check-secu", "ailed-security-review", "ailed-dev", "ailed-review", "ailed-test", "ailed-communication"],
+};
+
+function safeRead(p) {
+  try { return fs.readFileSync(p, "utf8"); } catch (_) { return ""; }
+}
+
+function classifyEpicStatus(s) {
+  const v = (s || "").toUpperCase();
+  if (/DONE|TERMIN|LIVR|CLOS/.test(v)) return "done";
+  if (/IN[_ ]?PROGRESS|EN COURS|WIP|DOING/.test(v)) return "current";
+  return "todo";
+}
+
+// parse memory/epics.md overview table → [{id,title,status}] in declaration order
+function parseEpics(content) {
+  const out = [];
+  if (!content) return out;
+  let map = null;
+  for (const line of content.split("\n")) {
+    if (line.trim().charAt(0) !== "|") { map = null; continue; }
+    const cs = tableCells(line);
+    const lo = cs.map((c) => c.toLowerCase());
+    const epicIdx = lo.indexOf("epic");
+    if (epicIdx >= 0 && (lo.indexOf("title") >= 0 || lo.indexOf("titre") >= 0)) {
+      map = {
+        epic: epicIdx,
+        title: lo.indexOf("title") >= 0 ? lo.indexOf("title") : lo.indexOf("titre"),
+        status: lo.indexOf("status") >= 0 ? lo.indexOf("status") : lo.indexOf("statut"),
+      };
+      continue;
+    }
+    if (isSeparatorRow(line) || !map) continue;
+    const id = (cs[map.epic] || "").replace(/`/g, "").trim();
+    if (!id || /^—$/.test(id)) continue;
+    out.push({
+      id,
+      title: (map.title >= 0 ? cs[map.title] : "") || "",
+      status: classifyEpicStatus(map.status >= 0 ? cs[map.status] : ""),
+    });
+  }
+  return out;
+}
+
+// parse memory/kanban.md → [{id,title,status,epic}] keeping the EPIC link
+function parseKanbanFull(content) {
+  const out = [];
+  if (!content) return out;
+  let map = null;
+  for (const line of content.split("\n")) {
+    if (line.trim().charAt(0) !== "|") { map = null; continue; }
+    const cs = tableCells(line);
+    const lo = cs.map((c) => c.toLowerCase());
+    if (lo.indexOf("status") >= 0 && (lo.indexOf("titre") >= 0 || lo.indexOf("title") >= 0)) {
+      map = {
+        status: lo.indexOf("status"),
+        title: lo.indexOf("titre") >= 0 ? lo.indexOf("titre") : lo.indexOf("title"),
+        id: lo.indexOf("id"),
+        epic: lo.indexOf("epic"),
+      };
+      continue;
+    }
+    if (isSeparatorRow(line) || !map) continue;
+    const st = cs[map.status];
+    if (STATUSES.indexOf(st) < 0) continue;
+    out.push({
+      id: map.id >= 0 ? cs[map.id] : "",
+      title: map.title >= 0 ? cs[map.title] : "",
+      status: st,
+      epic: map.epic >= 0 ? (cs[map.epic] || "").replace(/`/g, "").trim() : "",
+    });
+  }
+  return out;
+}
+
+function readRuntime(projectDir) {
+  try {
+    const p = path.join(projectDir, ".ailed", "runtime.json");
+    if (!fs.existsSync(p)) return null;
+    return JSON.parse(fs.readFileSync(p, "utf8"));
+  } catch (_) { return null; }
+}
+
+// effective epic status: derived from its tickets, falling back to the file value
+function epicEffStatus(epic, tickets) {
+  const ts = tickets.filter((t) => t.epic && t.epic === epic.id);
+  if (ts.length) {
+    if (ts.some((t) => t.status === "IN_PROGRESS")) return "current";
+    if (ts.every((t) => t.status === "DONE")) return "done";
+    return "todo";
+  }
+  return epic.status || "todo";
+}
+
+// build the vertical progress tree as an array of ready-to-print colored lines
+function buildSidebar(epics, tickets, rt, width) {
+  const L = [];
+  const w = Math.max(16, width);
+  const cur = (s) => `\x1b[1;33m${s}\x1b[0m`; // bold yellow = active
+  const short = (a) => "@" + String(a || "").replace(/^ailed-/, "");
+  const clip = (s) => (s.length > w ? s.slice(0, Math.max(1, w - 1)) + "…" : s);
+  const row = (indent, glyph, text, paint) => {
+    const plain = " ".repeat(indent) + (glyph ? glyph + " " : "") + text;
+    L.push(paint ? paint(clip(plain)) : clip(plain));
+  };
+  const G = { done: "✓", current: "▶", todo: "·" };
+  const paintOf = { done: c.green, current: cur, todo: c.dim };
+  const epLabel = (e) => `${e.id}${e.title ? "  " + e.title : ""}`;
+  const tkLabel = (t) => `${t.id ? t.id + " " : ""}${t.title || ""}`.trim() || "(sans titre)";
+
+  L.push(c.bold("AI-LED") + c.dim(" · progress"));
+  L.push(c.dim("─".repeat(Math.min(w, 28))));
+
+  // derive epic list (fall back to distinct epics referenced by tickets)
+  let withStatus = epics.map((e) => ({ ...e, eff: epicEffStatus(e, tickets) }));
+  if (!withStatus.length) {
+    const seen = [];
+    for (const t of tickets) {
+      if (t.epic && !seen.find((e) => e.id === t.epic)) seen.push({ id: t.epic, title: "", status: "todo" });
+    }
+    withStatus = seen.map((e) => ({ ...e, eff: epicEffStatus(e, tickets) }));
+  }
+
+  if (!withStatus.length && !tickets.length) {
+    L.push("");
+    L.push(c.dim("Aucune epic ni tâche."));
+    L.push(c.dim("→ @ailed-brainstorm"));
+    return L;
+  }
+
+  // current epic: first in-progress, else first not-done, else last
+  let ci = withStatus.findIndex((e) => e.eff === "current");
+  if (ci < 0) ci = withStatus.findIndex((e) => e.eff !== "done");
+  if (ci < 0) ci = withStatus.length - 1;
+  const curEpic = withStatus[ci];
+
+  // previous (last treated) epic
+  const prev = [...withStatus.slice(0, ci)].reverse().find((e) => e.eff === "done") || withStatus[ci - 1];
+  if (prev) row(0, G[prev.eff], epLabel(prev), paintOf[prev.eff]);
+
+  // current epic
+  if (curEpic) {
+    row(0, G[curEpic.eff], epLabel(curEpic), paintOf[curEpic.eff]);
+
+    const linked = tickets.filter((t) => curEpic.id && t.epic === curEpic.id);
+    const etx = linked.length ? linked : (epics.length ? [] : tickets);
+    const doneTk = etx.filter((t) => t.status === "DONE");
+    const lastDone = doneTk[doneTk.length - 1];
+    const curTk = etx.find((t) => t.status === "IN_PROGRESS");
+    const nextTk = etx.filter((t) => t.status !== "DONE" && t.status !== "IN_PROGRESS");
+
+    if (lastDone) row(2, G.done, tkLabel(lastDone), c.green);
+
+    if (curTk) {
+      row(2, G.current, tkLabel(curTk), cur);
+      renderAgents(4);
+    } else {
+      // agents may run without an in-progress ticket recorded yet
+      if (rt && ((rt.running || []).length || (rt.history || []).length)) renderAgents(2);
+    }
+
+    for (const t of nextTk.slice(0, 4)) row(2, G.todo, tkLabel(t), c.dim);
+    if (nextTk.length > 4) row(2, "", c.dim(`+${nextTk.length - 4} autres tâches`));
+  }
+
+  // next epic
+  const next = withStatus.slice(ci + 1).find((e) => e.eff !== "done") || withStatus[ci + 1];
+  if (next && next !== curEpic) row(0, G[next.eff], epLabel(next), paintOf[next.eff]);
+
+  // footer
+  const total = tickets.length;
+  const done = tickets.filter((t) => t.status === "DONE").length;
+  const wf = rt && rt.workflow ? rt.workflow : null;
+  L.push("");
+  L.push(c.dim(`${done}/${total} tickets DONE${wf ? " · " + wf : ""}`));
+  return L;
+
+  function renderAgents(indent) {
+    const running = rt && rt.running && rt.running[0];
+    const hist = (rt && rt.history) || [];
+    const lastAg = hist.length ? hist[hist.length - 1] : null;
+    const wfChain = WORKFLOW_CHAINS[(rt && rt.workflow) || "feature"] || WORKFLOW_CHAINS.feature;
+    const anchor = running ? running.agent : (lastAg ? lastAg.agent : null);
+    let nextAg = [];
+    if (anchor) {
+      const idx = wfChain.indexOf(anchor);
+      if (idx >= 0) nextAg = wfChain.slice(idx + 1);
+    }
+    if (lastAg && (!running || lastAg.agent !== running.agent)) {
+      row(indent, G.done, short(lastAg.agent) + c.dim(" (fini)"), c.green);
+    }
+    if (running) {
+      row(indent, G.current, short(running.agent) + (running.desc ? "  " + running.desc : ""), cur);
+    }
+    for (const a of nextAg.slice(0, 5)) row(indent, G.todo, short(a), c.dim);
+    if (!running && !lastAg) row(indent, G.todo, "aucun agent actif", c.dim);
+  }
+}
+
+function watchRequireMemory(projectDir) {
+  if (fs.existsSync(path.join(projectDir, "memory"))) return;
+  console.error(`\n${c.yellow("memory/ introuvable")} dans ${projectDir}.`);
+  console.error(`Lance d'abord : ${c.cyan("npx @s2bp/ai-led-framework init")}\n`);
+  process.exit(1);
+}
+
+function watch() {
+  const projectDir = cwd;
+  watchRequireMemory(projectDir);
+  const memDir = path.join(projectDir, "memory");
+  const once = argv.includes("--once");
+  const widthFlag = parseInt(flag("width") || "", 10);
+
+  const frame = () => {
+    const epics = parseEpics(safeRead(path.join(memDir, "epics.md")));
+    const tickets = parseKanbanFull(safeRead(path.join(memDir, "kanban.md")));
+    const rt = readRuntime(projectDir);
+    const w = widthFlag > 0 ? widthFlag : Math.max(20, process.stdout.columns || 34);
+    return buildSidebar(epics, tickets, rt, w).join("\n");
+  };
+
+  if (once) { console.log(frame()); return; }
+
+  process.stdout.write("\x1b[?25l"); // hide cursor
+  let last = null;
+  const tick = () => {
+    try {
+      const out = frame();
+      if (out !== last) { last = out; process.stdout.write("\x1b[H\x1b[2J" + out + "\n"); }
+    } catch (_) { /* keep the loop alive */ }
+  };
+  tick();
+  const iv = setInterval(tick, 800);
+  const stop = () => { clearInterval(iv); process.stdout.write("\x1b[?25h\n"); process.exit(0); };
+  process.on("SIGINT", stop);
+  process.on("SIGTERM", stop);
+}
+
+function shQuote(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'"; }
+
+function writeZellijLayout(projectDir, width, scriptCmd, rightCmd) {
+  const dir = path.join(projectDir, ".ailed");
+  const nodeBin = process.execPath;
+  const kdl = `// Generated by ai-led dashboard — run with: zellij --layout .ailed/dashboard.kdl
+layout {
+    pane size=${width} {
+        command "${nodeBin}"
+        args "${__filename}" "watch"
+    }
+    pane {
+        command "${rightCmd}"
+    }
+}
+`;
+  try { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, "dashboard.kdl"), kdl); } catch (_) {}
+}
+
+function dashboard() {
+  const projectDir = cwd;
+  watchRequireMemory(projectDir);
+  const cp = require("child_process");
+  const width = parseInt(flag("width") || "34", 10) || 34;
+  const rightCmd = flag("cmd") || "claude";
+  const scriptCmd = `${process.execPath} ${shQuote(__filename)} watch`;
+  const has = (bin) => {
+    try { return cp.spawnSync("sh", ["-c", "command -v " + bin], { stdio: "ignore" }).status === 0; }
+    catch (_) { return false; }
+  };
+
+  writeZellijLayout(projectDir, width, scriptCmd, rightCmd);
+
+  if (has("tmux")) {
+    if (process.env.TMUX) {
+      // already inside tmux → add the sidebar to the LEFT of the current pane
+      console.log(c.dim("Ouverture du panneau de progression à gauche (tmux)…"));
+      cp.spawnSync("tmux", ["split-window", "-hb", "-l", String(width), scriptCmd], { stdio: "inherit" });
+      cp.spawnSync("tmux", ["select-pane", "-R"], { stdio: "ignore" });
+      return;
+    }
+    // fresh tmux session: pane0 = watch (left), pane1 = claude (right, focused)
+    const script = [
+      `tmux new-session -d -s ailed ${shQuote(scriptCmd)}`,
+      `tmux split-window -h -t ailed ${shQuote(rightCmd)}`,
+      `tmux resize-pane -t ailed.0 -x ${width}`,
+      `tmux select-pane -t ailed.1`,
+      `tmux attach -t ailed`,
+    ].join(" && ");
+    console.log(c.dim(`Lancement du dashboard tmux (gauche: progression · droite: ${rightCmd})…`));
+    const r = cp.spawnSync("sh", ["-c", script], { stdio: "inherit" });
+    if (r.status !== 0) console.error(c.yellow("\ntmux a échoué. Essaie le repli zellij ci-dessous."));
+    return;
+  }
+
+  if (has("zellij")) {
+    console.log(c.dim("tmux absent — lancement via zellij…"));
+    cp.spawnSync("zellij", ["--layout", path.join(projectDir, ".ailed", "dashboard.kdl")], { stdio: "inherit" });
+    return;
+  }
+
+  console.error(`\n${c.yellow("Ni tmux ni zellij détectés.")}`);
+  console.error("Installe l'un des deux, ou ouvre deux panneaux manuellement :");
+  console.error(`  gauche : ${c.cyan("npx @s2bp/ai-led-framework watch")}`);
+  console.error(`  droite : ${c.cyan(rightCmd)}\n`);
+  console.error(c.dim(`Un layout zellij a été généré : .ailed/dashboard.kdl`));
+  process.exit(1);
+}
+
 function help() {
   console.log(`
 ${c.bold("ai-led")} ${c.dim("v" + pkg.version)} — framework de workflow AI-led pour Claude Code
@@ -858,6 +1236,8 @@ ${c.bold("Commands")}
   init            Installe agents, skills et mémoire dans le projet courant
   update          Met à jour le framework (agents/skills/commands) en préservant memory/ et CLAUDE.md
   status          Affiche l'état du projet (terminal) ; --html pour un tableau de bord navigateur
+  watch           Panneau de progression vertical (epics → tâches → agents), rafraîchi en continu
+  dashboard       Ouvre un split (gauche: watch figé · droite: claude) via tmux ou zellij
   help            Affiche cette aide
   version         Affiche la version
 
@@ -890,6 +1270,14 @@ ${c.bold("Options de status")}
   Le terminal et le HTML montrent d'abord une synthèse (avancement, board kanban, jalons,
   « à surveiller ») ; le HTML met le détail des fichiers memory/ dans des accordéons repliés.
 
+${c.bold("Options de watch / dashboard")}
+  --once              (watch) Affiche le panneau une fois puis quitte (utile pour scripter)
+  --width=N           Largeur du panneau de progression (défaut : largeur du terminal / 34)
+  --cmd=COMMANDE      (dashboard) Commande lancée à droite du split (défaut : claude)
+
+  Le panneau « agent en cours / suivant » est alimenté par le hook .claude/hooks/ailed-runtime-hook.js
+  (installé par init/update) qui écrit .ailed/runtime.json à chaque appel d'un sous-agent ailed-*.
+
 ${c.dim("Sans flag et en terminal interactif, init pose les questions de configuration.")}
 `);
 }
@@ -904,6 +1292,12 @@ ${c.dim("Sans flag et en terminal interactif, init pose les questions de configu
       break;
     case "status":
       status();
+      break;
+    case "watch":
+      watch();
+      break;
+    case "dashboard":
+      dashboard();
       break;
     case "version":
     case "--version":

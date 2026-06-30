@@ -22,10 +22,12 @@ npx @s2bp/ai-led-framework init
 | `.claude/agents/`   | 21 `ailed-*.md` agents (callable via `@ailed-<name>`)          |
 | `.claude/skills/`   | 10 `ailed-*` skills (callable via `/ailed-<name>`)             |
 | `.claude/commands/` | `/ailed-bootstrap` slash-command (framework bootstrap)         |
+| `.claude/hooks/`    | `ailed-runtime-hook.js` + `Task` hooks in `settings.json` feeding the live progress sidebar (`watch`/`dashboard`) |
 | `memory/`           | 15 project memory files (including `config.md`, `process.md`, `conventions.md` and `market-watch.md`), in the chosen language |
 | `CLAUDE.md`         | framework pointer (created only if absent)                     |
 
-Existing files are **never overwritten** unless you pass `--force`.
+Existing files are **never overwritten** unless you pass `--force` (the `settings.json` hooks are
+merged in non-destructively, and `.ailed/` is added to `.gitignore`).
 
 ## Configuration (`memory/config.md`)
 
@@ -237,6 +239,57 @@ Both honor the **Output style** from `config.md` (`concise` tightens the output,
 milestones and in-progress tickets and expands the HTML accordions); `--style=…` forces it for a
 run. The HTML loads `marked` + `mermaid` from a CDN to render the accordions' markdown and diagrams
 (internet needed at view time).
+
+## Live progress sidebar (`watch` / `dashboard`)
+
+To **follow progress during a Claude Code session** — which epic / task is in flight, which agent
+just finished, is working, or is about to work — without re-running `status`, the framework ships a
+continuously refreshed **vertical sidebar**:
+
+```bash
+npx @s2bp/ai-led-framework watch        # the sidebar alone (drop it in a left-hand terminal)
+npx @s2bp/ai-led-framework dashboard    # tmux/zellij split: sidebar on the left · claude on the right
+```
+
+Top to bottom, the sidebar shows exactly the requested hierarchy:
+
+```
+AI-LED · progress
+────────────────────────────
+✓ EPIC-1  Foundations         ← last treated epic
+▶ EPIC-2  Payments            ← current epic
+  ✓ ZZM-000011 Payment model    ← last treated task
+  ▶ ZZM-000012 Checkout flow     ← current task
+    ✓ @architect (done)          ← last agent
+    ▶ @dev  impl checkout        ← current agent
+    · @review                    ← upcoming agents (workflow chain)
+    · @test
+    · @communication
+  · ZZM-000013 Refund           ← upcoming tasks
+  · ZZM-000014 Webhooks
+· EPIC-3  Reporting           ← next epic
+
+2/6 tickets DONE · feature
+```
+
+> ⚠️ **Why a separate pane and not a frozen zone *inside* the Claude Code window?**
+> Claude Code is a closed TUI whose rendering we don't control: a frozen in-window column can't be
+> injected. A true frozen vertical left column is therefore obtained via a **terminal split** (tmux
+> or zellij), with Claude Code on the right — hence `dashboard`.
+
+**Data sources:**
+
+- **Epics / tasks**: read from `memory/epics.md` and `memory/kanban.md` (statuses `DONE`,
+  `IN_PROGRESS`, `TODO`…). Works even without the hook.
+- **Agents (last / current / upcoming)**: fed by the `.claude/hooks/ailed-runtime-hook.js` hook
+  (installed by `init`/`update`), wired on the `Task` tool via `.claude/settings.json`. On every
+  `ailed-*` subagent call it writes the active agent to `.ailed/runtime.json` (gitignored);
+  **upcoming agents** are projected from the detected workflow chain (Discovery / Feature /
+  Incident / Security, see `memory/process.md`).
+
+**Options:** `--width=N` (sidebar width), `--once` (render once and exit),
+`dashboard --cmd="…"` (command launched on the right of the split, default `claude`). A zellij
+layout is generated at `.ailed/dashboard.kdl`.
 
 ## The 4 workflows (see `memory/process.md`)
 
