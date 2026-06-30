@@ -30,7 +30,7 @@ Les fichiers existants ne sont **jamais écrasés** sauf avec `--force`.
 ## Configuration (`memory/config.md`)
 
 `init` génère `memory/config.md`, **source de vérité de l'outillage** que les agents lisent
-avant d'agir. Deux choses y sont paramétrées :
+avant d'agir. On y paramètre la langue, le trigramme, le style de sortie et les intégrations :
 
 ### Langue des fichiers `memory/`
 
@@ -53,6 +53,26 @@ Le préfixe des tickets de dev (ex. `ZZM-000001`) est un **trigramme dérivé du
 ```bash
 npx @s2bp/ai-led-framework init --trigram=ZZM
 ```
+
+### Style de sortie
+
+Le **niveau de verbosité** des agents et des rapports — `concis` · `standard` (défaut) · `détaillé`.
+Ce réglage pilote *uniquement la présentation* (affichage dans Claude Code, synthèses
+`/ailed-status`, texte poussé vers Jira/Confluence) ; la `memory/` reste toujours **complète et
+versionnée** quel que soit le choix.
+
+```bash
+npx @s2bp/ai-led-framework init --style=concis
+```
+
+- `concis` — mode « à l'essentiel » : pas de préambule ni de reformulation, puces courtes, tableaux
+  plutôt que prose, et sur Jira titre + critères d'acceptation en puces. Ne masque **jamais** un
+  risque, une décision ou un blocage — on coupe le superflu, pas le fond.
+- `standard` — synthèse claire et structurée (défaut).
+- `détaillé` — explications complètes : raisonnement, alternatives écartées, contexte étendu.
+
+Modifiable à tout moment dans `memory/config.md`, ou forcé le temps d'un run :
+`ai-led status --style=détaillé`.
 
 ### Intégrations (optionnelles)
 
@@ -121,6 +141,7 @@ fichier peut rester partiellement vide et être complété plus tard à la main 
 --seo-aso=NOM       Outil SEO / ASO (Search Console, Ahrefs, App Store Connect) ou désactivé (défaut)
 --ticketing=NOM     Ticketing externe (ex. Jira, via MCP) ou désactivé (défaut)
 --docs=NOM          Documentation externe (ex. Confluence, via MCP) ou désactivé (défaut)
+--style=NIVEAU      Style de sortie agents/rapports : concis | standard | détaillé (défaut : standard)
 --conventions=CHEMIN  Importe un fichier de conventions/organisation technique dans memory/conventions.md (facultatif)
 -y, --yes           Mode non interactif (sinon, questions posées en terminal)
 -f, --force         Écrase les fichiers existants
@@ -206,18 +227,22 @@ roadmap, kanban, fonctionnalités, veille, process) :
 - **`/ailed-status`** (dans Claude Code) — une **synthèse intelligente** de `memory/` qui
   remonte **ce qui demande une décision** (validations humaines en attente, sujets candidats
   à promouvoir, veille périmée, intégrations désactivées).
-- **`ai-led status`** (CLI) — un snapshot terminal **déterministe et sans token**. Ajoute
-  `--html` pour générer `ailed-status.html`, un tableau de bord **statique** (kanban en
-  colonnes, tables, diagrammes du process) ouvrable dans le navigateur — **aucun serveur,
-  aucune donnée envoyée** :
+- **`ai-led status`** (CLI) — un snapshot terminal **déterministe et sans token** : barre
+  d'avancement, compteurs kanban et liste « À surveiller ». Ajoute `--html` pour générer
+  `ailed-status.html`, un tableau de bord **statique** qui ouvre sur une **synthèse visuelle**
+  (donut d'avancement, board kanban en colonnes, timeline roadmap, panneau « à surveiller ») ;
+  le détail de chaque fichier `memory/` est rangé dans des **accordéons repliés** (un clic les
+  ouvre) plutôt que déroulé en pleine page — **aucun serveur, aucune donnée projet envoyée** :
 
 ```bash
 npx @s2bp/ai-led-framework status          # snapshot terminal
 npx @s2bp/ai-led-framework status --html   # → ailed-status.html (à ouvrir au navigateur)
 ```
 
-Le HTML charge `marked` + `mermaid` via CDN pour le rendu markdown et les diagrammes
-(connexion internet nécessaire à l'affichage).
+Les deux respectent le **Style de sortie** de `config.md` (`concis` resserre la sortie, `détaillé`
+ajoute jalons et tickets en cours et déplie les accordéons HTML) ; `--style=…` le force pour un run.
+Le HTML charge `marked` + `mermaid` via CDN pour le rendu markdown et les diagrammes des
+accordéons (connexion internet nécessaire à l'affichage).
 
 ## Les 4 workflows (voir `memory/process.md`)
 

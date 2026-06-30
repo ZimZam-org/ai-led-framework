@@ -81,6 +81,8 @@ async function resolveConfig() {
     documentation: flag("docs") || disabled,
     // optional path to an existing conventions file to import verbatim ("" = none)
     conventions: flag("conventions") || "",
+    // output verbosity for agents + reports (presentation only, never memory/ content)
+    style: (flag("style") || "standard").toLowerCase(),
   };
 
   const interactive =
@@ -95,7 +97,8 @@ async function resolveConfig() {
     !flag("seo-aso") &&
     !flag("ticketing") &&
     !flag("docs") &&
-    !flag("conventions");
+    !flag("conventions") &&
+    !flag("style");
 
   if (interactive) {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -112,6 +115,7 @@ async function resolveConfig() {
     cfg.ticketing = await ask(rl, "Ticketing externe (ex. Jira, via MCP) :", disabled);
     cfg.documentation = await ask(rl, "Documentation externe (ex. Confluence, via MCP) :", disabled);
     cfg.conventions = await ask(rl, "Fichier de conventions / organisation technique à importer (facultatif, Entrée = ignorer) :", "");
+    cfg.style = (await ask(rl, "Style de sortie des agents/rapports (concis/standard/détaillé) :", "standard")).toLowerCase();
     rl.close();
   }
 
@@ -133,6 +137,7 @@ function substitute(content, cfg) {
     .replace(/{{TICKETING}}/g, cfg.ticketing)
     .replace(/{{DOCUMENTATION}}/g, cfg.documentation)
     .replace(/{{DISABLED}}/g, cfg.disabled)
+    .replace(/{{OUTPUT_STYLE}}/g, cfg.style || "standard")
     .replace(/{{DATE}}/g, now);
 }
 
@@ -270,7 +275,14 @@ function parseInstalledConfig(memDir) {
     ticketing: disabled,
     documentation: disabled,
     conventions: "",
+    style: "standard",
   };
+
+  // output style read from the dedicated bullet (fr "Style de communication…" / en "…communication style:")
+  const st =
+    txt.match(/communication style:?\s*`([^`]+)`/i) ||
+    txt.match(/style de communication[^\n]*?`([^`]+)`/i);
+  if (st) cfg.style = st[1].trim().toLowerCase();
 
   // integration values read from the Integrations table (label → key)
   const labels = [
@@ -317,7 +329,7 @@ async function update() {
   }
 
   console.log(
-    `\n${c.dim("Config relue depuis memory/config.md")} : langue=${c.bold(cfg.lang)} · trigramme=${c.bold(cfg.trigram)} · monitoring=${cfg.monitoring} · e2e=${cfg.e2e} · promo=${cfg.promo} · veille=${cfg.watch} · seo/aso=${cfg.seo_aso} · ticketing=${cfg.ticketing} · doc=${cfg.documentation}\n`
+    `\n${c.dim("Config relue depuis memory/config.md")} : langue=${c.bold(cfg.lang)} · trigramme=${c.bold(cfg.trigram)} · monitoring=${cfg.monitoring} · e2e=${cfg.e2e} · promo=${cfg.promo} · veille=${cfg.watch} · seo/aso=${cfg.seo_aso} · ticketing=${cfg.ticketing} · doc=${cfg.documentation} · style=${cfg.style}\n`
   );
 
   // 1. Agents — always overwritten (framework-owned)
@@ -404,16 +416,87 @@ function readMemory(memDir) {
   return entries;
 }
 
-function kanbanCounts(content) {
-  const counts = {};
-  for (const s of STATUSES) counts[s] = 0;
+// normalize a localized style word to one of: concise | standard | detailed
+function canonStyle(s) {
+  const v = (s || "").toLowerCase().trim();
+  if (/^conci/.test(v)) return "concise";
+  if (/détaill|detaill|detailed|verbeux|verbose/.test(v)) return "detailed";
+  return "standard";
+}
+
+// read the output style from the parsed config memory entry
+function readStyle(entries) {
+  const cfg = entries.find((e) => e.name === "config");
+  if (!cfg) return "standard";
+  const m =
+    cfg.content.match(/communication style:?\s*`([^`]+)`/i) ||
+    cfg.content.match(/style de communication[^\n]*?`([^`]+)`/i);
+  return canonStyle(m ? m[1] : "standard");
+}
+
+function tableCells(line) {
+  return line.trim().split("|").slice(1, -1).map((s) => s.trim());
+}
+function isSeparatorRow(line) {
+  return /^[-\s|]+$/.test(line.trim());
+}
+
+// parse the kanban markdown into { STATUS: [{id,title}] }, robust to extra tables/columns
+function parseBoard(content) {
+  const cols = {};
+  for (const s of STATUSES) cols[s] = [];
+  if (!content) return cols;
+  let map = null;
   for (const line of content.split("\n")) {
-    if (!line.trim().startsWith("|")) continue;
-    for (const cell of line.split("|").map((s) => s.trim())) {
-      if (counts[cell] !== undefined) counts[cell]++;
+    if (line.trim().charAt(0) !== "|") { map = null; continue; }
+    const cs = tableCells(line);
+    const lo = cs.map((c) => c.toLowerCase());
+    if (lo.indexOf("status") >= 0 && (lo.indexOf("titre") >= 0 || lo.indexOf("title") >= 0)) {
+      map = {
+        status: lo.indexOf("status"),
+        title: lo.indexOf("titre") >= 0 ? lo.indexOf("titre") : lo.indexOf("title"),
+        id: lo.indexOf("id"),
+      };
+      continue;
     }
+    if (isSeparatorRow(line) || !map) continue;
+    const st = cs[map.status];
+    if (STATUSES.indexOf(st) < 0) continue;
+    cols[st].push({ id: map.id >= 0 ? cs[map.id] : "", title: map.title >= 0 ? cs[map.title] : "" });
   }
-  return counts;
+  return cols;
+}
+
+// parse roadmap milestones into [{name,target,delivered}]
+function parseMilestones(content) {
+  const out = [];
+  if (!content) return out;
+  let map = null;
+  for (const line of content.split("\n")) {
+    if (line.trim().charAt(0) !== "|") { map = null; continue; }
+    const cs = tableCells(line);
+    const lo = cs.map((c) => c.toLowerCase());
+    if (lo.some((c) => /jalon|milestone/.test(c)) && lo.some((c) => /livraison|delivery/.test(c))) {
+      map = {
+        name: lo.findIndex((c) => /jalon|milestone/.test(c)),
+        target: lo.findIndex((c) => /cible|target/.test(c)),
+        delivered: lo.findIndex((c) => /livraison|delivery/.test(c)),
+      };
+      continue;
+    }
+    if (isSeparatorRow(line) || !map) continue;
+    const raw = map.name >= 0 ? cs[map.name] : "";
+    const name = raw.replace(/~~/g, "").trim();
+    if (!name || /^—$/.test(name)) continue;
+    const deliv = map.delivered >= 0 ? cs[map.delivered] : "";
+    out.push({ name, target: map.target >= 0 ? cs[map.target] : "", delivered: !!(deliv && deliv !== "—") || /~~/.test(raw) });
+  }
+  return out;
+}
+
+function progressBar(pct, width) {
+  const filled = Math.max(0, Math.min(width, Math.round((pct / 100) * width)));
+  return "█".repeat(filled) + "░".repeat(width - filled);
 }
 
 function disabledIntegrations(cfgContent) {
@@ -427,22 +510,52 @@ function disabledIntegrations(cfgContent) {
   return out;
 }
 
-function statusTerminal(entries, memDirRel) {
-  console.log(`\n${c.bold("AI-Led")} ${c.dim("— état du projet")} · ${c.cyan(memDirRel)}\n`);
-  for (const e of entries) {
-    let age;
-    if (e.age === null) age = c.dim("(date ?)");
-    else {
-      const txt = `(maj il y a ${e.age} j)`;
-      age = e.age > staleThreshold(e.name) ? c.yellow(txt) : c.dim(txt);
-    }
-    console.log(`  ${c.cyan(e.file.padEnd(18))} ${e.title}  ${age}`);
-  }
+function statusTerminal(entries, memDirRel, style) {
   const kb = entries.find((e) => e.name === "kanban");
-  if (kb) {
-    const k = kanbanCounts(kb.content);
-    console.log(`\n${c.bold("Kanban")}   ${STATUSES.map((s) => `${s} ${c.bold(k[s])}`).join("   ")}`);
+  const board = kb ? parseBoard(kb.content) : null;
+  const tag = style !== "standard" ? c.dim(` · ${style}`) : "";
+  console.log(`\n${c.bold("AI-Led")} ${c.dim("— état du projet")} · ${c.cyan(memDirRel)}${tag}\n`);
+
+  // Synthèse visuelle : avancement + kanban (toujours affichés)
+  if (board) {
+    const total = STATUSES.reduce((n, s) => n + board[s].length, 0);
+    const done = board.DONE.length;
+    const pct = total ? Math.round((done / total) * 100) : 0;
+    console.log(`  ${c.bold("Avancement")}  ${c.green(progressBar(pct, 24))} ${c.bold(pct + "%")}  ${c.dim(`(${done}/${total} tickets DONE)`)}`);
+    console.log(`  ${c.bold("Kanban")}      ${STATUSES.map((s) => `${s} ${c.bold(board[s].length)}`).join("   ")}\n`);
   }
+
+  // Fraîcheur des fichiers — omise en mode concis
+  if (style !== "concise") {
+    for (const e of entries) {
+      let age;
+      if (e.age === null) age = c.dim("(date ?)");
+      else {
+        const txt = `(maj il y a ${e.age} j)`;
+        age = e.age > staleThreshold(e.name) ? c.yellow(txt) : c.dim(txt);
+      }
+      console.log(`  ${c.cyan(e.file.padEnd(18))} ${e.title}  ${age}`);
+    }
+    console.log("");
+  }
+
+  // Détaillé : prochains jalons + tickets en cours
+  if (style === "detailed") {
+    const rm = entries.find((e) => e.name === "roadmap");
+    const miles = rm ? parseMilestones(rm.content).filter((m) => !m.delivered).slice(0, 5) : [];
+    if (miles.length) {
+      console.log(`${c.bold("Prochains jalons")}`);
+      for (const m of miles) console.log(`  ${c.cyan("◷")} ${m.name}${m.target ? c.dim(" → " + m.target) : ""}`);
+      console.log("");
+    }
+    if (board && board.IN_PROGRESS.length) {
+      console.log(`${c.bold("En cours")}`);
+      for (const t of board.IN_PROGRESS.slice(0, 10)) console.log(`  ${c.yellow("•")} ${t.id ? c.dim(t.id + " ") : ""}${t.title}`);
+      console.log("");
+    }
+  }
+
+  // À surveiller — toujours
   const watch = [];
   for (const e of entries) {
     if (e.age !== null && e.age > staleThreshold(e.name)) {
@@ -454,15 +567,18 @@ function statusTerminal(entries, memDirRel) {
     const off = disabledIntegrations(cfg.content);
     if (off.length) watch.push(`intégrations désactivées : ${off.join(", ")}`);
   }
+  if (board && board.TO_CHECK.length) watch.push(`${board.TO_CHECK.length} clarification(s) TO_CHECK en attente`);
   if (watch.length) {
-    console.log(`\n${c.bold("À surveiller")}`);
+    console.log(`${c.bold("À surveiller")}`);
     for (const w of watch) console.log(`  ${c.yellow("•")} ${w}`);
+    console.log("");
   }
-  console.log(`\n${c.dim("Vue navigateur :")} npx @s2bp/ai-led-framework status --html`);
+
+  console.log(`${c.dim("Vue navigateur :")} npx @s2bp/ai-led-framework status --html`);
   console.log(`${c.dim("Synthèse enrichie dans Claude Code :")} /ailed-status\n`);
 }
 
-function statusHtml(entries, outPath) {
+function statusHtml(entries, outPath, style) {
   const data = entries.map((e) => ({
     name: e.name, file: e.file, title: e.title, date: e.date, age: e.age, content: e.content,
   }));
@@ -470,7 +586,10 @@ function statusHtml(entries, outPath) {
   const generated = new Date().toISOString().slice(0, 16).replace("T", " ");
   fs.writeFileSync(
     outPath,
-    HTML_TEMPLATE.replace("/*__DATA__*/", json).replace(/__GENERATED__/g, generated)
+    HTML_TEMPLATE
+      .replace("/*__DATA__*/", json)
+      .replace(/__GENERATED__/g, generated)
+      .replace(/__STYLE__/g, style || "standard")
   );
 }
 
@@ -486,13 +605,15 @@ function status() {
     console.error(`\n${c.yellow("Aucun fichier memory/*.md trouvé.")}\n`);
     process.exit(1);
   }
+  // --style flag overrides the config value for this run; otherwise read memory/config.md
+  const style = flag("style") ? canonStyle(flag("style")) : readStyle(entries);
   if (argv.includes("--html")) {
     const out = path.resolve(cwd, flag("out") || "ailed-status.html");
-    statusHtml(entries, out);
+    statusHtml(entries, out, style);
     console.log(`\n${c.green("✓")} Tableau de bord généré : ${c.cyan(path.relative(cwd, out) || out)}`);
     console.log(`  Ouvre-le dans un navigateur : ${c.dim("file://" + out)}\n`);
   } else {
-    statusTerminal(entries, path.relative(cwd, memDir) || memDir);
+    statusTerminal(entries, path.relative(cwd, memDir) || memDir, style);
   }
 }
 
@@ -505,31 +626,63 @@ const HTML_TEMPLATE = `<!doctype html>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 <style>
-  :root { --bg:#0f1117; --panel:#171a21; --border:#252a34; --text:#e6e8eb; --muted:#8b929e; --accent:#6ea8fe; --warn:#f0c674; }
+  :root { --bg:#0f1117; --panel:#171a21; --panel2:#1d212b; --border:#252a34; --text:#e6e8eb; --muted:#8b929e; --accent:#6ea8fe; --warn:#f0c674; --ok:#6cc070; --danger:#e88;
+    --sTO_CHECK:#c08be8; --sTODO:#8b929e; --sIN_PROGRESS:#6ea8fe; --sTO_TEST:#f0c674; --sDONE:#6cc070; }
   * { box-sizing:border-box; }
   body { margin:0; font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--text); }
-  header { padding:20px 28px; border-bottom:1px solid var(--border); display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; }
+  a { color:var(--accent); }
+  header { padding:18px 28px; border-bottom:1px solid var(--border); display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; }
   header h1 { margin:0; font-size:18px; }
   header .gen { color:var(--muted); font-size:13px; }
-  .badges { display:flex; gap:8px; flex-wrap:wrap; margin-left:auto; }
-  .badge { background:var(--panel); border:1px solid var(--border); border-radius:999px; padding:3px 10px; font-size:12px; color:var(--muted); }
-  .badge b { color:var(--text); }
-  .layout { display:flex; align-items:flex-start; }
-  nav { position:sticky; top:0; width:230px; flex:0 0 230px; height:100vh; overflow:auto; padding:18px 12px; border-right:1px solid var(--border); }
-  nav a { display:flex; justify-content:space-between; gap:8px; padding:7px 10px; border-radius:8px; color:var(--text); text-decoration:none; font-size:14px; }
-  nav a:hover { background:var(--panel); }
-  nav a .dot { color:var(--warn); }
-  main { flex:1; padding:8px 32px 80px; max-width:900px; }
-  section { padding-top:24px; }
-  section h2.sec { font-size:14px; text-transform:uppercase; letter-spacing:.06em; color:var(--accent); border-bottom:1px solid var(--border); padding-bottom:6px; }
-  section .stamp { color:var(--muted); font-size:12px; margin:-4px 0 8px; }
-  .md table { border-collapse:collapse; width:100%; margin:12px 0; font-size:14px; }
+  .badges { display:flex; gap:7px; flex-wrap:wrap; margin-left:auto; }
+  .badge { border-radius:999px; padding:3px 10px; font-size:12px; border:1px solid var(--border); }
+  .badge.on { background:rgba(108,192,112,.12); border-color:rgba(108,192,112,.4); color:#bfe6c2; }
+  .badge.off { background:var(--panel); color:var(--muted); text-decoration:line-through; }
+  .badge.style { background:var(--panel); color:var(--muted); } .badge b { color:var(--text); }
+  main { max-width:1120px; margin:0 auto; padding:24px 28px 80px; }
+  h2.sec { font-size:13px; text-transform:uppercase; letter-spacing:.07em; color:var(--accent); margin:28px 0 12px; }
+  .grid { display:grid; grid-template-columns:240px 1fr; gap:16px; align-items:stretch; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media (max-width:760px){ .grid,.grid2{ grid-template-columns:1fr; } }
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:16px 18px; }
+  .card h3 { margin:0 0 10px; font-size:13px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+  .donutwrap { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; }
+  .donutwrap .sub { color:var(--muted); font-size:13px; }
+  .summary { font-size:15px; line-height:1.55; }
+  .summary .none { color:var(--muted); font-style:italic; }
+  .board { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; }
+  @media (max-width:760px){ .board{ grid-template-columns:1fr; } }
+  .col { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:8px; min-height:60px; }
+  .colh { font-size:12px; font-weight:600; padding:4px 6px 8px; display:flex; justify-content:space-between; border-bottom:2px solid var(--cc); margin-bottom:6px; }
+  .colh b { font-size:15px; }
+  .ticket { background:var(--panel2); border:1px solid var(--border); border-left:3px solid var(--cc); border-radius:6px; padding:6px 8px; margin-bottom:6px; font-size:13px; }
+  .ticket .tid { display:block; color:var(--muted); font-size:11px; font-family:ui-monospace,monospace; }
+  .col .empty, .tl .empty, .watch .empty { color:var(--muted); font-size:13px; font-style:italic; padding:4px 6px; }
+  .tl { list-style:none; margin:0; padding:0; }
+  .tl li { padding:6px 0 6px 4px; border-left:2px solid var(--border); padding-left:14px; position:relative; }
+  .tl li span { font-weight:500; } .tl li em { color:var(--muted); font-style:normal; font-size:12px; margin-left:8px; }
+  .tl li.done { color:var(--muted); } .tl li.done span { text-decoration:line-through; }
+  .watch { list-style:none; margin:0; padding:0; }
+  .watch li { padding:6px 0 6px 18px; position:relative; font-size:14px; }
+  .watch li:before { content:"•"; color:var(--warn); position:absolute; left:2px; }
+  .toc { display:flex; gap:7px; flex-wrap:wrap; margin:6px 0 14px; }
+  .toc a { font-size:12px; background:var(--panel); border:1px solid var(--border); border-radius:999px; padding:3px 11px; text-decoration:none; color:var(--text); }
+  .toc a .dot { color:var(--warn); } .toc a:hover { border-color:var(--accent); }
+  details.file { background:var(--panel); border:1px solid var(--border); border-radius:10px; margin-bottom:8px; }
+  details.file > summary { cursor:pointer; padding:11px 16px; list-style:none; display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
+  details.file > summary::-webkit-details-marker { display:none; }
+  details.file > summary:before { content:"▸"; color:var(--muted); } details.file[open] > summary:before { content:"▾"; }
+  details.file > summary .sf { font-family:ui-monospace,monospace; font-size:12px; color:var(--accent); }
+  details.file > summary .st { margin-left:auto; color:var(--muted); font-size:12px; }
+  details.file .md { padding:2px 18px 16px; border-top:1px solid var(--border); }
+  .toggle { background:var(--panel); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:8px 14px; cursor:pointer; font-size:14px; }
+  .toggle:hover { border-color:var(--accent); }
+  .md table { border-collapse:collapse; width:100%; margin:12px 0; font-size:14px; display:block; overflow-x:auto; }
   .md th, .md td { border:1px solid var(--border); padding:6px 10px; text-align:left; vertical-align:top; }
-  .md th { background:var(--panel); }
-  .md code { background:var(--panel); padding:1px 5px; border-radius:4px; font-size:13px; }
-  .md pre { background:var(--panel); padding:12px; border-radius:8px; overflow:auto; }
-  .md h1 { display:none; }
-  .md h2, .md h3 { margin-top:18px; }
+  .md th { background:var(--panel2); }
+  .md code { background:var(--panel2); padding:1px 5px; border-radius:4px; font-size:13px; }
+  .md pre { background:var(--panel2); padding:12px; border-radius:8px; overflow:auto; }
+  .md h1 { display:none; } .md h2, .md h3 { margin-top:18px; }
   .mermaid { background:#fff; border-radius:8px; padding:12px; margin:12px 0; }
 </style>
 </head>
@@ -539,42 +692,154 @@ const HTML_TEMPLATE = `<!doctype html>
   <span class="gen">généré le __GENERATED__ · lecture seule</span>
   <div class="badges" id="badges"></div>
 </header>
-<div class="layout">
-  <nav id="nav"></nav>
-  <main id="main"></main>
-</div>
+<main>
+  <div id="synth"></div>
+  <h2 class="sec">Détail de la mémoire</h2>
+  <div id="toc" class="toc"></div>
+  <div id="detail"></div>
+</main>
 <script>
   var DATA = /*__DATA__*/;
+  var STYLE = "__STYLE__";
   var STATUSES = ['TO_CHECK','TODO','IN_PROGRESS','TO_TEST','DONE'];
+  var LABEL = {TO_CHECK:'À vérifier',TODO:'À faire',IN_PROGRESS:'En cours',TO_TEST:'À tester',DONE:'Terminé'};
   function staleLimit(name){ return name === 'market-watch' ? 30 : 60; }
-  function kanban(md){
-    var c = {}; STATUSES.forEach(function(s){ c[s]=0; });
+  function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function get(name){ return DATA.filter(function(e){ return e.name===name; })[0]; }
+  function cells(line){ return line.trim().split('|').slice(1,-1).map(function(s){ return s.trim(); }); }
+  function isSep(line){ return /^[-\\s|]+$/.test(line.trim()); }
+
+  function parseBoard(md){
+    var cols={}; STATUSES.forEach(function(s){ cols[s]=[]; });
+    if(!md) return cols; var map=null;
     md.split('\\n').forEach(function(line){
-      if (line.trim().charAt(0) !== '|') return;
-      line.split('|').forEach(function(cell){ cell=cell.trim(); if (c[cell]!==undefined) c[cell]++; });
+      if(line.trim().charAt(0)!=='|'){ map=null; return; }
+      var cs=cells(line), lo=cs.map(function(c){ return c.toLowerCase(); });
+      if(lo.indexOf('status')>=0 && (lo.indexOf('titre')>=0||lo.indexOf('title')>=0)){
+        map={ status:lo.indexOf('status'), title:lo.indexOf('titre')>=0?lo.indexOf('titre'):lo.indexOf('title'), id:lo.indexOf('id') };
+        return;
+      }
+      if(isSep(line)||!map) return;
+      var st=cs[map.status];
+      if(STATUSES.indexOf(st)<0) return;
+      cols[st].push({ id:map.id>=0?cs[map.id]:'', title:map.title>=0?cs[map.title]:'' });
     });
-    return c;
+    return cols;
   }
-  var kb = DATA.filter(function(e){ return e.name==='kanban'; })[0];
-  if (kb){
-    var k = kanban(kb.content), html='';
-    STATUSES.forEach(function(s){ html += '<span class="badge">'+s+' <b>'+k[s]+'</b></span>'; });
-    document.getElementById('badges').innerHTML = html;
+  function parseMilestones(md){
+    var out=[]; if(!md) return out; var map=null;
+    md.split('\\n').forEach(function(line){
+      if(line.trim().charAt(0)!=='|'){ map=null; return; }
+      var cs=cells(line), lo=cs.map(function(c){ return c.toLowerCase(); });
+      if(lo.some(function(c){return /jalon|milestone/.test(c);}) && lo.some(function(c){return /livraison|delivery/.test(c);})){
+        map={ name:lo.findIndex(function(c){return /jalon|milestone/.test(c);}), target:lo.findIndex(function(c){return /cible|target/.test(c);}), deliv:lo.findIndex(function(c){return /livraison|delivery/.test(c);}) };
+        return;
+      }
+      if(isSep(line)||!map) return;
+      var raw=map.name>=0?cs[map.name]:''; var name=raw.replace(/~~/g,'').trim();
+      if(!name||name==='—') return;
+      var d=map.deliv>=0?cs[map.deliv]:'';
+      out.push({ name:name, target:map.target>=0?cs[map.target]:'', delivered:(!!d && d!=='—')||/~~/.test(raw) });
+    });
+    return out;
   }
-  var nav='', main='';
+  function parseIntegrations(md){
+    var out=[]; if(!md) return out; var inSec=false;
+    md.split('\\n').forEach(function(line){
+      if(/^##\\s/.test(line)){ inSec=/^##\\s+(Integrations|Intégrations)/i.test(line); return; }
+      if(/^###/.test(line)){ inSec=false; return; }
+      if(!inSec || line.trim().charAt(0)!=='|' || isSep(line)) return;
+      var cs=cells(line); if(cs.length<2) return;
+      var area=cs[0], tool=cs[1].replace(/\`/g,'').trim();
+      if(!area || /area|domaine|---/i.test(area)) return;
+      out.push({ area:area, tool:tool, on: !!tool && !/^(aucun|none|—)$/i.test(tool) && !/^\\{\\{.*\\}\\}$/.test(tool) });
+    });
+    return out;
+  }
+  function stateSummary(md){
+    if(!md) return ''; var lines=md.split('\\n'), grab=false, buf=[];
+    for(var i=0;i<lines.length;i++){
+      var l=lines[i];
+      if(/^##\\s/.test(l)){ grab=/^##\\s+(État actuel|Current state)/i.test(l); continue; }
+      if(grab){ var t=l.trim(); if(t) buf.push(t); }
+    }
+    var s=buf.join(' ').trim();
+    if(!s || /^TO IDENTIFY/i.test(s)) return ''; return s;
+  }
+  function donut(pct){
+    var r=44, cir=2*Math.PI*r, off=cir*(1-pct/100);
+    return '<svg width="120" height="120" viewBox="0 0 120 120">'
+      +'<circle cx="60" cy="60" r="'+r+'" fill="none" stroke="var(--border)" stroke-width="12"/>'
+      +'<circle cx="60" cy="60" r="'+r+'" fill="none" stroke="var(--ok)" stroke-width="12" stroke-linecap="round" stroke-dasharray="'+cir+'" stroke-dashoffset="'+off+'" transform="rotate(-90 60 60)"/>'
+      +'<text x="60" y="60" text-anchor="middle" dominant-baseline="central" font-size="24" font-weight="700" fill="var(--text)">'+pct+'%</text></svg>';
+  }
+
+  // ── Synthèse ──────────────────────────────────────────────
+  var cfg=get('config'); var integ=parseIntegrations(cfg&&cfg.content);
+  var badges = integ.map(function(it){
+    return it.on ? '<span class="badge on">'+esc(it.area)+' <b>'+esc(it.tool)+'</b></span>'
+                 : '<span class="badge off">'+esc(it.area)+'</span>';
+  }).join('') + '<span class="badge style">style&nbsp;<b>'+esc(STYLE)+'</b></span>';
+  document.getElementById('badges').innerHTML = badges;
+
+  var board = parseBoard((get('kanban')||{}).content);
+  var total = STATUSES.reduce(function(n,s){ return n+board[s].length; },0);
+  var done = board.DONE.length;
+  var pct = total ? Math.round(done/total*100) : 0;
+  var summary = stateSummary((get('project-state')||{}).content);
+
+  var boardHtml = STATUSES.map(function(s){
+    var cssVar = 'var(--s'+s+')';
+    var cards = board[s].length ? board[s].map(function(t){
+      return '<div class="ticket" style="--cc:'+cssVar+'">'+(t.id?'<span class="tid">'+esc(t.id)+'</span>':'')+esc(t.title||'(sans titre)')+'</div>';
+    }).join('') : '<div class="empty">—</div>';
+    return '<div class="col" style="--cc:'+cssVar+'"><div class="colh" style="--cc:'+cssVar+'"><span>'+LABEL[s]+'</span><b>'+board[s].length+'</b></div>'+cards+'</div>';
+  }).join('');
+
+  var miles = parseMilestones((get('roadmap')||{}).content);
+  var milesHtml = miles.length ? miles.map(function(m){
+    return '<li class="'+(m.delivered?'done':'')+'">'+(m.delivered?'✓ ':'◷ ')+'<span>'+esc(m.name)+'</span>'+(m.target&&!m.delivered?'<em>'+esc(m.target)+'</em>':'')+'</li>';
+  }).join('') : '<li class="empty">Aucun jalon défini</li>';
+
+  var watch=[];
+  DATA.forEach(function(e){ if(e.age!==null && e.age>staleLimit(e.name)) watch.push(esc(e.file)+' — '+e.age+' j sans mise à jour'); });
+  var off = integ.filter(function(it){ return !it.on; }).map(function(it){ return esc(it.area); });
+  if(off.length) watch.push('Intégrations désactivées : '+off.join(', '));
+  if(board.TO_CHECK.length) watch.push(board.TO_CHECK.length+' clarification(s) TO_CHECK en attente');
+  var watchHtml = watch.length ? watch.map(function(w){ return '<li>'+w+'</li>'; }).join('') : '<li class="empty">Rien à signaler</li>';
+
+  document.getElementById('synth').innerHTML =
+    '<h2 class="sec">Synthèse</h2>'
+    + '<div class="grid">'
+    +   '<div class="card donutwrap">'+donut(pct)+'<div class="sub">'+done+' / '+total+' tickets terminés</div></div>'
+    +   '<div class="card"><h3>État actuel</h3><div class="summary">'+(summary?esc(summary):'<span class="none">Non renseigné (project-state.md)</span>')+'</div></div>'
+    + '</div>'
+    + '<h2 class="sec">Kanban</h2><div class="board">'+boardHtml+'</div>'
+    + '<div class="grid2" style="margin-top:16px">'
+    +   '<div class="card"><h3>Roadmap — jalons</h3><ul class="tl">'+milesHtml+'</ul></div>'
+    +   '<div class="card"><h3>À surveiller</h3><ul class="watch">'+watchHtml+'</ul></div>'
+    + '</div>';
+
+  // ── Détail (replié) ───────────────────────────────────────
+  var open = STYLE==='detailed' ? ' open' : '';
+  var toc='', det='';
   DATA.forEach(function(e){
-    var stale = (e.age!==null && e.age>staleLimit(e.name));
-    var dot = stale ? '<span class="dot" title="périmé">●</span>' : '';
-    nav += '<a href="#'+e.name+'">'+e.title+' '+dot+'</a>';
-    var stamp = e.date ? ('maj '+e.date+(e.age!==null?(' · il y a '+e.age+' j'+(stale?' — périmé':'')):'')) : 'date inconnue';
-    main += '<section id="'+e.name+'"><h2 class="sec">'+e.file+'</h2><div class="stamp">'+stamp+'</div><div class="md">'+marked.parse(e.content)+'</div></section>';
+    var stale=(e.age!==null && e.age>staleLimit(e.name));
+    toc += '<a href="#f-'+e.name+'" data-t="f-'+e.name+'">'+esc(e.title)+(stale?' <span class="dot">●</span>':'')+'</a>';
+    var stamp = e.date ? ('maj '+e.date+(e.age!==null?(' · '+e.age+' j'+(stale?' — périmé':'')):'')) : 'date inconnue';
+    det += '<details class="file" id="f-'+e.name+'"'+open+'><summary><span class="sf">'+esc(e.file)+'</span> '+esc(e.title)+'<span class="st">'+stamp+'</span></summary><div class="md">'+marked.parse(e.content)+'</div></details>';
   });
-  document.getElementById('nav').innerHTML = nav;
-  document.getElementById('main').innerHTML = main;
+  document.getElementById('toc').innerHTML = toc;
+  document.getElementById('detail').innerHTML = det;
+
+  // clic sur une puce du sommaire → ouvre l'accordéon ciblé
+  document.getElementById('toc').addEventListener('click', function(ev){
+    var a = ev.target.closest('a'); if(!a) return;
+    var el = document.getElementById(a.getAttribute('data-t')); if(el) el.open = true;
+  });
+
   document.querySelectorAll('code.language-mermaid').forEach(function(code){
-    var div = document.createElement('div');
-    div.className='mermaid';
-    div.textContent = code.textContent;
+    var div = document.createElement('div'); div.className='mermaid'; div.textContent = code.textContent;
     (code.closest('pre')||code).replaceWith(div);
   });
   if (window.mermaid){ mermaid.initialize({startOnLoad:false, theme:'default'}); mermaid.run({querySelector:'.mermaid'}); }
@@ -606,6 +871,7 @@ ${c.bold("Options de init")}
   --seo-aso=NOM       Outil SEO / ASO (Search Console, Ahrefs, App Store Connect) ou désactivé (défaut)
   --ticketing=NOM     Ticketing externe (ex. Jira, via MCP) ou désactivé (défaut)
   --docs=NOM          Documentation externe (ex. Confluence, via MCP) ou désactivé (défaut)
+  --style=NIVEAU      Style de sortie agents/rapports : concis | standard | détaillé (défaut : standard)
   --conventions=CHEMIN  Importe un fichier de conventions/organisation technique dans memory/conventions.md (facultatif)
   -y, --yes           Mode non interactif (valeurs par défaut / flags fournis)
   -f, --force         Écrase les fichiers existants (par défaut : ignorés)
@@ -619,6 +885,10 @@ ${c.bold("update")}
 ${c.bold("Options de status")}
   --html              Génère un tableau de bord HTML statique (ailed-status.html), sans serveur
   --out=CHEMIN        Chemin du fichier HTML généré (défaut : ailed-status.html)
+  --style=NIVEAU      Force le style pour ce run : concis | standard | détaillé (sinon lu dans memory/config.md)
+
+  Le terminal et le HTML montrent d'abord une synthèse (avancement, board kanban, jalons,
+  « à surveiller ») ; le HTML met le détail des fichiers memory/ dans des accordéons repliés.
 
 ${c.dim("Sans flag et en terminal interactif, init pose les questions de configuration.")}
 `);

@@ -11,6 +11,26 @@ adaptent leur comportement (notamment si une intégration vaut `{{DISABLED}}`).
 - Trigramme projet (préfixe de ticket) : `{{TICKET_PREFIX}}`
   → les tickets de dev sont nommés `{{TICKET_PREFIX}}-000001`, `{{TICKET_PREFIX}}-000002`, …
 
+## Style de sortie
+
+- Style de communication des agents et rapports : `{{OUTPUT_STYLE}}`
+  → valeurs : `concis` · `standard` · `détaillé` (défaut : `standard`).
+
+**Lu par tous les agents et par `ai-led status`.** Ce réglage pilote *uniquement la présentation* —
+jamais le contenu de `memory/`, qui reste la **source de vérité complète et versionnée**. Il
+s'applique à : l'affichage dans Claude Code, les synthèses (`/ailed-status`) et le texte poussé
+vers les outils externes (Jira / Confluence).
+
+| Valeur     | Comportement attendu |
+| ---------- | -------------------- |
+| `concis`   | Mode « à l'essentiel ». Pas de préambule ni de conclusion, pas de reformulation de la demande, pas de phrases de transition. Puces courtes (une idée par ligne), tableaux plutôt que prose. Sur Jira : titre + critères d'acceptation en puces, sans narration. |
+| `standard` | Synthèse claire et structurée, contexte utile mais sans remplissage. Comportement par défaut. |
+| `détaillé` | Explications complètes : raisonnement, alternatives écartées, contexte étendu. Pour onboarding, audits ou revues approfondies. |
+
+> `concis` ne signifie **jamais** omettre une information critique (risque, décision, blocage) :
+> on coupe le superflu, pas le fond. La `memory/` est toujours renseignée intégralement, quel
+> que soit ce réglage.
+
 ## Conventions techniques (facultatif)
 
 Les conventions de code et l'organisation technique **en place** sont décrites dans

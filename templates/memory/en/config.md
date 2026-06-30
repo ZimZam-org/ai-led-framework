@@ -11,6 +11,25 @@ behaviour (in particular when an integration is set to `{{DISABLED}}`).
 - Project trigram (ticket prefix): `{{TICKET_PREFIX}}`
   → dev tickets are named `{{TICKET_PREFIX}}-000001`, `{{TICKET_PREFIX}}-000002`, …
 
+## Output style
+
+- Agent & report communication style: `{{OUTPUT_STYLE}}`
+  → values: `concise` · `standard` · `detailed` (default: `standard`).
+
+**Read by every agent and by `ai-led status`.** This setting drives *presentation only* — never
+the content of `memory/`, which stays the **complete, git-versioned source of truth**. It applies
+to: the Claude Code display, syntheses (`/ailed-status`) and the text pushed to external tools
+(Jira / Confluence).
+
+| Value      | Expected behaviour |
+| ---------- | ------------------ |
+| `concise`  | "Get to the point" mode. No preamble or wrap-up, no restating the request, no transition sentences. Short bullets (one idea per line), tables over prose. On Jira: title + acceptance criteria as bullets, no narration. |
+| `standard` | Clear, structured summary with useful context but no filler. Default behaviour. |
+| `detailed` | Full explanations: reasoning, discarded alternatives, extended context. For onboarding, audits or deep reviews. |
+
+> `concise` never means dropping critical information (risk, decision, blocker): cut the fluff,
+> not the substance. `memory/` is always filled in full regardless of this setting.
+
 ## Technical conventions (optional)
 
 The coding conventions and technical organization **already in place** are described in
