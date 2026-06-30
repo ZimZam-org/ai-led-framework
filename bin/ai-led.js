@@ -705,27 +705,9 @@ const HTML_TEMPLATE = `<!doctype html>
   .badge.style { background:var(--panel); color:var(--muted); } .badge b { color:var(--text); }
   main { max-width:1120px; margin:0 auto; padding:24px 28px 80px; }
   h2.sec { font-size:13px; text-transform:uppercase; letter-spacing:.07em; color:var(--accent); margin:28px 0 12px; }
-  .grid { display:grid; grid-template-columns:240px 1fr; gap:16px; align-items:stretch; }
-  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-  @media (max-width:760px){ .grid,.grid2{ grid-template-columns:1fr; } }
   .card { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:16px 18px; }
   .card h3 { margin:0 0 10px; font-size:13px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
-  .donutwrap { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; }
-  .donutwrap .sub { color:var(--muted); font-size:13px; }
-  .summary { font-size:15px; line-height:1.55; }
-  .summary .none { color:var(--muted); font-style:italic; }
-  .board { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; }
-  @media (max-width:760px){ .board{ grid-template-columns:1fr; } }
-  .col { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:8px; min-height:60px; }
-  .colh { font-size:12px; font-weight:600; padding:4px 6px 8px; display:flex; justify-content:space-between; border-bottom:2px solid var(--cc); margin-bottom:6px; }
-  .colh b { font-size:15px; }
-  .ticket { background:var(--panel2); border:1px solid var(--border); border-left:3px solid var(--cc); border-radius:6px; padding:6px 8px; margin-bottom:6px; font-size:13px; }
-  .ticket .tid { display:block; color:var(--muted); font-size:11px; font-family:ui-monospace,monospace; }
-  .col .empty, .tl .empty, .watch .empty { color:var(--muted); font-size:13px; font-style:italic; padding:4px 6px; }
-  .tl { list-style:none; margin:0; padding:0; }
-  .tl li { padding:6px 0 6px 4px; border-left:2px solid var(--border); padding-left:14px; position:relative; }
-  .tl li span { font-weight:500; } .tl li em { color:var(--muted); font-style:normal; font-size:12px; margin-left:8px; }
-  .tl li.done { color:var(--muted); } .tl li.done span { text-decoration:line-through; }
+  .watch .empty { color:var(--muted); font-size:13px; font-style:italic; padding:4px 6px; }
   .watch { list-style:none; margin:0; padding:0; }
   .watch li { padding:6px 0 6px 18px; position:relative; font-size:14px; }
   .watch li:before { content:"•"; color:var(--warn); position:absolute; left:2px; }
@@ -739,8 +721,53 @@ const HTML_TEMPLATE = `<!doctype html>
   details.file > summary .sf { font-family:ui-monospace,monospace; font-size:12px; color:var(--accent); }
   details.file > summary .st { margin-left:auto; color:var(--muted); font-size:12px; }
   details.file .md { padding:2px 18px 16px; border-top:1px solid var(--border); }
-  .toggle { background:var(--panel); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:8px 14px; cursor:pointer; font-size:14px; }
+  .toggle { background:var(--panel); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:8px 14px; cursor:pointer; font-size:14px; margin:8px 0 4px; }
   .toggle:hover { border-color:var(--accent); }
+  .lede { color:var(--muted); font-size:14px; margin:0 0 14px; }
+  /* KPIs : 2 camemberts + bloc de chiffres */
+  .kpis { display:grid; grid-template-columns:1fr 1fr 1.15fr; gap:16px; align-items:stretch; }
+  @media (max-width:880px){ .kpis{ grid-template-columns:1fr; } }
+  .pie-card { display:flex; gap:16px; align-items:center; }
+  .pie-card .piefig { flex:0 0 auto; }
+  .pie-card .pieinfo { min-width:0; flex:1; }
+  .pie-pct { font-size:30px; font-weight:700; line-height:1; }
+  .pie-pct .approx { font-size:12px; font-weight:500; color:var(--muted); margin-left:5px; }
+  .pie-sub { color:var(--muted); font-size:13px; margin-top:3px; }
+  .legend { list-style:none; margin:12px 0 0; padding:0; font-size:12.5px; }
+  .legend li { display:flex; align-items:center; gap:7px; padding:2px 0; color:var(--muted); }
+  .legend .ldot { width:9px; height:9px; border-radius:2px; flex:0 0 auto; }
+  .legend b { color:var(--text); margin-left:auto; font-variant-numeric:tabular-nums; }
+  .stats { display:flex; flex-direction:column; justify-content:center; gap:9px; }
+  .stat { display:flex; align-items:center; gap:13px; text-decoration:none; color:inherit; padding:9px 11px; border-radius:9px; border:1px solid var(--border); background:var(--panel2); transition:border-color .15s; }
+  .stat:hover { border-color:var(--accent); }
+  .stat .num { font-size:26px; font-weight:700; line-height:1; min-width:36px; text-align:center; font-variant-numeric:tabular-nums; }
+  .stat .lab { font-size:13.5px; } .stat .lab small { display:block; color:var(--muted); font-size:11.5px; }
+  .stat.bug .num { color:var(--danger); } .stat.vuln .num { color:var(--warn); } .stat.arb .num { color:var(--accent); }
+  .stat.zero .num { color:var(--ok); }
+  /* Timeline des EPICs */
+  .epic-timeline { list-style:none; margin:0; padding:6px 0 2px; display:flex; gap:0; overflow-x:auto; }
+  .epic-timeline li { position:relative; flex:1 1 0; min-width:128px; padding:0 8px; }
+  .epic-timeline li:not(:last-child):after { content:""; position:absolute; top:13px; left:calc(50% + 16px); right:calc(-50% + 16px); height:2px; background:var(--border); }
+  .epic-timeline li.done:not(:last-child):after { background:var(--ok); }
+  .epic-timeline .node { position:relative; z-index:1; width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:13px; margin:0 auto 9px; background:var(--panel2); border:2px solid var(--border); color:var(--muted); }
+  .epic-timeline li.done .node { background:var(--ok); border-color:var(--ok); color:#06240a; }
+  .epic-timeline li.current .node { border-color:var(--accent); color:var(--accent); box-shadow:0 0 0 4px rgba(110,168,254,.18); }
+  .epic-timeline .ep-id { font-family:ui-monospace,monospace; font-size:11px; color:var(--muted); text-align:center; display:block; }
+  .epic-timeline .ep-title { font-size:12.5px; text-align:center; display:block; line-height:1.35; }
+  .epic-timeline li.current .ep-title { color:var(--accent); font-weight:600; }
+  .epic-timeline li.todo { opacity:.65; }
+  /* EPIC en cours : tâches faites / en cours / à venir */
+  .cur-epic-h { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
+  .cur-epic-h .eid { font-family:ui-monospace,monospace; color:var(--accent); }
+  .cur-epic-h .pill { font-size:12px; color:var(--muted); background:var(--panel2); border:1px solid var(--border); border-radius:999px; padding:2px 9px; margin-left:auto; }
+  .taskcols { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  @media (max-width:680px){ .taskcols{ grid-template-columns:1fr; } }
+  .taskcol h4 { margin:0 0 8px; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); display:flex; justify-content:space-between; }
+  .taskcol.done h4 { color:var(--ok); } .taskcol.cur h4 { color:var(--accent); }
+  .taskcol ul { list-style:none; margin:0; padding:0; }
+  .taskcol li { background:var(--panel2); border:1px solid var(--border); border-left:3px solid var(--cc); border-radius:6px; padding:6px 8px; margin-bottom:6px; font-size:13px; }
+  .taskcol li .tid { display:block; color:var(--muted); font-size:11px; font-family:ui-monospace,monospace; }
+  .taskcol .empty { color:var(--muted); font-style:italic; font-size:12.5px; }
   .md table { border-collapse:collapse; width:100%; margin:12px 0; font-size:14px; display:block; overflow-x:auto; }
   .md th, .md td { border:1px solid var(--border); padding:6px 10px; text-align:left; vertical-align:top; }
   .md th { background:var(--panel2); }
@@ -758,9 +785,11 @@ const HTML_TEMPLATE = `<!doctype html>
 </header>
 <main>
   <div id="synth"></div>
-  <h2 class="sec">Détail de la mémoire</h2>
-  <div id="toc" class="toc"></div>
-  <div id="detail"></div>
+  <button id="toggleDetail" class="toggle" type="button" aria-expanded="false">▸ Détail de la mémoire (lecture des fichiers bruts)</button>
+  <div id="detailWrap" hidden>
+    <div id="toc" class="toc"></div>
+    <div id="detail"></div>
+  </div>
 </main>
 <script>
   var DATA = /*__DATA__*/;
@@ -790,23 +819,6 @@ const HTML_TEMPLATE = `<!doctype html>
     });
     return cols;
   }
-  function parseMilestones(md){
-    var out=[]; if(!md) return out; var map=null;
-    md.split('\\n').forEach(function(line){
-      if(line.trim().charAt(0)!=='|'){ map=null; return; }
-      var cs=cells(line), lo=cs.map(function(c){ return c.toLowerCase(); });
-      if(lo.some(function(c){return /jalon|milestone/.test(c);}) && lo.some(function(c){return /livraison|delivery/.test(c);})){
-        map={ name:lo.findIndex(function(c){return /jalon|milestone/.test(c);}), target:lo.findIndex(function(c){return /cible|target/.test(c);}), deliv:lo.findIndex(function(c){return /livraison|delivery/.test(c);}) };
-        return;
-      }
-      if(isSep(line)||!map) return;
-      var raw=map.name>=0?cs[map.name]:''; var name=raw.replace(/~~/g,'').trim();
-      if(!name||name==='—') return;
-      var d=map.deliv>=0?cs[map.deliv]:'';
-      out.push({ name:name, target:map.target>=0?cs[map.target]:'', delivered:(!!d && d!=='—')||/~~/.test(raw) });
-    });
-    return out;
-  }
   function parseIntegrations(md){
     var out=[]; if(!md) return out; var inSec=false;
     md.split('\\n').forEach(function(line){
@@ -830,15 +842,155 @@ const HTML_TEMPLATE = `<!doctype html>
     var s=buf.join(' ').trim();
     if(!s || /^TO IDENTIFY/i.test(s)) return ''; return s;
   }
-  function donut(pct){
-    var r=44, cir=2*Math.PI*r, off=cir*(1-pct/100);
-    return '<svg width="120" height="120" viewBox="0 0 120 120">'
-      +'<circle cx="60" cy="60" r="'+r+'" fill="none" stroke="var(--border)" stroke-width="12"/>'
-      +'<circle cx="60" cy="60" r="'+r+'" fill="none" stroke="var(--ok)" stroke-width="12" stroke-linecap="round" stroke-dasharray="'+cir+'" stroke-dashoffset="'+off+'" transform="rotate(-90 60 60)"/>'
-      +'<text x="60" y="60" text-anchor="middle" dominant-baseline="central" font-size="24" font-weight="700" fill="var(--text)">'+pct+'%</text></svg>';
+  var SCOL={TO_CHECK:'#c08be8',TODO:'#8b929e',IN_PROGRESS:'#6ea8fe',TO_TEST:'#f0c674',DONE:'#6cc070'};
+  // camembert (pie) à partir de segments [{value,color}] ; tranche DONE en tête
+  function pieSvg(segs){
+    var tot=segs.reduce(function(n,s){ return n+s.value; },0);
+    if(!tot) return '<svg width="128" height="128" viewBox="0 0 128 128"><circle cx="64" cy="64" r="56" fill="var(--panel2)" stroke="var(--border)"/><text x="64" y="68" text-anchor="middle" fill="var(--muted)" font-size="13">aucun</text></svg>';
+    var cx=64, cy=64, r=56, a=-Math.PI/2, parts='';
+    segs.forEach(function(s){
+      if(!s.value) return;
+      var frac=s.value/tot, a2=a+frac*2*Math.PI;
+      if(frac>=0.99999){ parts+='<circle cx="64" cy="64" r="'+r+'" fill="'+s.color+'"/>'; a=a2; return; }
+      var x1=cx+r*Math.cos(a), y1=cy+r*Math.sin(a), x2=cx+r*Math.cos(a2), y2=cy+r*Math.sin(a2);
+      parts+='<path d="M'+cx+' '+cy+' L'+x1.toFixed(2)+' '+y1.toFixed(2)+' A'+r+' '+r+' 0 '+(frac>0.5?1:0)+' 1 '+x2.toFixed(2)+' '+y2.toFixed(2)+' Z" fill="'+s.color+'"/>';
+      a=a2;
+    });
+    return '<svg width="128" height="128" viewBox="0 0 128 128">'+parts+'<circle cx="64" cy="64" r="56" fill="none" stroke="var(--border)"/></svg>';
+  }
+  function classifyEpic(s){
+    var v=(s||'').toUpperCase();
+    if(/DONE|TERMIN|LIVR|CLOS/.test(v)) return 'done';
+    if(/IN[_ ]?PROGRESS|EN COURS|WIP|DOING/.test(v)) return 'current';
+    return 'todo';
+  }
+  // epics.md → [{id,title,status}] dans l'ordre de déclaration
+  function parseEpics(md){
+    var out=[]; if(!md) return out; var map=null;
+    md.split('\\n').forEach(function(line){
+      if(line.trim().charAt(0)!=='|'){ map=null; return; }
+      var cs=cells(line), lo=cs.map(function(c){ return c.toLowerCase(); });
+      var ei=lo.indexOf('epic');
+      if(ei>=0 && (lo.indexOf('titre')>=0||lo.indexOf('title')>=0)){
+        map={ epic:ei, title:lo.indexOf('titre')>=0?lo.indexOf('titre'):lo.indexOf('title'), status:lo.indexOf('statut')>=0?lo.indexOf('statut'):lo.indexOf('status') };
+        return;
+      }
+      if(isSep(line)||!map) return;
+      var id=(cs[map.epic]||'').replace(/\`/g,'').trim();
+      if(!id||id==='—') return;
+      out.push({ id:id, title:(map.title>=0?cs[map.title]:'')||'', status:classifyEpic(map.status>=0?cs[map.status]:'') });
+    });
+    return out;
+  }
+  // kanban.md → [{id,title,status,epic}]
+  function parseKanbanFull(md){
+    var out=[]; if(!md) return out; var map=null;
+    md.split('\\n').forEach(function(line){
+      if(line.trim().charAt(0)!=='|'){ map=null; return; }
+      var cs=cells(line), lo=cs.map(function(c){ return c.toLowerCase(); });
+      if(lo.indexOf('status')>=0 && (lo.indexOf('titre')>=0||lo.indexOf('title')>=0)){
+        map={ status:lo.indexOf('status'), title:lo.indexOf('titre')>=0?lo.indexOf('titre'):lo.indexOf('title'), id:lo.indexOf('id'), epic:lo.indexOf('epic') };
+        return;
+      }
+      if(isSep(line)||!map) return;
+      var st=cs[map.status];
+      if(STATUSES.indexOf(st)<0) return;
+      out.push({ id:map.id>=0?cs[map.id]:'', title:map.title>=0?cs[map.title]:'', status:st, epic:map.epic>=0?(cs[map.epic]||'').replace(/\`/g,'').trim().toUpperCase():'' });
+    });
+    return out;
+  }
+  // statut effectif d'une epic : dérivé de ses tickets, sinon valeur du fichier
+  function epicEff(epic, tickets){
+    var ts=tickets.filter(function(t){ return t.epic && t.epic===epic.id.toUpperCase(); });
+    if(ts.length){
+      if(ts.some(function(t){ return t.status==='IN_PROGRESS'; })) return 'current';
+      if(ts.every(function(t){ return t.status==='DONE'; })) return 'done';
+      return 'todo';
+    }
+    return epic.status||'todo';
+  }
+  // jalons + colonne EPICs, pour estimer l'avancement du jalon en cours
+  function parseMilestonesFull(md){
+    var out=[]; if(!md) return out; var map=null;
+    md.split('\\n').forEach(function(line){
+      if(line.trim().charAt(0)!=='|'){ map=null; return; }
+      var cs=cells(line), lo=cs.map(function(c){ return c.toLowerCase(); });
+      if(lo.some(function(c){return /jalon|milestone/.test(c);}) && lo.some(function(c){return /livraison|delivery/.test(c);})){
+        map={ name:lo.findIndex(function(c){return /jalon|milestone/.test(c);}), target:lo.findIndex(function(c){return /cible|target/.test(c);}), deliv:lo.findIndex(function(c){return /livraison|delivery/.test(c);}), epics:lo.findIndex(function(c){return /epic/.test(c);}) };
+        return;
+      }
+      if(isSep(line)||!map) return;
+      var raw=map.name>=0?cs[map.name]:''; var name=raw.replace(/~~/g,'').trim();
+      if(!name||name==='—') return;
+      var d=map.deliv>=0?cs[map.deliv]:'';
+      var ec=map.epics>=0?cs[map.epics]:'';
+      out.push({ name:name, target:map.target>=0?cs[map.target]:'', delivered:(!!d && d!=='—')||/~~/.test(raw), epics:(ec.match(/EPIC-?\\d+/gi)||[]).map(function(s){ return s.toUpperCase(); }) });
+    });
+    return out;
+  }
+  function milestoneProgress(roadmapMd, epics, tickets){
+    var miles=parseMilestonesFull(roadmapMd);
+    var cur=miles.filter(function(m){ return !m.delivered; })[0] || miles[miles.length-1];
+    if(!cur) return null;
+    var done=0, total=0;
+    if(cur.epics.length){
+      var tk=tickets.filter(function(t){ return t.epic && cur.epics.indexOf(t.epic)>=0; });
+      if(tk.length){ total=tk.length; done=tk.filter(function(t){ return t.status==='DONE'; }).length; }
+      else {
+        var eps=epics.filter(function(e){ return cur.epics.indexOf(e.id.toUpperCase())>=0; });
+        total=eps.length; done=eps.filter(function(e){ return epicEff(e,tickets)==='done'; }).length;
+      }
+    }
+    return { name:cur.name, target:cur.target, done:done, total:total, pct:total?Math.round(done/total*100):0 };
+  }
+  // bugs à traiter : entrées INC- actives du registre incidents.md
+  function countIncidents(md){
+    if(!md) return 0; var inReg=false, n=0;
+    md.split('\\n').forEach(function(l){
+      if(/^##\\s/.test(l)){ inReg=/registre des incidents|incident registry/i.test(l); return; }
+      if(inReg && /^###\\s+INC-/i.test(l)) n++;
+    });
+    return n;
+  }
+  // vulnérabilités ouvertes du tableau security.md
+  function countVulns(md){
+    var res={open:0,crit:0}; if(!md) return res; var inSec=false, map=null;
+    md.split('\\n').forEach(function(l){
+      if(/^##\\s/.test(l)){ inSec=/vulnérabilit|vulnerabilit/i.test(l); map=null; return; }
+      if(!inSec) return;
+      if(l.trim().charAt(0)!=='|'){ map=null; return; }
+      var cs=cells(l), lo=cs.map(function(c){ return c.toLowerCase(); });
+      if(lo.indexOf('id')>=0 && lo.some(function(c){ return /sévérité|severit/.test(c); })){
+        map={ sev:lo.findIndex(function(c){ return /sévérité|severit/.test(c); }), stat:lo.findIndex(function(c){ return /statut|status/.test(c); }) };
+        return;
+      }
+      if(isSep(l)||!map) return;
+      var stat=(map.stat>=0?cs[map.stat]:'').toLowerCase().trim();
+      if(!stat || /corrig|résolu|resolved|fixed|clos|closed|accept|^n\\.?a|^—$/.test(stat)) return;
+      res.open++;
+      if(/CRITICAL|HIGH/.test((map.sev>=0?cs[map.sev]:'').toUpperCase())) res.crit++;
+    });
+    return res;
+  }
+  // sujets en attente d'arbitrage produit (discovery → roadmap)
+  function countCandidates(md){
+    if(!md) return 0; var inSec=false, map=null, n=0;
+    md.split('\\n').forEach(function(l){
+      if(/^##\\s/.test(l)){ inSec=/sujets candidats|candidate topics/i.test(l); map=null; return; }
+      if(!inSec) return;
+      if(l.trim().charAt(0)!=='|'){ map=null; return; }
+      var cs=cells(l), lo=cs.map(function(c){ return c.toLowerCase(); });
+      if(lo.indexOf('id')>=0 && lo.some(function(c){ return /statut|status/.test(c); })){
+        map={ stat:lo.findIndex(function(c){ return /statut|status/.test(c); }) };
+        return;
+      }
+      if(isSep(l)||!map) return;
+      if(/^candidat/.test((map.stat>=0?cs[map.stat]:'').toLowerCase().trim())) n++;
+    });
+    return n;
   }
 
-  // ── Synthèse ──────────────────────────────────────────────
+  // ── En-tête / badges ──────────────────────────────────────
   var cfg=get('config'); var integ=parseIntegrations(cfg&&cfg.content);
   var badges = integ.map(function(it){
     return it.on ? '<span class="badge on">'+esc(it.area)+' <b>'+esc(it.tool)+'</b></span>'
@@ -847,24 +999,98 @@ const HTML_TEMPLATE = `<!doctype html>
   document.getElementById('badges').innerHTML = badges;
 
   var board = parseBoard((get('kanban')||{}).content);
+  var tickets = parseKanbanFull((get('kanban')||{}).content);
+  var epics = parseEpics((get('epics')||{}).content);
   var total = STATUSES.reduce(function(n,s){ return n+board[s].length; },0);
   var done = board.DONE.length;
   var pct = total ? Math.round(done/total*100) : 0;
   var summary = stateSummary((get('project-state')||{}).content);
 
-  var boardHtml = STATUSES.map(function(s){
-    var cssVar = 'var(--s'+s+')';
-    var cards = board[s].length ? board[s].map(function(t){
-      return '<div class="ticket" style="--cc:'+cssVar+'">'+(t.id?'<span class="tid">'+esc(t.id)+'</span>':'')+esc(t.title||'(sans titre)')+'</div>';
-    }).join('') : '<div class="empty">—</div>';
-    return '<div class="col" style="--cc:'+cssVar+'"><div class="colh" style="--cc:'+cssVar+'"><span>'+LABEL[s]+'</span><b>'+board[s].length+'</b></div>'+cards+'</div>';
-  }).join('');
+  // ── Camemberts : avancement global + jalon en cours ───────
+  var globalSegs = STATUSES.slice().reverse().map(function(s){ return { value:board[s].length, color:SCOL[s], label:LABEL[s], st:s }; });
+  var globalLegend = STATUSES.slice().reverse().filter(function(s){ return board[s].length; })
+    .map(function(s){ return '<li><span class="ldot" style="background:'+SCOL[s]+'"></span>'+LABEL[s]+'<b>'+board[s].length+'</b></li>'; }).join('');
+  var globalCard =
+    '<div class="card pie-card">'
+    + '<div class="piefig">'+pieSvg(globalSegs)+'</div>'
+    + '<div class="pieinfo"><div class="pie-pct">'+pct+'%</div><div class="pie-sub">'+done+' / '+total+' tickets terminés</div>'
+    +   '<ul class="legend">'+(globalLegend||'<li class="empty">Aucun ticket</li>')+'</ul></div>'
+    + '</div>';
 
-  var miles = parseMilestones((get('roadmap')||{}).content);
-  var milesHtml = miles.length ? miles.map(function(m){
-    return '<li class="'+(m.delivered?'done':'')+'">'+(m.delivered?'✓ ':'◷ ')+'<span>'+esc(m.name)+'</span>'+(m.target&&!m.delivered?'<em>'+esc(m.target)+'</em>':'')+'</li>';
-  }).join('') : '<li class="empty">Aucun jalon défini</li>';
+  var ms = milestoneProgress((get('roadmap')||{}).content, epics, tickets);
+  var msCard;
+  if(ms){
+    var msSegs=[{ value:ms.done, color:SCOL.DONE },{ value:Math.max(0,ms.total-ms.done), color:'var(--border)' }];
+    msCard =
+      '<div class="card pie-card">'
+      + '<div class="piefig">'+pieSvg(msSegs)+'</div>'
+      + '<div class="pieinfo"><div class="pie-pct">'+ms.pct+'%<span class="approx">~ approx.</span></div>'
+      +   '<div class="pie-sub">'+esc(ms.name)+'</div>'
+      +   '<ul class="legend"><li><span class="ldot" style="background:'+SCOL.DONE+'"></span>Couvert<b>'+ms.done+'</b></li>'
+      +     '<li><span class="ldot" style="background:var(--border)"></span>Restant<b>'+Math.max(0,ms.total-ms.done)+'</b></li>'
+      +     (ms.target?'<li><span class="ldot" style="background:transparent"></span>Cible<b>'+esc(ms.target)+'</b></li>':'')+'</ul></div>'
+      + '</div>';
+  } else {
+    msCard = '<div class="card pie-card"><div class="pieinfo"><div class="pie-sub">Aucun jalon défini (roadmap.md)</div></div></div>';
+  }
 
+  // ── Chiffres d'action : bugs / vulnérabilités / arbitrages ─
+  var inc = countIncidents((get('incidents')||{}).content);
+  var vul = countVulns((get('security')||{}).content);
+  var arb = countCandidates((get('market-watch')||{}).content);
+  function statTile(cls,target,num,label,sub){
+    return '<a class="stat '+cls+(num?'':' zero')+'" href="#f-'+target+'" data-rev="f-'+target+'">'
+      + '<span class="num">'+num+'</span>'
+      + '<span class="lab">'+label+'<small>'+sub+'</small></span></a>';
+  }
+  var statsCard =
+    '<div class="card stats">'
+    + statTile('bug','incidents',inc,'Bugs à traiter','workflow incident')
+    + statTile('vuln','security',vul.open,'Vulnérabilités',(vul.crit?vul.crit+' critiques/élevées · ':'')+'workflow sécurité')
+    + statTile('arb','market-watch',arb,'Arbitrages produit','discovery → roadmap')
+    + '</div>';
+
+  // ── Timeline des EPICs ────────────────────────────────────
+  var epList = epics.length ? epics : (function(){
+    var seen=[]; tickets.forEach(function(t){ if(t.epic && !seen.find(function(e){return e.id===t.epic;})) seen.push({ id:t.epic, title:'', status:'todo' }); }); return seen;
+  })();
+  var epEff = epList.map(function(e){ var o={ id:e.id, title:e.title, eff:epicEff(e,tickets) }; return o; });
+  var timelineHtml = epEff.length ? epEff.map(function(e){
+    var g=e.eff==='done'?'✓':(e.eff==='current'?'▶':'·');
+    return '<li class="'+e.eff+'"><span class="node">'+g+'</span><span class="ep-id">'+esc(e.id)+'</span><span class="ep-title">'+esc(e.title||'')+'</span></li>';
+  }).join('') : '<li class="todo"><span class="node">·</span><span class="ep-title">Aucune EPIC définie</span></li>';
+
+  // ── EPIC en cours : tâches faites / en cours / à venir ────
+  var ci=epEff.findIndex(function(e){ return e.eff==='current'; });
+  if(ci<0) ci=epEff.findIndex(function(e){ return e.eff!=='done'; });
+  if(ci<0) ci=epEff.length-1;
+  var curEpic=epEff[ci];
+  var curEpicHtml='';
+  if(curEpic){
+    var linked=tickets.filter(function(t){ return curEpic.id && t.epic===curEpic.id.toUpperCase(); });
+    var pool=linked.length?linked:(epics.length?[]:tickets);
+    var doneT=pool.filter(function(t){ return t.status==='DONE'; });
+    var curT=pool.filter(function(t){ return t.status==='IN_PROGRESS'; });
+    var nextT=pool.filter(function(t){ return t.status!=='DONE' && t.status!=='IN_PROGRESS'; });
+    function tcol(cls,label,arr,col){
+      var items=arr.length?arr.map(function(t){
+        return '<li style="--cc:'+col+'">'+(t.id?'<span class="tid">'+esc(t.id)+'</span>':'')+esc(t.title||'(sans titre)')+'</li>';
+      }).join(''):'<div class="empty">—</div>';
+      return '<div class="taskcol '+cls+'"><h4><span>'+label+'</span><span>'+arr.length+'</span></h4><ul>'+items+'</ul></div>';
+    }
+    curEpicHtml =
+      '<div class="card"><div class="cur-epic-h"><strong><span class="eid">'+esc(curEpic.id)+'</span> '+esc(curEpic.title||'')+'</strong>'
+      + '<span class="pill">'+doneT.length+'/'+pool.length+' tâches terminées</span></div>'
+      + '<div class="taskcols">'
+      +   tcol('done','Terminées',doneT,SCOL.DONE)
+      +   tcol('cur','En cours',curT,SCOL.IN_PROGRESS)
+      +   tcol('next','À venir',nextT,SCOL.TODO)
+      + '</div></div>';
+  } else {
+    curEpicHtml = '<div class="card"><div class="empty">Aucune EPIC en cours.</div></div>';
+  }
+
+  // ── À surveiller ──────────────────────────────────────────
   var watch=[];
   DATA.forEach(function(e){ if(e.age!==null && e.age>staleLimit(e.name)) watch.push(esc(e.file)+' — '+e.age+' j sans mise à jour'); });
   var off = integ.filter(function(it){ return !it.on; }).map(function(it){ return esc(it.area); });
@@ -873,16 +1099,15 @@ const HTML_TEMPLATE = `<!doctype html>
   var watchHtml = watch.length ? watch.map(function(w){ return '<li>'+w+'</li>'; }).join('') : '<li class="empty">Rien à signaler</li>';
 
   document.getElementById('synth').innerHTML =
-    '<h2 class="sec">Synthèse</h2>'
-    + '<div class="grid">'
-    +   '<div class="card donutwrap">'+donut(pct)+'<div class="sub">'+done+' / '+total+' tickets terminés</div></div>'
-    +   '<div class="card"><h3>État actuel</h3><div class="summary">'+(summary?esc(summary):'<span class="none">Non renseigné (project-state.md)</span>')+'</div></div>'
-    + '</div>'
-    + '<h2 class="sec">Kanban</h2><div class="board">'+boardHtml+'</div>'
-    + '<div class="grid2" style="margin-top:16px">'
-    +   '<div class="card"><h3>Roadmap — jalons</h3><ul class="tl">'+milesHtml+'</ul></div>'
-    +   '<div class="card"><h3>À surveiller</h3><ul class="watch">'+watchHtml+'</ul></div>'
-    + '</div>';
+    '<h2 class="sec">Vue d\\'ensemble</h2>'
+    + (summary?'<p class="lede">'+esc(summary)+'</p>':'')
+    + '<div class="kpis">'+globalCard+msCard+statsCard+'</div>'
+    + '<h2 class="sec">Timeline des EPICs</h2>'
+    + '<div class="card"><ol class="epic-timeline">'+timelineHtml+'</ol></div>'
+    + '<h2 class="sec">EPIC en cours</h2>'
+    + curEpicHtml
+    + '<h2 class="sec">À surveiller</h2>'
+    + '<div class="card"><ul class="watch">'+watchHtml+'</ul></div>';
 
   // ── Détail (replié) ───────────────────────────────────────
   var open = STYLE==='detailed' ? ' open' : '';
@@ -896,10 +1121,28 @@ const HTML_TEMPLATE = `<!doctype html>
   document.getElementById('toc').innerHTML = toc;
   document.getElementById('detail').innerHTML = det;
 
+  // bouton repliable du détail de la mémoire (déplié d'office en style détaillé)
+  var detailWrap=document.getElementById('detailWrap');
+  var toggleBtn=document.getElementById('toggleDetail');
+  function setDetail(show){
+    detailWrap.hidden=!show;
+    toggleBtn.setAttribute('aria-expanded', show?'true':'false');
+    toggleBtn.textContent=(show?'▾':'▸')+' Détail de la mémoire (lecture des fichiers bruts)';
+  }
+  setDetail(STYLE==='detailed');
+  toggleBtn.addEventListener('click', function(){ setDetail(detailWrap.hidden); });
+
   // clic sur une puce du sommaire → ouvre l'accordéon ciblé
   document.getElementById('toc').addEventListener('click', function(ev){
     var a = ev.target.closest('a'); if(!a) return;
     var el = document.getElementById(a.getAttribute('data-t')); if(el) el.open = true;
+  });
+
+  // clic sur un chiffre d'action → déplie le détail et ouvre le fichier concerné
+  document.querySelector('.stats').addEventListener('click', function(ev){
+    var a=ev.target.closest('.stat'); if(!a) return;
+    setDetail(true);
+    var el=document.getElementById(a.getAttribute('data-rev')); if(el) el.open=true;
   });
 
   document.querySelectorAll('code.language-mermaid').forEach(function(code){

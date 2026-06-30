@@ -231,10 +231,12 @@ roadmap, kanban, fonctionnalités, veille, process) :
   à promouvoir, veille périmée, intégrations désactivées).
 - **`ai-led status`** (CLI) — un snapshot terminal **déterministe et sans token** : barre
   d'avancement, compteurs kanban et liste « À surveiller ». Ajoute `--html` pour générer
-  `ailed-status.html`, un tableau de bord **statique** qui ouvre sur une **synthèse visuelle**
-  (donut d'avancement, board kanban en colonnes, timeline roadmap, panneau « à surveiller ») ;
-  le détail de chaque fichier `memory/` est rangé dans des **accordéons repliés** (un clic les
-  ouvre) plutôt que déroulé en pleine page — **aucun serveur, aucune donnée projet envoyée** :
+  `ailed-status.html`, un tableau de bord **statique** qui ouvre sur une **synthèse visuelle** :
+  deux **camemberts** (avancement global + jalon en cours, approximatif), trois compteurs d'action
+  (**bugs** à traiter, **vulnérabilités** ouvertes, **arbitrages produit** discovery → roadmap),
+  une **timeline chronologique des EPICs** et le **détail de l'EPIC en cours** (tâches terminées /
+  en cours / à venir) ; le détail brut de chaque fichier `memory/` reste accessible, **replié** en
+  bas de page — **aucun serveur, aucune donnée projet envoyée** :
 
 ```bash
 npx @s2bp/ai-led-framework status          # snapshot terminal
