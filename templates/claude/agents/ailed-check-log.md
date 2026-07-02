@@ -1,6 +1,7 @@
 ---
 name: ailed-check-log
 description: Analyse les logs des dernières 24h via l'outil de monitoring configuré ({{MONITORING}}), détecte erreurs récurrentes et dégradations, et ouvre des tickets d'incident.
+model: {{MODEL}}
 ---
 
 # Agent Check-Log

@@ -54,6 +54,11 @@ const TERMINAL_OF = {
   "ailed-security-review": "security",
 };
 
+// Ticket-boundary agents — not workflow capstones, but each one closes a unit of
+// work whose state is fully persisted in memory/. `ailed-dev` is the main driver
+// of long, expensive sessions (>150k context), so we nudge /clear per ticket too.
+const TICKET_BOUNDARY = new Set(["ailed-dev"]);
+
 function readStdin() {
   try {
     return fs.readFileSync(0, "utf8");
@@ -94,7 +99,7 @@ function main() {
 
   const ts = new Date().toISOString();
   const desc = String(input.description || "").slice(0, 120);
-  let suggestWorkflow = null; // set when we should nudge the user to /clear
+  let nudge = null; // /clear suggestion banner, set when we reach a task boundary
 
   if (phase === "pre") {
     // mark agent as running (most-recent first), no duplicates
@@ -108,10 +113,20 @@ function main() {
     state.history.push({ agent, desc, at: ts });
     if (state.history.length > 50) state.history = state.history.slice(-50);
 
-    // Capstone agent done + nothing else running = natural task boundary.
-    if (TERMINAL_OF[agent] && state.running.length === 0 && !state.clearSuggested) {
-      suggestWorkflow = TERMINAL_OF[agent];
-      state.clearSuggested = true;
+    // Task boundary = nothing else running + not already nudged. Two flavors:
+    // a workflow capstone (whole workflow done) or a ticket boundary (one MR done).
+    if (state.running.length === 0 && !state.clearSuggested) {
+      if (TERMINAL_OF[agent]) {
+        nudge =
+          `AI-Led ✓ "${TERMINAL_OF[agent]}" workflow complete — consider /clear ` +
+          `before the next task (project state is saved in memory/).`;
+        state.clearSuggested = true;
+      } else if (TICKET_BOUNDARY.has(agent)) {
+        nudge =
+          `AI-Led ✓ ticket done (MR opened) — consider /clear before the next ticket; ` +
+          `reload context from memory/ (long sessions cost tokens even when cached).`;
+        state.clearSuggested = true;
+      }
     }
   }
 
@@ -128,15 +143,9 @@ function main() {
   // banner and costs no model tokens; we deliberately do NOT inject
   // additionalContext (it would double-nudge and add context — the opposite of
   // what /clear is for).
-  if (suggestWorkflow) {
+  if (nudge) {
     try {
-      process.stdout.write(
-        JSON.stringify({
-          systemMessage:
-            `AI-Led ✓ "${suggestWorkflow}" workflow complete — consider /clear ` +
-            `before the next task (project state is saved in memory/).`,
-        })
-      );
+      process.stdout.write(JSON.stringify({ systemMessage: nudge }));
     } catch (_) {
       /* best-effort */
     }

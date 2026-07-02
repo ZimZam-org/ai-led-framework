@@ -1,6 +1,7 @@
 ---
 name: ailed-init-memory
 description: Reconstruit automatiquement la connaissance du projet dans memory/ à partir du code, de la doc et de l'historique Git.
+model: {{MODEL}}
 ---
 
 # Agent Init-Memory

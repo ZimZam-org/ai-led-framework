@@ -74,6 +74,28 @@ npx @s2bp/ai-led-framework init --style=concise
 
 Editable any time in `memory/config.md`, or forced for a single run: `ai-led status --style=detailed`.
 
+### LLM model per agent (token savings)
+
+Each of the 21 agents runs on a **model chosen for its function**, so simple agents don't burn
+premium tokens:
+
+- `opus` — reasoning / judgment / critical review, where a bad output causes downstream rework
+  (`brainstorm`, `architect`, `planner`, `pm`, `analyst`, `review`, `security-review`, `rca`);
+- `sonnet` — capable standard execution at volume (`dev`, `ux`, `test`, `communication`, `release`,
+  `fact-check`, `check-secu`, `seo-aso`, `monetization`, `knowledge-audit`, `init-memory`);
+- `haiku` — mechanical collection / extraction (`scout`, `check-log`).
+
+The mapping is the **“LLM model per agent” table in `memory/config.md`** (source of truth). The
+harness reads the model from each agent's frontmatter, so after editing the table apply it:
+
+```bash
+npx @s2bp/ai-led-framework models        # print the effective mapping
+npx @s2bp/ai-led-framework models sync    # apply the table to .claude/agents/*.md
+```
+
+You can also set a model at install time: `init --model-dev=opus --model-scout=sonnet`
+(tier: `opus` · `sonnet` · `haiku` · `inherit`). `update` re-applies whatever the table says.
+
 ### Integrations (optional)
 
 Monitoring, E2E tests and promo generation are **disabled by default** (`none`). As long as an
