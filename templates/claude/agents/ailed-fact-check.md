@@ -1,6 +1,7 @@
 ---
 name: ailed-fact-check
 description: Gate anti-hallucination de la veille. Vérifie, dégrade ou rejette les observations brutes non sourcées ou invérifiables avant toute synthèse. À déclencher après @ailed-scout.
+model: {{MODEL}}
 ---
 
 # Agent Fact-Check

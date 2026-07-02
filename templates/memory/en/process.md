@@ -28,6 +28,23 @@ more expensive over time. To keep reads light, they are **split into active + ar
 
 ---
 
+## Session hygiene (cost & context)
+
+Since `memory/` is the **source of truth**, the conversation does not need to hold everything.
+Long sessions cost tokens *even when cached* — hence a few rules:
+
+- **One unit of work = one session.** A dev ticket, an incident, a watch pass each run in a
+  clean session; reload the useful context from `memory/` at startup instead of dragging along
+  a history that keeps growing.
+- **`/clear` at boundaries.** When a workflow ends (capstone) or an MR is opened, the
+  `ailed-runtime-hook.js` hook suggests `/clear`: following it resets the context with no loss
+  (state lives in `memory/`).
+- **`/compact` mid-task** if a single session grows long, to condense without starting over.
+- Agents never rely on "what was said above" for a durable fact: they write it to `memory/`
+  and read it back.
+
+---
+
 ## Discovery workflow
 
 `(Scout · SEO/ASO · Monetization) → Fact-Check → Analyst → [human validation] → Brainstorm (entry to Feature workflow)`

@@ -1,6 +1,7 @@
 ---
 name: ailed-ux
 description: Produit des wireframes (3 variantes) et une maquette finale à partir d'une SPEC validée. Aucune implémentation technique.
+model: {{MODEL}}
 ---
 
 # Agent UX Designer

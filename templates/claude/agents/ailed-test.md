@@ -1,6 +1,7 @@
 ---
 name: ailed-test
 description: Exécute les tests end-to-end via l'outil configuré ({{E2E}}) — parcours nominal, cas limites, régressions. En cas d'échec, retour automatique vers Dev.
+model: {{MODEL}}
 ---
 
 # Agent Test

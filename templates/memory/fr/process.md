@@ -29,6 +29,24 @@ actif + archive** :
 
 ---
 
+## Hygiène de session (coût & contexte)
+
+La `memory/` étant la **source de vérité**, la conversation n'a pas à tout retenir. Les longues
+sessions coûtent des tokens *même en cache* — d'où quelques règles :
+
+- **Une unité de travail = une session.** Un ticket dev, un incident, une passe de veille se
+  mènent dans une session propre ; on recharge le contexte utile depuis `memory/` au démarrage
+  plutôt que de traîner un historique qui gonfle.
+- **`/clear` aux frontières.** À la fin d'un workflow (capstone) ou à l'ouverture d'une MR, le
+  hook `ailed-runtime-hook.js` suggère `/clear` : le suivre remet le contexte à zéro sans perte
+  (l'état vit dans `memory/`).
+- **`/compact` en cours de tâche** si une même session s'allonge, pour condenser sans repartir
+  de zéro.
+- Les agents ne s'appuient jamais sur « ce qui a été dit plus haut » pour un fait durable : ils
+  l'écrivent dans `memory/` et le relisent.
+
+---
+
 ## Workflow Discovery
 
 `(Scout · SEO/ASO · Monétisation) → Fact-Check → Analyst → [validation humaine] → Brainstorm (entrée du workflow Feature)`

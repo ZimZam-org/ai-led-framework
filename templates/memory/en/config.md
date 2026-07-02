@@ -37,6 +37,22 @@ The coding conventions and technical organization **already in place** are descr
 or filled by hand / via `@ailed-init-memory`. **Read by `@ailed-architect`, `@ailed-dev`
 and `@ailed-ux`** before acting. The file may stay partially empty.
 
+## LLM model per agent
+
+Each agent runs on a **model chosen for its function**, to cut token usage without degrading
+quality where it matters:
+
+- `opus` — reasoning, judgment, critical review (a bad output causes downstream rework);
+- `sonnet` — standard execution, high volume (dev, tests, writing);
+- `haiku` — mechanical collection / extraction, little reasoning.
+
+**This table is the source of truth.** The harness reads the model from each agent's *frontmatter*
+(`.claude/agents/*.md`): after editing a row below, apply it with
+`npx @s2bp/ai-led-framework models sync`. `models` (no argument) prints the effective table.
+Allowed values: `opus` · `sonnet` · `haiku` · `inherit` (inherit the session model).
+
+{{MODELS_TABLE}}
+
 ## Integrations
 
 | Area                  | Tool             | Agent / skill involved                 |
