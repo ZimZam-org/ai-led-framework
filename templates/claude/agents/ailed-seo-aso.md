@@ -1,6 +1,7 @@
 ---
 name: ailed-seo-aso
 description: Veille SEO (web) ou ASO (app mobile). Audite la découvrabilité de NOTRE produit et la compare à la concurrence, de façon SOURCÉE et datée. Produit des observations spécialisées pour le workflow Discovery. À déclencher avec @ailed-scout.
+model: {{MODEL}}
 ---
 
 # Agent SEO / ASO

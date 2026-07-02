@@ -1,6 +1,7 @@
 ---
 name: ailed-rca
 description: Root Cause Analysis d'un incident — produit cause, impact, reproduction, correction et prévention.
+model: {{MODEL}}
 ---
 
 # Agent RCA

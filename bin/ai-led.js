@@ -51,6 +51,76 @@ const LANG_DEFAULT = "fr";
 // sentinel "integration disabled" word, per memory language
 const DISABLED_WORD = { fr: "aucun", en: "none" };
 
+// ── per-agent LLM model policy ────────────────────────────────
+// Default tiering: which Claude model each agent runs on. The harness reads this
+// from each agent's frontmatter (`model:`), NOT from config.md at runtime — so we
+// render it into the frontmatter at install and mirror it into config.md as the
+// human-editable source of truth (change it there, then `ai-led models sync`).
+//   opus   = deep reasoning / judgment / high leverage (a bad output costs rework)
+//   sonnet = capable standard execution, high volume
+//   haiku  = mechanical collection / extraction, little reasoning
+const MODEL_TIERS = ["opus", "sonnet", "haiku", "inherit"];
+const AGENT_MODEL_TIERS = {
+  // reasoning / judgment / critical review
+  "ailed-brainstorm": "opus",
+  "ailed-architect": "opus",
+  "ailed-planner": "opus",
+  "ailed-pm": "opus",
+  "ailed-analyst": "opus",
+  "ailed-review": "opus",
+  "ailed-security-review": "opus",
+  "ailed-rca": "opus",
+  // standard execution
+  "ailed-dev": "sonnet",
+  "ailed-ux": "sonnet",
+  "ailed-test": "sonnet",
+  "ailed-communication": "sonnet",
+  "ailed-seo-aso": "sonnet",
+  "ailed-monetization": "sonnet",
+  "ailed-knowledge-audit": "sonnet",
+  "ailed-release": "sonnet",
+  "ailed-fact-check": "sonnet",
+  "ailed-check-secu": "sonnet",
+  "ailed-init-memory": "sonnet",
+  // mechanical collection / extraction
+  "ailed-scout": "haiku",
+  "ailed-check-log": "haiku",
+};
+
+// resolve the effective per-agent model map: defaults, overridable per agent via
+// `--model-<name>=<tier>` (name without the `ailed-` prefix, e.g. --model-dev=opus)
+function resolveModels() {
+  const models = { ...AGENT_MODEL_TIERS };
+  for (const agent of Object.keys(models)) {
+    const short = agent.replace(/^ailed-/, "");
+    const v = flag(`model-${short}`);
+    if (v && MODEL_TIERS.includes(v.toLowerCase())) models[agent] = v.toLowerCase();
+  }
+  return models;
+}
+
+// render the config.md model table (round-trips with parseModelsTable)
+function renderModelsTable(models, lang) {
+  const head = lang === "en" ? "| Agent | Model |" : "| Agent | Modèle |";
+  const rows = Object.keys(models)
+    .sort((a, b) => {
+      const ord = { opus: 0, sonnet: 1, haiku: 2, inherit: 3 };
+      return (ord[models[a]] - ord[models[b]]) || a.localeCompare(b);
+    })
+    .map((a) => `| \`${a}\` | \`${models[a]}\` |`);
+  return [head, "| ----- | ------ |", ...rows].join("\n");
+}
+
+// parse the model table back out of config.md text → { agent: tier }
+function parseModelsTable(txt) {
+  const models = {};
+  for (const line of txt.split("\n")) {
+    const m = line.match(/^\|\s*`?(ailed-[a-z-]+)`?\s*\|\s*`?(opus|sonnet|haiku|inherit)`?\s*\|/i);
+    if (m) models[m[1].toLowerCase()] = m[2].toLowerCase();
+  }
+  return models;
+}
+
 // available memory languages = subfolders of templates/memory/
 function availableLangs() {
   return fs
@@ -83,6 +153,8 @@ async function resolveConfig() {
     conventions: flag("conventions") || "",
     // output verbosity for agents + reports (presentation only, never memory/ content)
     style: (flag("style") || "standard").toLowerCase(),
+    // per-agent LLM model map (defaults + --model-<name> overrides)
+    models: resolveModels(),
   };
 
   const interactive =
@@ -125,9 +197,14 @@ async function resolveConfig() {
 }
 
 // ── placeholder substitution ──────────────────────────────────
-function substitute(content, cfg) {
+// agentName (basename without .md) lets agent files resolve their own {{MODEL}}.
+function substitute(content, cfg, agentName) {
   const now = new Date().toISOString().slice(0, 10);
+  const models = cfg.models || AGENT_MODEL_TIERS;
+  const model = (agentName && models[agentName]) || "inherit";
   return content
+    .replace(/{{MODEL}}/g, model)
+    .replace(/{{MODELS_TABLE}}/g, () => renderModelsTable(models, cfg.lang))
     .replace(/{{TICKET_PREFIX}}/g, cfg.trigram)
     .replace(/{{MONITORING}}/g, cfg.monitoring)
     .replace(/{{E2E}}/g, cfg.e2e)
@@ -163,7 +240,7 @@ function copyTree(src, dest, cfg, forceOverwrite = force) {
   }
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   if (dest.endsWith(".md")) {
-    fs.writeFileSync(dest, substitute(fs.readFileSync(src, "utf8"), cfg));
+    fs.writeFileSync(dest, substitute(fs.readFileSync(src, "utf8"), cfg, path.basename(dest, ".md")));
   } else {
     fs.copyFileSync(src, dest);
   }
@@ -337,6 +414,8 @@ function parseInstalledConfig(memDir) {
     documentation: disabled,
     conventions: "",
     style: "standard",
+    // per-agent models: defaults overlaid with whatever the config.md table declares
+    models: { ...AGENT_MODEL_TIERS, ...parseModelsTable(txt) },
   };
 
   // output style read from the dedicated bullet (fr "Style de communication…" / en "…communication style:")
@@ -1468,6 +1547,77 @@ function dashboard() {
   process.exit(1);
 }
 
+// set/replace the `model:` line inside a markdown frontmatter block
+function setFrontmatterModel(txt, tier) {
+  const lines = txt.split("\n");
+  if (lines[0].trim() !== "---") return txt; // no frontmatter → leave as-is
+  let close = -1;
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i].trim() === "---") { close = i; break; }
+  }
+  if (close === -1) return txt;
+  for (let i = 1; i < close; i++) {
+    if (/^model:/.test(lines[i])) { lines[i] = `model: ${tier}`; return lines.join("\n"); }
+  }
+  lines.splice(close, 0, `model: ${tier}`); // no model line yet → insert before close
+  return lines.join("\n");
+}
+
+// resolve the effective model map from config.md (falls back to defaults),
+// then apply per-agent --model-<name> flags as one-off overrides
+function resolveModelsFromProject() {
+  const cfgPath = path.join(cwd, "memory", "config.md");
+  let models = { ...AGENT_MODEL_TIERS };
+  let src = "défauts intégrés";
+  if (fs.existsSync(cfgPath)) {
+    models = { ...models, ...parseModelsTable(fs.readFileSync(cfgPath, "utf8")) };
+    src = "memory/config.md";
+  }
+  for (const agent of Object.keys(models)) {
+    const v = flag(`model-${agent.replace(/^ailed-/, "")}`);
+    if (v && MODEL_TIERS.includes(v.toLowerCase())) models[agent] = v.toLowerCase();
+  }
+  return { models, src };
+}
+
+// ── models list: print the effective per-agent model policy ───
+function modelsList() {
+  const { models, src } = resolveModelsFromProject();
+  console.log(`\n${c.bold("Modèles LLM par agent")} ${c.dim("(source : " + src + ")")}\n`);
+  console.log(renderModelsTable(models, "fr"));
+  console.log(c.dim("\nÉdite la table dans memory/config.md puis lance `models sync` pour l'appliquer.\n"));
+}
+
+// ── models sync: apply the config.md model policy to agent frontmatters ──
+function modelsSync() {
+  console.log(`\n${c.bold("AI-Led")} ${c.dim("v" + pkg.version)} — synchronisation des modèles dans ${c.cyan(cwd)}`);
+  const agentsDir = path.join(cwd, ".claude", "agents");
+  if (!fs.existsSync(agentsDir)) {
+    console.error(`\n${c.yellow(".claude/agents/ introuvable")} — lance d'abord ${c.cyan("init")}.\n`);
+    process.exit(1);
+  }
+  const { models, src } = resolveModelsFromProject();
+  if (src !== "memory/config.md") {
+    console.log(c.dim("  memory/config.md absent — application des valeurs par défaut."));
+  }
+  let changed = 0, unchanged = 0;
+  for (const f of fs.readdirSync(agentsDir)) {
+    if (!f.endsWith(".md")) continue;
+    const name = path.basename(f, ".md");
+    const tier = models[name];
+    if (!tier) continue; // unknown/non-ailed agent → leave untouched
+    const p = path.join(agentsDir, f);
+    const txt = fs.readFileSync(p, "utf8");
+    const updated = setFrontmatterModel(txt, tier);
+    if (updated === txt) { unchanged++; continue; }
+    fs.writeFileSync(p, updated);
+    changed++;
+    console.log(`  ${c.green("~")}    ${name} ${c.dim("→ " + tier)}`);
+  }
+  console.log(`\n${c.green("✓")} Modèles synchronisés : ${c.bold(changed)} modifié(s), ${unchanged} inchangé(s).`);
+  console.log(c.dim("  Source : memory/config.md (table « Modèles LLM par agent »).\n"));
+}
+
 function help() {
   console.log(`
 ${c.bold("ai-led")} ${c.dim("v" + pkg.version)} — framework de workflow AI-led pour Claude Code
@@ -1481,6 +1631,8 @@ ${c.bold("Commands")}
   status          Affiche l'état du projet (terminal) ; --html pour un tableau de bord navigateur
   watch           Panneau de progression vertical (epics → tâches → agents), rafraîchi en continu
   dashboard       Ouvre un split (gauche: watch figé · droite: claude) via tmux ou zellij
+  models          Affiche le modèle LLM de chaque agent (source : memory/config.md)
+  models sync     Applique la table « Modèles LLM » de memory/config.md aux frontmatters d'agents
   help            Affiche cette aide
   version         Affiche la version
 
@@ -1496,8 +1648,15 @@ ${c.bold("Options de init")}
   --docs=NOM          Documentation externe (ex. Confluence, via MCP) ou désactivé (défaut)
   --style=NIVEAU      Style de sortie agents/rapports : concis | standard | détaillé (défaut : standard)
   --conventions=CHEMIN  Importe un fichier de conventions/organisation technique dans memory/conventions.md (facultatif)
+  --model-<agent>=TIER  Modèle d'un agent (ex. --model-dev=opus) ; TIER : opus | sonnet | haiku | inherit
   -y, --yes           Mode non interactif (valeurs par défaut / flags fournis)
   -f, --force         Écrase les fichiers existants (par défaut : ignorés)
+
+${c.bold("Modèles LLM par agent")}
+  Chaque agent tourne sur un modèle choisi selon sa fonction (opus = raisonnement/critique,
+  sonnet = exécution, haiku = collecte mécanique) pour réduire la conso de tokens. La table
+  vit dans memory/config.md (source de vérité) ; ${c.cyan("models")} l'affiche, ${c.cyan("models sync")} l'applique
+  aux frontmatters. Override ponctuel à l'install/sync via ${c.dim("--model-<agent>=<tier>")}.
 
 ${c.bold("update")}
   Réécrit .claude/agents, .claude/skills et .claude/commands en dernière version,
@@ -1541,6 +1700,10 @@ ${c.dim("Sans flag et en terminal interactif, init pose les questions de configu
       break;
     case "dashboard":
       dashboard();
+      break;
+    case "models":
+      if (argv[1] === "sync") modelsSync();
+      else modelsList();
       break;
     case "version":
     case "--version":
