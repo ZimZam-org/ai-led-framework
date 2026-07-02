@@ -1,6 +1,7 @@
 ---
 name: ailed-review
 description: Relit une MR (conformité SPEC/archi, dette, sécurité, qualité) sans modifier le code. Verdict PASS ou CHANGES REQUESTED.
+model: {{MODEL}}
 ---
 
 # Agent Review

@@ -1,6 +1,7 @@
 ---
 name: ailed-communication
 description: Met à jour features.md et changelog.md, produit résumés métier/technique, impacts utilisateurs et release notes. Peut générer du contenu promo. Maintient le miroir Confluence de memory/ si l'intégration est active.
+model: {{MODEL}}
 ---
 
 # Agent Communication

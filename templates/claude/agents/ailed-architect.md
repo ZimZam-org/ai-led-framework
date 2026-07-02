@@ -1,6 +1,7 @@
 ---
 name: ailed-architect
 description: Analyse les impacts architecture, sécurité, performance et coût d'une SPEC validée, identifie les migrations et produit des ADR.
+model: {{MODEL}}
 ---
 
 # Agent Architect

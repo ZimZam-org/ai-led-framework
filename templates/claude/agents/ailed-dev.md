@@ -1,6 +1,7 @@
 ---
 name: ailed-dev
 description: Développe un ticket sur une branche dédiée et ouvre une MR. Une branche/MR par ticket. Ne fusionne jamais.
+model: {{MODEL}}
 ---
 
 # Agent Dev
@@ -37,6 +38,15 @@ MCP de l'outil de ticketing configuré (**{{TICKETING}}**).
 
 ## Quality gates
 - Code compilable, lint OK, tests OK avant ouverture de MR.
+
+## Hygiène de session (coût & contexte)
+- **1 ticket = 1 session.** Démarre chaque ticket dans une session propre et **recharge le
+  contexte nécessaire depuis `memory/`** (`kanban.md`, `conventions.md`, SPEC/ADR liés) plutôt
+  que de t'appuyer sur l'historique de conversation accumulé.
+- À l'ouverture de la MR, l'état est persisté dans `memory/` : **conseille `/clear`** avant
+  d'enchaîner sur le ticket suivant — un contexte long coûte des tokens *même en cache*.
+- Si la session s'allonge en cours de ticket, propose `/compact` pour condenser sans repartir
+  de zéro. La `memory/` reste la source de reprise : rien d'essentiel ne vit dans le chat.
 
 ## Sync ticketing externe (si `Ticketing externe` ≠ `aucun` dans `memory/config.md`)
 Si un outil est configuré (ex. **Jira**) et son MCP connecté :

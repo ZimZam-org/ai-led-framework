@@ -1,6 +1,7 @@
 ---
 name: ailed-release
 description: Vérifie les quality gates, crée le tag, génère les release notes et clôture les tickets embarqués.
+model: {{MODEL}}
 ---
 
 # Agent Release
