@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0]
+
+### Added
+- Live progress sidebar improvements: a chrono on the running agent
+  (`▶ @dev impl · 2m14s`) and a main-loop heartbeat (`⋯ Edit · 3s`) so the panel
+  breathes even during long agent runs or direct work; tracking broadened to all
+  `Task` subagents (not only `ailed-*`).
+- `update` now propagates template structure into existing `memory/` files:
+  additive section merge for scaffold files (`config.md`, `process.md`), clean
+  rewrite of never-edited files (tracked via `.ailed/manifest.json`), and edited
+  project data preserved as-is.
+
+### Fixed
+- Progress sidebar no longer stacks stale frames in the scrollback of VTE
+  terminals (Tilix, GNOME Terminal): each redraw clears the scrollback (`\x1b[3J`).
+- `parseInstalledConfig` mis-read the SEO/ASO integration value from the per-agent
+  LLM models table; the integration scan is now scoped to the Integrations section.
+
 ## [0.10.1]
 
 ### Added
@@ -31,7 +49,8 @@ installer, the `ailed-*` agents and skills, the persistent `memory/` model, and
 the Jira/Confluence (Atlassian MCP) integration. See the
 [git history](https://github.com/ZimZam-org/ai-led-framework/commits/main) for details.
 
-[Unreleased]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.8.0...v0.9.0
