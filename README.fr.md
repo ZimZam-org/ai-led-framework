@@ -313,10 +313,20 @@ AI-LED · progress
 - **Epics / tâches** : lus dans `memory/epics.md` et `memory/kanban.md` (statuts `DONE`,
   `IN_PROGRESS`, `TODO`…). Fonctionne même sans hook.
 - **Agents (dernier / en cours / à venir)** : alimentés par le hook
-  `.claude/hooks/ailed-runtime-hook.js` (installé par `init`/`update`), câblé sur l'outil `Task`
-  via `.claude/settings.json`. À chaque appel d'un sous-agent `ailed-*`, il écrit l'agent actif
-  dans `.ailed/runtime.json` (gitignoré) ; les **agents à venir** sont projetés depuis la chaîne du
-  workflow détecté (Discovery / Feature / Incident / Security, voir `memory/process.md`).
+  `.claude/hooks/ailed-runtime-hook.js` (installé par `init`/`update`), câblé via
+  `.claude/settings.json` (`PostToolUse` sur `Task`). À chaque appel d'un sous-agent, il écrit
+  l'agent actif dans `.ailed/runtime.json` (gitignoré) ; l'agent en cours affiche un **chrono en
+  direct** (`▶ @dev impl · 2m14s`) pour que le panneau respire même pendant un long run. Les
+  **agents à venir** sont projetés depuis la chaîne du workflow détecté (Discovery / Feature /
+  Incident / Security, voir `memory/process.md`).
+- **Battement de cœur de la boucle principale** : `PreToolUse` (matcher `*`) enregistre le dernier
+  outil touché par la boucle principale, affiché en `⋯ Edit · 3s` quand aucun sous-agent ne tourne —
+  le panneau reste vivant même en travail direct, pas seulement aux frontières d'agents. (Ce hook se
+  déclenche à chaque appel d'outil ; retire l'entrée `PreToolUse` `*` de `.claude/settings.json`
+  pour le désactiver.)
+
+> **Tilix / GNOME Terminal (VTE) :** le rafraîchissement purge aussi le scrollback (`\x1b[3J`) à
+> chaque redraw — le panneau live n'empile plus de frames périmées dans l'historique de défilement.
 
 **Options :** `--width=N` (largeur du panneau), `--once` (affiche une fois puis quitte),
 `dashboard --cmd="…"` (commande lancée à droite du split, défaut `claude`). Un layout zellij
