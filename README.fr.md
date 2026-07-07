@@ -185,13 +185,24 @@ npx @s2bp/ai-led-framework@latest update
 | Cible                                                       | Comportement d'`update`                             |
 | ---------------------------------------------------------- | -------------------------------------------------- |
 | `.claude/agents/`, `.claude/skills/`, `.claude/commands/`  | **toujours réécrits** dans la nouvelle version      |
-| `memory/*.md` (tes données projet)                         | **préservés** ; seuls les **nouveaux** fichiers sont ajoutés |
+| `memory/config.md`, `memory/process.md` (fichiers cadre)   | **fusion additive de sections** : les sections que le template a gagnées sont ajoutées ; tes sections existantes ne sont **jamais** touchées |
+| `memory/*.md` (données projet) **jamais éditées**          | **réécrites proprement** dans la nouvelle version (détecté via `.ailed/manifest.json`) |
+| `memory/*.md` (données projet) **éditées**                 | **préservées** telles quelles                        |
+| Nouveaux fichiers `memory/`                                | **ajoutés**                                          |
 | `CLAUDE.md`                                                 | **laissé intact**                                  |
 
 La config (trigramme, intégrations, langue) est **relue depuis `memory/config.md`** : les
 placeholders `{{TICKET_PREFIX}}`, `{{MONITORING}}`, … sont donc réappliqués correctement — pas
 besoin de repasser les flags d'`init`. Tes propres agents/skills/commands non `ailed-` ne sont pas
 touchés.
+
+> **Comment `update` sait ce que tu as édité ?** `init`/`update` enregistrent l'empreinte de chaque
+> fichier `memory/` posé dans `.ailed/manifest.json` (gitignoré, local). Au prochain `update`, un
+> fichier dont l'empreinte n'a pas bougé est réputé *vierge* → réécrit proprement ; sinon il est
+> préservé (données) ou fusionné section par section (fichiers cadre `config.md`/`process.md`). Les
+> sections présentes des deux côtés mais **divergentes** sont signalées, jamais écrasées. Un
+> `conventions.md` importé via `--conventions=` est exclu du manifeste : jamais réputé vierge, donc
+> jamais écrasé.
 
 > **Pourquoi `@latest` ?** `npx` réutilise une copie en cache du package ; le tag `@latest` force la
 > récupération de la dernière version publiée au lieu de relancer celle déjà en cache.
