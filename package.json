@@ -1,6 +1,6 @@
 {
   "name": "@s2bp/ai-led-framework",
-  "version": "0.10.1",
+  "version": "0.11.0",
   "description": "AI-led workflow framework for Claude Code: persistent memory, ailed-* prefixed agents and skills, installable via npx @s2bp/ai-led-framework init.",
   "keywords": [
     "claude",
