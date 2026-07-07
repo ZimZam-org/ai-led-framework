@@ -306,10 +306,18 @@ AI-LED · progress
 - **Epics / tasks**: read from `memory/epics.md` and `memory/kanban.md` (statuses `DONE`,
   `IN_PROGRESS`, `TODO`…). Works even without the hook.
 - **Agents (last / current / upcoming)**: fed by the `.claude/hooks/ailed-runtime-hook.js` hook
-  (installed by `init`/`update`), wired on the `Task` tool via `.claude/settings.json`. On every
-  `ailed-*` subagent call it writes the active agent to `.ailed/runtime.json` (gitignored);
-  **upcoming agents** are projected from the detected workflow chain (Discovery / Feature /
-  Incident / Security, see `memory/process.md`).
+  (installed by `init`/`update`), wired via `.claude/settings.json` (`PostToolUse` on `Task`). On
+  every subagent call it writes the active agent to `.ailed/runtime.json` (gitignored); the running
+  agent shows a **live chrono** (`▶ @dev impl · 2m14s`) so the panel breathes even during a long
+  agent run. **Upcoming agents** are projected from the detected workflow chain (Discovery / Feature
+  / Incident / Security, see `memory/process.md`).
+- **Main-loop heartbeat**: `PreToolUse` (matcher `*`) records the last tool the main loop touched,
+  shown as `⋯ Edit · 3s` when no subagent is running — so the panel stays live during direct work,
+  not only at agent boundaries. (This fires the hook on every tool call; remove the `PreToolUse`
+  `*` entry from `.claude/settings.json` to opt out.)
+
+> **Tilix / GNOME Terminal (VTE):** the refresh clears the scrollback (`\x1b[3J`) on each redraw, so
+> the live pane no longer stacks stale frames in your scroll history.
 
 **Options:** `--width=N` (sidebar width), `--once` (render once and exit),
 `dashboard --cmd="…"` (command launched on the right of the split, default `claude`). A zellij
