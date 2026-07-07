@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: Show CLI help (smoke test)
+        run: npm test
+      - name: Verify installer runs against a fresh project
+        run: |
+          mkdir -p /tmp/ai-led-smoke && cd /tmp/ai-led-smoke
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" init --trigram=TST -y
+          test -d .claude && test -d memory
