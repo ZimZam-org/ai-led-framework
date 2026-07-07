@@ -299,23 +299,30 @@ function mergeHookSettings() {
   }
   s.hooks = s.hooks || {};
   const cmd = (phase) => `node "$CLAUDE_PROJECT_DIR/.claude/hooks/ailed-runtime-hook.js" ${phase}`;
-  const ensure = (event, phase) => {
-    s.hooks[event] = Array.isArray(s.hooks[event]) ? s.hooks[event] : [];
-    const exists = s.hooks[event].some((e) =>
-      (e && Array.isArray(e.hooks) ? e.hooks : []).some((h) => h && typeof h.command === "string" && h.command.includes("ailed-runtime-hook"))
+  const refsAiled = (e) =>
+    (e && Array.isArray(e.hooks) ? e.hooks : []).some(
+      (h) => h && typeof h.command === "string" && h.command.includes("ailed-runtime-hook")
     );
-    if (exists) return false;
-    s.hooks[event].push({ matcher: "Task", hooks: [{ type: "command", command: cmd(phase) }] });
-    return true;
+  // Desired wiring: PreToolUse on every tool (main-loop heartbeat + Task agents),
+  // PostToolUse on Task only (agent completion + /clear nudge). Self-healing: drop
+  // any prior ailed entries first so older "Task"-only PreToolUse wiring is upgraded.
+  const wire = (event, matcher, phase) => {
+    const arr = Array.isArray(s.hooks[event]) ? s.hooks[event] : [];
+    const before = JSON.stringify(arr);
+    const next = arr
+      .filter((e) => !refsAiled(e))
+      .concat([{ matcher, hooks: [{ type: "command", command: cmd(phase) }] }]);
+    s.hooks[event] = next;
+    return before !== JSON.stringify(next);
   };
-  const a = ensure("PreToolUse", "pre");
-  const b = ensure("PostToolUse", "post");
+  const a = wire("PreToolUse", "*", "pre");
+  const b = wire("PostToolUse", "Task", "post");
   if (a || b) {
     fs.mkdirSync(path.dirname(p), { recursive: true });
     fs.writeFileSync(p, JSON.stringify(s, null, 2) + "\n");
-    console.log(`  ${c.green("+")}    .claude/settings.json ${c.dim("(hooks Task câblés)")}`);
+    console.log(`  ${c.green("+")}    .claude/settings.json ${c.dim("(hooks Task + activité câblés)")}`);
   } else {
-    console.log(`  ${c.yellow("skip")} .claude/settings.json ${c.dim("(hooks déjà présents)")}`);
+    console.log(`  ${c.yellow("skip")} .claude/settings.json ${c.dim("(hooks déjà à jour)")}`);
   }
 }
 
@@ -1334,6 +1341,19 @@ function epicEffStatus(epic, tickets) {
   return epic.status || "todo";
 }
 
+// compact elapsed since an ISO timestamp: "45s", "2m14s", "1h03m"
+function fmtElapsed(sinceISO) {
+  if (!sinceISO) return "";
+  const t = Date.parse(sinceISO);
+  if (isNaN(t)) return "";
+  let s = Math.max(0, Math.floor((Date.now() - t) / 1000));
+  const h = Math.floor(s / 3600); s -= h * 3600;
+  const m = Math.floor(s / 60); s -= m * 60;
+  if (h) return `${h}h${String(m).padStart(2, "0")}m`;
+  if (m) return `${m}m${String(s).padStart(2, "0")}s`;
+  return `${s}s`;
+}
+
 // build the vertical progress tree as an array of ready-to-print colored lines
 function buildSidebar(epics, tickets, rt, width) {
   const L = [];
@@ -1413,7 +1433,14 @@ function buildSidebar(epics, tickets, rt, width) {
   const total = tickets.length;
   const done = tickets.filter((t) => t.status === "DONE").length;
   const wf = rt && rt.workflow ? rt.workflow : null;
+  const running0 = rt && rt.running && rt.running[0];
   L.push("");
+  // main-loop heartbeat: when no ailed-* agent is running, show the last tool the
+  // main loop touched with a live chrono, so the panel still breathes during direct
+  // work (Edit/Bash/Read…) instead of looking frozen.
+  if (!running0 && rt && rt.lastTool && rt.lastTool.tool) {
+    L.push(c.dim(`⋯ ${rt.lastTool.tool} · ${fmtElapsed(rt.lastTool.at)}`));
+  }
   L.push(c.dim(`${done}/${total} tickets DONE${wf ? " · " + wf : ""}`));
   return L;
 
@@ -1432,7 +1459,15 @@ function buildSidebar(epics, tickets, rt, width) {
       row(indent, G.done, short(lastAg.agent) + c.dim(" (fini)"), c.green);
     }
     if (running) {
-      row(indent, G.current, short(running.agent) + (running.desc ? "  " + running.desc : ""), cur);
+      // append a live chrono so the line changes every second — visible heartbeat
+      // even while a single agent runs for minutes. Reserve room for it so the
+      // clip below never eats the timer.
+      const age = fmtElapsed(running.since);
+      const tail = age ? "  " + age : "";
+      const head = short(running.agent) + (running.desc ? "  " + running.desc : "");
+      const budget = Math.max(1, w - indent - 2 - tail.length);
+      const shown = head.length > budget ? head.slice(0, Math.max(1, budget - 1)) + "…" : head;
+      row(indent, G.current, shown + tail, cur);
     }
     for (const a of nextAg.slice(0, 5)) row(indent, G.todo, short(a), c.dim);
     if (!running && !lastAg) row(indent, G.todo, "aucun agent actif", c.dim);
@@ -1465,14 +1500,20 @@ function watch() {
 
   process.stdout.write("\x1b[?25l"); // hide cursor
   let last = null;
+  // \x1b[3J clears the scrollback too — on VTE terminals (Tilix, GNOME Terminal)
+  // a plain \x1b[2J pushes the erased frame into scrollback, so every redraw would
+  // stack a stale copy in the history. Home + clear-screen + clear-scrollback.
+  const CLEAR = "\x1b[H\x1b[2J\x1b[3J";
   const tick = () => {
     try {
       const out = frame();
-      if (out !== last) { last = out; process.stdout.write("\x1b[H\x1b[2J" + out + "\n"); }
+      if (out !== last) { last = out; process.stdout.write(CLEAR + out + "\n"); }
     } catch (_) { /* keep the loop alive */ }
   };
   tick();
-  const iv = setInterval(tick, 800);
+  // 500ms so the live elapsed timers (running agent / last tool) advance smoothly;
+  // the diff above still skips redraws when nothing actually changed.
+  const iv = setInterval(tick, 500);
   const stop = () => { clearInterval(iv); process.stdout.write("\x1b[?25h\n"); process.exit(0); };
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);

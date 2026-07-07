@@ -5,14 +5,17 @@
  * AI-Led runtime hook — feeds the `ai-led watch` progress sidebar.
  *
  * Installed into the target project at .claude/hooks/ailed-runtime-hook.js and
- * wired in .claude/settings.json on the `Task` tool:
- *   PreToolUse  → node .claude/hooks/ailed-runtime-hook.js pre
- *   PostToolUse → node .claude/hooks/ailed-runtime-hook.js post
+ * wired in .claude/settings.json:
+ *   PreToolUse  (matcher "*")    → node .claude/hooks/ailed-runtime-hook.js pre
+ *   PostToolUse (matcher "Task") → node .claude/hooks/ailed-runtime-hook.js post
  *
- * It reads the hook payload (JSON) on stdin, and when the tool is `Task` with a
- * subagent_type prefixed `ailed-`, records which agent is running / has finished
- * into <project>/.ailed/runtime.json. Strictly best-effort: it never throws and
- * always exits 0 so it can never disrupt Claude Code.
+ * It reads the hook payload (JSON) on stdin and writes <project>/.ailed/runtime.json:
+ *   - Task tool with a subagent_type → records which agent is running / has finished
+ *     (the ailed-* workflow chain drives the "next agents" projection in the sidebar).
+ *   - Any other tool (Edit/Bash/Read…) on pre → records it as `lastTool`, giving the
+ *     sidebar a live heartbeat during direct main-loop work (no subagent running).
+ * Strictly best-effort: it never throws and always exits 0 so it can never disrupt
+ * Claude Code.
  *
  * Bonus: when a workflow's capstone agent finishes and no agents remain running,
  * it emits a `systemMessage` suggesting `/clear` — a natural task boundary where
@@ -67,25 +70,8 @@ function readStdin() {
   }
 }
 
-function main() {
-  const raw = readStdin();
-  let payload = {};
-  try {
-    payload = JSON.parse(raw || "{}");
-  } catch (_) {
-    return; // not JSON — nothing to do
-  }
-
-  if (payload.tool_name !== "Task") return;
-  const input = payload.tool_input || {};
-  const agent = String(input.subagent_type || "").trim();
-  if (!agent || !/^ailed-/.test(agent)) return;
-
-  const projectDir = payload.cwd || process.cwd();
-  const dir = path.join(projectDir, ".ailed");
-  const file = path.join(dir, "runtime.json");
-
-  let state = { running: [], history: [], workflow: null, updated: null };
+function readState(file) {
+  let state = { running: [], history: [], workflow: null, lastTool: null, updated: null };
   try {
     if (fs.existsSync(file)) {
       const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
@@ -96,8 +82,49 @@ function main() {
   } catch (_) {
     /* corrupt file — start fresh */
   }
+  return state;
+}
 
+function writeState(dir, file, state) {
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(state, null, 2));
+  } catch (_) {
+    /* best-effort */
+  }
+}
+
+function main() {
+  const raw = readStdin();
+  let payload = {};
+  try {
+    payload = JSON.parse(raw || "{}");
+  } catch (_) {
+    return; // not JSON — nothing to do
+  }
+
+  const projectDir = payload.cwd || process.cwd();
+  const dir = path.join(projectDir, ".ailed");
+  const file = path.join(dir, "runtime.json");
   const ts = new Date().toISOString();
+
+  // Non-Task tools (Edit/Bash/Read/Grep…) = main-loop activity. Record the last
+  // tool touched so the sidebar has a live heartbeat even when no ailed-* subagent
+  // is running. Pre-phase only, to avoid doubling node spawns on every tool call.
+  if (payload.tool_name !== "Task") {
+    if (phase !== "pre") return;
+    const state = readState(file);
+    state.lastTool = { tool: String(payload.tool_name || "").slice(0, 40), at: ts };
+    state.updated = ts;
+    writeState(dir, file, state);
+    return;
+  }
+
+  const input = payload.tool_input || {};
+  const agent = String(input.subagent_type || "").trim();
+  if (!agent) return; // Task without a subagent type — nothing to track
+
+  const state = readState(file);
   const desc = String(input.description || "").slice(0, 120);
   let nudge = null; // /clear suggestion banner, set when we reach a task boundary
 
@@ -131,13 +158,7 @@ function main() {
   }
 
   state.updated = ts;
-
-  try {
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(file, JSON.stringify(state, null, 2));
-  } catch (_) {
-    /* best-effort */
-  }
+  writeState(dir, file, state);
 
   // Nudge the user to /clear at the workflow boundary. systemMessage shows a
   // banner and costs no model tokens; we deliberately do NOT inject
