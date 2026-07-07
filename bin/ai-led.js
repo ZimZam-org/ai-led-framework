@@ -3,6 +3,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const readline = require("readline");
 
 const ROOT = path.resolve(__dirname, "..");
@@ -371,6 +372,11 @@ async function init() {
   // 4b. Optional: import an existing conventions file verbatim into memory/conventions.md
   if (cfg.conventions) importConventions(cfg);
 
+  // 4c. Record memory baselines so a later `update` can cleanly refresh the
+  //     files the user never edits. An imported conventions.md is NOT the
+  //     template, so exclude it (else update would wipe it as "pristine").
+  recordMemoryManifest(cfg, path.join(cwd, "memory"), cwd, cfg.conventions ? new Set(["conventions.md"]) : new Set());
+
   // 5. CLAUDE.md pointer (only if absent)
   const claudeMd = path.join(cwd, "CLAUDE.md");
   if (!fs.existsSync(claudeMd)) {
@@ -441,8 +447,20 @@ function parseInstalledConfig(memDir) {
     ["ticketing", /ticketing/i],
     ["documentation", /documentation/i],
   ];
+  // Scope the scan to the Integrations section only. Other tables (notably the
+  // per-agent LLM models table, which has rows like `| ailed-seo-aso | sonnet |`)
+  // would otherwise hijack labels such as /seo/i and poison the parsed value.
   const seen = new Set();
+  let inIntegrations = false;
   for (const line of txt.split("\n")) {
+    // only a level-2 heading opens/closes the section; deeper ### subsections
+    // (e.g. "### Ticketing & documentation externes") stay in scope.
+    const h2 = line.match(/^##\s+(.*)/);
+    if (h2) {
+      inIntegrations = /int[ée]grations?/i.test(h2[1]);
+      continue;
+    }
+    if (!inIntegrations) continue;
     if (!line.trim().startsWith("|")) continue;
     const cells = line.split("|").map((s) => s.trim());
     if (cells.length < 3) continue;
@@ -461,9 +479,189 @@ function parseInstalledConfig(memDir) {
   return cfg;
 }
 
+// ── memory update: manifest + additive section merge ─────────
+// memory/ mixes two natures: framework-owned scaffolding whose *structure*
+// evolves (config.md, process.md) and pure project data (everything else).
+// `update` must bring structural changes in without ever clobbering user data.
+const FRAMEWORK_MEMORY = new Set(["config.md", "process.md"]);
+
+function sha256(s) { return crypto.createHash("sha256").update(s, "utf8").digest("hex"); }
+function manifestPath(projectDir) { return path.join(projectDir, ".ailed", "manifest.json"); }
+
+// The manifest records the hash of the exact template bytes we wrote for each
+// memory file. On the next update, a file whose current hash still matches is
+// "pristine" (never edited locally) → safe to refresh in full. It lives under
+// the gitignored .ailed/, so it's per-clone: teammates without it fall back to
+// the safe path (data preserved, framework files section-merged).
+function readManifest(projectDir) {
+  try {
+    const p = manifestPath(projectDir);
+    if (!fs.existsSync(p)) return null;
+    const m = JSON.parse(fs.readFileSync(p, "utf8"));
+    if (!m || typeof m !== "object") return null;
+    m.memory = m.memory || {};
+    return m;
+  } catch (_) { return null; }
+}
+
+function writeManifest(projectDir, man) {
+  try {
+    fs.mkdirSync(path.join(projectDir, ".ailed"), { recursive: true });
+    fs.writeFileSync(manifestPath(projectDir), JSON.stringify(man, null, 2) + "\n");
+  } catch (_) { /* best-effort — pristine detection just degrades to "preserve" */ }
+}
+
+// Record baselines for freshly-installed memory files so a later `update` can
+// cleanly refresh the ones the user never touched. `skip` excludes files whose
+// on-disk content is NOT the template (e.g. an imported conventions.md), so they
+// are never mistaken for pristine and overwritten.
+function recordMemoryManifest(cfg, memDir, projectDir, skip = new Set()) {
+  const man = { version: pkg.version, lang: cfg.lang, memory: {} };
+  try {
+    for (const file of fs.readdirSync(memDir)) {
+      if (!file.endsWith(".md") || skip.has(file)) continue;
+      man.memory[file] = sha256(fs.readFileSync(path.join(memDir, file), "utf8"));
+    }
+  } catch (_) { /* best-effort */ }
+  writeManifest(projectDir, man);
+}
+
+// Split markdown into a leading preamble + a flat list of ATX-heading-delimited
+// sections. Concatenating pre + every section's lines reproduces the input
+// verbatim, so an insert-only merge leaves untouched sections byte-for-byte.
+function splitSectionsLines(md) {
+  const lines = md.split("\n");
+  const isHeading = (l) => /^#{1,6}\s+\S/.test(l);
+  const norm = (l) => l.replace(/^#{1,6}\s+/, "").trim().toLowerCase().replace(/\s+/g, " ");
+  const title = (l) => l.replace(/^#{1,6}\s+/, "").trim();
+  let i = 0;
+  const pre = [];
+  while (i < lines.length && !isHeading(lines[i])) pre.push(lines[i++]);
+  const sections = [];
+  while (i < lines.length) {
+    const start = i++;
+    while (i < lines.length && !isHeading(lines[i])) i++;
+    sections.push({ key: norm(lines[start]), title: title(lines[start]), lines: lines.slice(start, i) });
+  }
+  return { pre, sections };
+}
+
+// Additive merge: insert the template sections the user is missing (in template
+// order, each right after its preceding matched section), substitution already
+// applied. Never edits or removes existing sections. `changed` reports sections
+// present on both sides whose body differs — surfaced, not touched.
+function mergeSections(userMd, tplMd) {
+  const u = splitSectionsLines(userMd);
+  const t = splitSectionsLines(tplMd);
+  const have = new Set(u.sections.map((s) => s.key));
+  const tByKey = new Map(t.sections.map((s) => [s.key, s]));
+  const normBody = (ls) => ls.join("\n").replace(/\s+/g, " ").trim();
+
+  const added = [], changed = [];
+  for (const us of u.sections) {
+    const ts = tByKey.get(us.key);
+    if (ts && normBody(us.lines) !== normBody(ts.lines)) changed.push(us.title);
+  }
+
+  // group missing template sections under the anchor they should follow
+  const insertAfter = new Map(); // anchorKey | "__pre__" -> [section]
+  let anchor = "__pre__";
+  for (const ts of t.sections) {
+    if (have.has(ts.key)) { anchor = ts.key; continue; }
+    if (!insertAfter.has(anchor)) insertAfter.set(anchor, []);
+    insertAfter.get(anchor).push(ts);
+    added.push(ts.title);
+  }
+  if (!added.length) return { merged: userMd, added, changed };
+
+  const out = [];
+  const emit = (ls) => {
+    if (out.length && out[out.length - 1].trim() !== "") out.push(""); // ≥1 blank between blocks
+    for (const l of ls) out.push(l);
+  };
+  for (const l of u.pre) out.push(l);
+  for (const ts of insertAfter.get("__pre__") || []) emit(ts.lines);
+  for (const us of u.sections) {
+    emit(us.lines);
+    for (const ts of insertAfter.get(us.key) || []) emit(ts.lines);
+  }
+  let merged = out.join("\n");
+  if (!merged.endsWith("\n")) merged += "\n";
+  return { merged, added, changed };
+}
+
+// memory/ refresh for `update`: pristine files get a clean full rewrite,
+// framework files that were edited get an additive section merge, and edited
+// project-data files are preserved. Updates the manifest as it goes.
+function updateMemory(cfg, memDir, projectDir) {
+  console.log("\n" + c.bold("Mémoire") + c.dim(`  → memory/ (fusion structurelle · langue: ${cfg.lang})`));
+  const src = path.join(TPL, "memory", cfg.lang);
+  const man = readManifest(projectDir) || { version: pkg.version, lang: cfg.lang, memory: {} };
+  man.memory = man.memory || {};
+
+  for (const file of fs.readdirSync(src)) {
+    if (!file.endsWith(".md")) continue;
+    const rel = path.join("memory", file);
+    const dest = path.join(memDir, file);
+    const rendered = substitute(fs.readFileSync(path.join(src, file), "utf8"), cfg, path.basename(file, ".md"));
+
+    if (!fs.existsSync(dest)) {
+      fs.writeFileSync(dest, rendered);
+      man.memory[file] = sha256(rendered);
+      created++;
+      console.log(`  ${c.green("+")}    ${rel} ${c.dim("(nouveau)")}`);
+      continue;
+    }
+
+    const current = fs.readFileSync(dest, "utf8");
+    const baseline = man.memory[file];
+
+    // pristine: never edited since last install/update → clean full refresh
+    if (baseline && sha256(current) === baseline) {
+      if (rendered !== current) {
+        fs.writeFileSync(dest, rendered);
+        man.memory[file] = sha256(rendered);
+        created++;
+        console.log(`  ${c.green("↻")}    ${rel} ${c.dim("(réécrit — non modifié en local)")}`);
+      } else {
+        skipped++;
+        console.log(`  ${c.dim("=")}    ${rel} ${c.dim("(à jour)")}`);
+      }
+      continue;
+    }
+
+    // edited locally (or no baseline): framework files get additive sections,
+    // project data is preserved verbatim.
+    if (FRAMEWORK_MEMORY.has(file)) {
+      const { merged, added, changed } = mergeSections(current, rendered);
+      if (added.length) {
+        fs.writeFileSync(dest, merged);
+        // merged = framework sections + user edits → never mark pristine again.
+        delete man.memory[file];
+        created++;
+        console.log(`  ${c.green("+")}    ${rel} ${c.dim(`(+${added.length} section(s) : ${added.join(", ")})`)}`);
+      } else {
+        skipped++;
+        console.log(`  ${c.yellow("skip")} ${rel} ${c.dim("(aucune section manquante)")}`);
+      }
+      if (changed.length) {
+        console.log(`         ${c.dim(`↳ ${changed.length} section(s) diffèrent du template — conservées telles quelles : ${changed.join(", ")}`)}`);
+      }
+    } else {
+      skipped++;
+      console.log(`  ${c.yellow("skip")} ${rel} ${c.dim("(données projet — préservé)")}`);
+    }
+  }
+
+  man.version = pkg.version;
+  man.lang = cfg.lang;
+  writeManifest(projectDir, man);
+}
+
 // ── update: refresh framework files, preserve project data ────
-// Overwrites .claude/{agents,skills,commands} (framework-owned) and adds any
-// NEW memory/ files, while leaving existing memory/*.md and CLAUDE.md untouched.
+// Overwrites .claude/{agents,skills,commands} (framework-owned), refreshes
+// memory/ via updateMemory (pristine → rewrite · framework → section-merge ·
+// data → preserve), and leaves CLAUDE.md untouched.
 async function update() {
   console.log(`\n${c.bold("AI-Led")} ${c.dim("v" + pkg.version)} — mise à jour dans ${c.cyan(cwd)}`);
 
@@ -499,9 +697,9 @@ async function update() {
   // 3b. Runtime hook — refreshed and (re)wired into settings.json
   installRuntimeHook(cfg, true);
 
-  // 4. Memory — only NEW files added; existing project data preserved
-  console.log("\n" + c.bold("Mémoire") + c.dim(`  → memory/ (nouveaux fichiers seulement · langue: ${cfg.lang})`));
-  copyTree(path.join(TPL, "memory", cfg.lang), path.join(cwd, "memory"), cfg, false);
+  // 4. Memory — pristine files refreshed, framework files section-merged,
+  //    project data preserved (see updateMemory).
+  updateMemory(cfg, memDir, cwd);
 
   // CLAUDE.md is left untouched on purpose (user-owned).
 
