@@ -181,12 +181,22 @@ npx @s2bp/ai-led-framework@latest update
 | Target                                          | `update` behaviour                          |
 | ----------------------------------------------- | ------------------------------------------- |
 | `.claude/agents/`, `.claude/skills/`, `.claude/commands/` | **always rewritten** to the new version     |
-| `memory/*.md` (your project data)               | **preserved**; only **new** files are added |
+| `memory/config.md`, `memory/process.md` (scaffold files) | **additive section merge**: sections the template gained are appended; your existing sections are **never** touched |
+| `memory/*.md` (project data) **never edited**   | **cleanly rewritten** to the new version (detected via `.ailed/manifest.json`) |
+| `memory/*.md` (project data) **edited**         | **preserved** as-is                          |
+| New `memory/` files                             | **added**                                    |
 | `CLAUDE.md`                                      | **left untouched**                          |
 
 The config (trigram, integrations, language) is **re-read from `memory/config.md`**, so the
 `{{TICKET_PREFIX}}`, `{{MONITORING}}`, … placeholders are re-applied correctly — you don't pass the
 `init` flags again. Your own non-`ailed-` agents/skills/commands are left alone.
+
+> **How does `update` know what you edited?** `init`/`update` record a hash of every `memory/` file
+> they write into `.ailed/manifest.json` (gitignored, local). On the next `update`, a file whose hash
+> is unchanged is deemed *pristine* → rewritten cleanly; otherwise it's preserved (data) or merged
+> section-by-section (scaffold files `config.md`/`process.md`). Sections present on both sides but
+> **diverging** are reported, never overwritten. A `conventions.md` imported via `--conventions=` is
+> excluded from the manifest, so it's never treated as pristine and never overwritten.
 
 > **Why `@latest`?** `npx` reuses a cached copy of the package; the `@latest` tag forces a fetch of
 > the newest published version instead of re-running the one already cached.
