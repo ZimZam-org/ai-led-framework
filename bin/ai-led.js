@@ -744,13 +744,17 @@ const MEMORY_ORDER = [
 // never silently dropped
 const STATUSES = ["TO_CHECK", "TODO", "IN_PROGRESS", "TO_TEST", "DONE"];
 
-// tickets often carry a suffix after the status ("DONE (v1.4.0)", "DONE (#103 mergé)") —
-// match the leading token against the known statuses so they all group/color as one status
-// instead of each distinct suffix getting its own color
+// tickets often carry decoration around the status ("✅ **DONE**, mergé `main`",
+// "🔧 **IN_PROGRESS** (correctif)", "DONE (v1.4.0)") — search for a known status as a
+// whole word anywhere in the cell, rather than requiring it at the very start, so emoji/
+// markdown/trailing notes in any position never stop the ticket from being recognized
+// and grouped under its real status
 function canonicalStatus(raw) {
-  const m = /^([A-Za-z_]+)/.exec(String(raw || "").trim());
-  const token = m ? m[1].toUpperCase() : "";
-  return STATUSES.indexOf(token) >= 0 ? token : null;
+  const up = String(raw || "").toUpperCase();
+  for (const s of STATUSES) {
+    if (new RegExp("(?:^|[^A-Z_])" + s + "(?:[^A-Z_]|$)").test(up)) return s;
+  }
+  return null;
 }
 
 function daysSince(dateStr) {
@@ -800,10 +804,34 @@ function tableCells(line) {
 function isSeparatorRow(line) {
   return /^[-\s|]+$/.test(line.trim());
 }
-// strip a leading/trailing run of markdown/quote wrapper chars a table cell may carry
-// (`code`, **bold**, 'quoted') so e.g. "**DONE**" and "DONE" render/group identically
+// the ticket "title" column shows up under several names across real kanban.md tables
+// ("Titre", "Title", but also "Objet" or "Résumé" in some hand-written sections) — match
+// any of them so those tables aren't skipped wholesale for lacking an exact "Titre" header
+function titleColIdx(lo) {
+  if (lo.indexOf("titre") >= 0) return lo.indexOf("titre");
+  if (lo.indexOf("title") >= 0) return lo.indexOf("title");
+  return lo.findIndex((c) => /objet|r[ée]sum[ée]/.test(c));
+}
+// same idea for the ticket-id column: some hand-written tables header it "Ticket Notion"
+// rather than a bare "Ticket"/"ID", which an exact-match lookup misses entirely
+function idColIdx(lo) {
+  if (lo.indexOf("id") >= 0) return lo.indexOf("id");
+  if (lo.indexOf("ticket") >= 0) return lo.indexOf("ticket");
+  return lo.findIndex((c) => /ticket/.test(c));
+}
+// strip a leading/trailing run of markdown/quote/emoji decoration a table cell may
+// carry ("**DONE**", "✅ **DONE**", "**✅ DONE** (PR #187)") so all of them reduce to
+// the same base text and group/color identically. Emoji and markdown wrappers can
+// nest in either order ("✅ **X**" or "**✅ X**"), so both are stripped from the same
+// character class rather than in two separate passes — a two-pass strip would leave
+// e.g. the emoji inside "**✅ X**" stuck to the text after the "**" is removed, which
+// then fails canonical status matching and silently mis-buckets the ticket.
 function stripWrappers(raw) {
-  return String(raw || "").trim().replace(/^[`*']+/, "").replace(/[`*']+$/, "").trim();
+  const deco = /[\p{Extended_Pictographic}\u{FE0F}\u{200D}`*'\s]/u;
+  return String(raw || "").trim()
+    .replace(new RegExp("^(?:" + deco.source + ")+", "u"), "")
+    .replace(new RegExp("(?:" + deco.source + ")+$", "u"), "")
+    .trim();
 }
 
 // parse the kanban markdown into { STATUS: [{id,title}] }, robust to extra tables/columns
@@ -816,20 +844,22 @@ function parseBoard(content) {
     if (line.trim().charAt(0) !== "|") { map = null; continue; }
     const cs = tableCells(line);
     const lo = cs.map((c) => c.toLowerCase());
-    if (lo.indexOf("status") >= 0 && (lo.indexOf("titre") >= 0 || lo.indexOf("title") >= 0)) {
+    const statusIdx = lo.indexOf("status") >= 0 ? lo.indexOf("status") : lo.indexOf("statut");
+    const titleIdx = titleColIdx(lo);
+    if (statusIdx >= 0 && titleIdx >= 0) {
       map = {
-        status: lo.indexOf("status"),
-        title: lo.indexOf("titre") >= 0 ? lo.indexOf("titre") : lo.indexOf("title"),
-        id: lo.indexOf("id"),
+        status: statusIdx,
+        title: titleIdx,
+        id: idColIdx(lo),
       };
       continue;
     }
     if (isSeparatorRow(line) || !map) continue;
     const cell = parseStatusCell(cs[map.status]);
     if (!cell.base) continue;
-    const st = canonicalStatus(cell.base) || cell.base;
+    const st = cell.canonical || unknownStatusLabel(cell.base).label;
     if (!cols[st]) cols[st] = [];
-    cols[st].push({ id: map.id >= 0 ? cs[map.id] : "", title: map.title >= 0 ? cs[map.title] : "" });
+    cols[st].push({ id: map.id >= 0 ? stripWrappers(cs[map.id]) : "", title: map.title >= 0 ? cs[map.title] : "" });
   }
   return cols;
 }
@@ -1026,31 +1056,40 @@ function solutionBadges(val, colorOf) {
   return parts.map((p) => `<span class="badge" style="${hueStyle(colorOf(p))}">${escHtml(p)}</span>`).join(" ");
 }
 
-// a trailing "(...)" on the raw status ("DONE (v1.4.0)", "DONE (#103 mergé)") is kept
-// out of the badge text and only surfaced as a native tooltip on hover
-function splitStatusLabel(raw) {
+// a status cell keeps its full raw text (any decoration, trailing note, "(...)" or not)
+// as-is for display/tooltip — canonicalStatus() does the recognition work by searching
+// the raw text for a known status word, so nothing here needs to "clean" the cell down
+// to an exact base before matching
+function parseStatusCell(raw) {
+  const base = String(raw || "").trim();
+  return { base, canonical: canonicalStatus(base) };
+}
+
+// best-effort cosmetic cleanup for a status that isn't one of the 5 known ones: split
+// off a trailing "(...)" note and strip markdown/emoji wrappers, so e.g. "**Idea**
+// (backlog, non planifié)" renders as the short label "Idea" with the detail reachable
+// as a hover tooltip, instead of the parenthetical leaking into the visible badge
+function unknownStatusLabel(raw) {
   const s = String(raw || "").trim();
   const m = /^(.*?)\s*\(([^)]*)\)\s*$/.exec(s);
-  return m ? { label: m[1].trim(), extra: m[2].trim() } : { label: s, extra: "" };
+  return { label: stripWrappers(m ? m[1] : s), extra: m ? m[2].trim() : "" };
 }
 
-// pull the "(...)" suffix off a raw status cell *before* stripping `*'` wrappers, so
-// "**DONE** (v1.4.0)" cleans up to base "DONE" + extra "v1.4.0" instead of leaving
-// stray asterisks stuck to the base (which would break canonical status matching)
-function parseStatusCell(raw) {
-  const split = splitStatusLabel(raw);
-  const base = stripWrappers(split.label);
-  return { base, extra: split.extra, display: split.extra ? `${base} (${split.extra})` : base };
-}
-
-// known statuses keep their fixed color (st-TODO, st-DONE...) regardless of any suffix
-// in the raw label ("DONE (v1.4.0)" colors like "DONE"); anything else gets a hue-based color
+// known statuses render as a clean fixed-color pill (st-TODO, st-DONE...) — the exact
+// canonical word, not the raw cell text, so emoji/markdown/trailing notes around it
+// ("✅ **DONE**, mergé `main`", "DONE (v1.4.0)") never leak into the visible label; the
+// full raw text is still reachable as a hover tooltip. Anything else gets a best-effort
+// cleaned label and a hue-based color instead of being dropped.
 function statusBadge(rawLabel, status, colorOf) {
-  const src = rawLabel != null && rawLabel !== "" ? rawLabel : status || "—";
-  const split = splitStatusLabel(src);
+  const raw = String(rawLabel || "").trim();
+  if (STATUSES.indexOf(status) >= 0) {
+    const titleAttr = raw && raw !== status ? ` title="${escHtml(raw)}"` : "";
+    return `<span class="badge st-${status}"${titleAttr}>${status}</span>`;
+  }
+  const split = unknownStatusLabel(raw);
   const label = escHtml(split.label || status || "—");
-  const titleAttr = split.extra ? ` title="${escHtml(split.extra)}"` : "";
-  if (STATUSES.indexOf(status) >= 0) return `<span class="badge st-${status}"${titleAttr}>${label}</span>`;
+  const tooltip = split.extra || (raw !== split.label ? raw : "");
+  const titleAttr = tooltip ? ` title="${escHtml(tooltip)}"` : "";
   if (!colorOf) return `<span class="badge muted"${titleAttr}>${label}</span>`;
   return `<span class="badge" style="${hueStyle(colorOf(status))}"${titleAttr}>${label}</span>`;
 }
@@ -1398,26 +1437,38 @@ const HTML_TEMPLATE = `<!doctype html>
   var DATA = /*__DATA__*/;
   var STYLE = "__STYLE__";
   var STATUSES = ['TO_CHECK','TODO','IN_PROGRESS','TO_TEST','DONE'];
+  // search for a known status as a whole word anywhere in the cell (not just at the
+  // start), so emoji/markdown/trailing notes around it never stop the ticket from
+  // being recognized and grouped under its real status
   function canonicalStatus(raw){
-    var m=/^([A-Za-z_]+)/.exec(String(raw||'').trim());
-    var token = m ? m[1].toUpperCase() : '';
-    return STATUSES.indexOf(token)>=0 ? token : null;
+    var up = String(raw||'').toUpperCase();
+    for (var i=0;i<STATUSES.length;i++){
+      if (new RegExp('(?:^|[^A-Z_])'+STATUSES[i]+'(?:[^A-Z_]|$)').test(up)) return STATUSES[i];
+    }
+    return null;
   }
   function stripWrappers(raw){
-    return String(raw||'').trim().replace(/^[\`*']+/,'').replace(/[\`*']+$/,'').trim();
-  }
-  // strip a trailing "(...)" and any backtick/star/quote wrappers before canonical
-  // matching, so "**DONE** (v1.4.0)" buckets as DONE like a plain "DONE" cell would
-  function statusBase(raw){
-    var s=String(raw||'').trim();
-    var m=/^(.*?)\s*\(([^)]*)\)\s*$/.exec(s);
-    return stripWrappers(m ? m[1] : s);
+    var deco = /[\\p{Extended_Pictographic}\\u{FE0F}\\u{200D}\`*'\\s]/u;
+    return String(raw||'').trim()
+      .replace(new RegExp('^(?:'+deco.source+')+','u'),'')
+      .replace(new RegExp('(?:'+deco.source+')+$','u'),'')
+      .trim();
   }
   function staleLimit(name){ return name === 'market-watch' ? 30 : 60; }
   function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
   function get(name){ return DATA.filter(function(e){ return e.name===name; })[0]; }
   function cells(line){ return line.trim().split('|').slice(1,-1).map(function(s){ return s.trim(); }); }
   function isSep(line){ return /^[-\\s|]+$/.test(line.trim()); }
+  function titleColIdx(lo){
+    if (lo.indexOf('titre')>=0) return lo.indexOf('titre');
+    if (lo.indexOf('title')>=0) return lo.indexOf('title');
+    return lo.findIndex(function(c){ return /objet|r[\\u00e9e]sum[\\u00e9e]/.test(c); });
+  }
+  function idColIdx(lo){
+    if (lo.indexOf('id')>=0) return lo.indexOf('id');
+    if (lo.indexOf('ticket')>=0) return lo.indexOf('ticket');
+    return lo.findIndex(function(c){ return /ticket/.test(c); });
+  }
 
   function parseBoard(md){
     var cols={}; STATUSES.forEach(function(s){ cols[s]=[]; });
@@ -1425,16 +1476,18 @@ const HTML_TEMPLATE = `<!doctype html>
     md.split('\\n').forEach(function(line){
       if(line.trim().charAt(0)!=='|'){ map=null; return; }
       var cs=cells(line), lo=cs.map(function(c){ return c.toLowerCase(); });
-      if(lo.indexOf('status')>=0 && (lo.indexOf('titre')>=0||lo.indexOf('title')>=0)){
-        map={ status:lo.indexOf('status'), title:lo.indexOf('titre')>=0?lo.indexOf('titre'):lo.indexOf('title'), id:lo.indexOf('id') };
+      var statusIdx = lo.indexOf('status')>=0 ? lo.indexOf('status') : lo.indexOf('statut');
+      var titleIdx = titleColIdx(lo);
+      if(statusIdx>=0 && titleIdx>=0){
+        map={ status:statusIdx, title:titleIdx, id:idColIdx(lo) };
         return;
       }
       if(isSep(line)||!map) return;
-      var base=statusBase(cs[map.status]);
+      var base=String(cs[map.status]||'').trim();
       if(!base) return;
-      var st=canonicalStatus(base)||base;
+      var st=canonicalStatus(base)||stripWrappers(base);
       if(!cols[st]) cols[st]=[];
-      cols[st].push({ id:map.id>=0?cs[map.id]:'', title:map.title>=0?cs[map.title]:'' });
+      cols[st].push({ id:map.id>=0?stripWrappers(cs[map.id]):'', title:map.title>=0?cs[map.title]:'' });
     });
     return cols;
   }
@@ -1507,14 +1560,16 @@ const HTML_TEMPLATE = `<!doctype html>
     md.split('\\n').forEach(function(line){
       if(line.trim().charAt(0)!=='|'){ map=null; return; }
       var cs=cells(line), lo=cs.map(function(c){ return c.toLowerCase(); });
-      if(lo.indexOf('status')>=0 && (lo.indexOf('titre')>=0||lo.indexOf('title')>=0)){
-        map={ status:lo.indexOf('status'), title:lo.indexOf('titre')>=0?lo.indexOf('titre'):lo.indexOf('title'), id:lo.indexOf('id'), epic:lo.indexOf('epic') };
+      var statusIdx = lo.indexOf('status')>=0 ? lo.indexOf('status') : lo.indexOf('statut');
+      var titleIdx = titleColIdx(lo);
+      if(statusIdx>=0 && titleIdx>=0){
+        map={ status:statusIdx, title:titleIdx, id:idColIdx(lo), epic:lo.indexOf('epic') };
         return;
       }
       if(isSep(line)||!map) return;
-      var base=statusBase(cs[map.status]);
+      var base=String(cs[map.status]||'').trim();
       if(!base) return;
-      out.push({ id:map.id>=0?cs[map.id]:'', title:map.title>=0?cs[map.title]:'', status:canonicalStatus(base)||base, epic:map.epic>=0?stripWrappers(cs[map.epic]).toUpperCase():'' });
+      out.push({ id:map.id>=0?stripWrappers(cs[map.id]):'', title:map.title>=0?cs[map.title]:'', status:canonicalStatus(base)||stripWrappers(base), epic:map.epic>=0?stripWrappers(cs[map.epic]).toUpperCase():'' });
     });
     return out;
   }
@@ -1845,11 +1900,13 @@ function parseKanbanFull(content) {
     if (line.trim().charAt(0) !== "|") { map = null; continue; }
     const cs = tableCells(line);
     const lo = cs.map((c) => c.toLowerCase());
-    if (lo.indexOf("status") >= 0 && (lo.indexOf("titre") >= 0 || lo.indexOf("title") >= 0)) {
+    const statusIdx = lo.indexOf("status") >= 0 ? lo.indexOf("status") : lo.indexOf("statut");
+    const titleIdx = titleColIdx(lo);
+    if (statusIdx >= 0 && titleIdx >= 0) {
       map = {
-        status: lo.indexOf("status"),
-        title: lo.indexOf("titre") >= 0 ? lo.indexOf("titre") : lo.indexOf("title"),
-        id: lo.indexOf("id"),
+        status: statusIdx,
+        title: titleIdx,
+        id: idColIdx(lo),
         epic: lo.indexOf("epic"),
         description: lo.indexOf("description"),
         priority: lo.findIndex((c) => /priorit|priority/.test(c)),
@@ -1864,10 +1921,10 @@ function parseKanbanFull(content) {
     const cell = parseStatusCell(cs[map.status]);
     if (!cell.base) continue;
     out.push({
-      id: map.id >= 0 ? cs[map.id] : "",
+      id: map.id >= 0 ? stripWrappers(cs[map.id]) : "",
       title: map.title >= 0 ? cs[map.title] : "",
-      status: canonicalStatus(cell.base) || cell.base,
-      statusRaw: cell.display,
+      status: cell.canonical || unknownStatusLabel(cell.base).label,
+      statusRaw: cell.base,
       epic: map.epic >= 0 ? stripWrappers(cs[map.epic]) : "",
       description: map.description >= 0 ? (cs[map.description] || "").trim() : "",
       priority: map.priority >= 0 ? stripWrappers(cs[map.priority]) : "",
