@@ -292,7 +292,15 @@ Une **arborescence EPIC → ticket** statique, hors-ligne, repliable, construite
 `memory/epics.md` et `memory/kanban.md` : chaque ligne d'EPIC affiche un badge de statut agrégé
 (déduit de ses tickets) et le nombre de tickets rattachés ; chaque ligne de ticket affiche son
 Statut / Priorité / Effort / Solution(s) en badges de couleur (Priorité/Effort restent vides tant
-que `kanban.md` ne les renseigne pas au niveau ticket).
+que `kanban.md` ne les renseigne pas au niveau ticket). Les EPICs entièrement `DONE` sont repliées
+par défaut (clic sur la ligne pour les rouvrir et voir le détail des tickets).
+
+Le parsing du statut est tolérant : un suffixe entre parenthèses (`DONE (v1.4.0)`, `DONE (#103
+mergé)`) n'apparaît qu'en infobulle au survol, le badge reste `DONE` avec sa couleur habituelle
+quel que soit le suffixe ; les wrappers markdown (`` `code` ``, `**gras**`, `'guillemets'`) autour
+du statut, de la solution, de la priorité, de l'effort ou de l'EPIC sont retirés à l'affichage ; et
+un statut hors des 5 valeurs connues (`TO_CHECK`/`TODO`/`IN_PROGRESS`/`TO_TEST`/`DONE`) n'est jamais
+masqué — il s'affiche avec une couleur générée automatiquement plutôt que d'être ignoré.
 
 ## Panneau de progression en direct (`watch` / `dashboard`)
 

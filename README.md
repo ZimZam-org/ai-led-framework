@@ -284,7 +284,15 @@ A fully static, offline, collapsible **EPIC → ticket tree** built from `memory
 `memory/kanban.md`: each EPIC row shows a badge with its aggregated status (derived from its
 tickets) and the number of tickets underneath; each ticket row shows its own Status / Priority /
 Effort / Solution(s) as color-coded badges (Priority/Effort stay empty until filled in at ticket
-level in `kanban.md`).
+level in `kanban.md`). EPICs that are fully `DONE` are collapsed by default — click the row to
+expand them and see the underlying tickets.
+
+Status parsing is lenient: a parenthetical suffix (`DONE (v1.4.0)`, `DONE (#103 merged)`) only
+shows up as a hover tooltip, the badge stays plain `DONE` with its usual color regardless of the
+suffix; markdown wrappers (`` `code` ``, `**bold**`, `'quotes'`) around the status, solution,
+priority, effort or EPIC cell are stripped before rendering; and a status outside the 5 known
+values (`TO_CHECK`/`TODO`/`IN_PROGRESS`/`TO_TEST`/`DONE`) is never hidden — it renders with an
+auto-generated color instead of being dropped.
 
 ## Live progress sidebar (`watch` / `dashboard`)
 
