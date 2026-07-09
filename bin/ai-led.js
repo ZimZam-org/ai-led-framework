@@ -739,7 +739,19 @@ const MEMORY_ORDER = [
   "market-watch", "process", "architecture", "conventions", "decisions",
   "incidents", "security", "context", "glossary", "config",
 ];
+// well-known statuses, used for column ordering and known badge colors — any other
+// status found in memory/kanban.md is still kept and displayed (as its raw text),
+// never silently dropped
 const STATUSES = ["TO_CHECK", "TODO", "IN_PROGRESS", "TO_TEST", "DONE"];
+
+// tickets often carry a suffix after the status ("DONE (v1.4.0)", "DONE (#103 mergé)") —
+// match the leading token against the known statuses so they all group/color as one status
+// instead of each distinct suffix getting its own color
+function canonicalStatus(raw) {
+  const m = /^([A-Za-z_]+)/.exec(String(raw || "").trim());
+  const token = m ? m[1].toUpperCase() : "";
+  return STATUSES.indexOf(token) >= 0 ? token : null;
+}
 
 function daysSince(dateStr) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr || "");
@@ -788,6 +800,11 @@ function tableCells(line) {
 function isSeparatorRow(line) {
   return /^[-\s|]+$/.test(line.trim());
 }
+// strip a leading/trailing run of markdown/quote wrapper chars a table cell may carry
+// (`code`, **bold**, 'quoted') so e.g. "**DONE**" and "DONE" render/group identically
+function stripWrappers(raw) {
+  return String(raw || "").trim().replace(/^[`*']+/, "").replace(/[`*']+$/, "").trim();
+}
 
 // parse the kanban markdown into { STATUS: [{id,title}] }, robust to extra tables/columns
 function parseBoard(content) {
@@ -808,8 +825,10 @@ function parseBoard(content) {
       continue;
     }
     if (isSeparatorRow(line) || !map) continue;
-    const st = cs[map.status];
-    if (STATUSES.indexOf(st) < 0) continue;
+    const cell = parseStatusCell(cs[map.status]);
+    if (!cell.base) continue;
+    const st = canonicalStatus(cell.base) || cell.base;
+    if (!cols[st]) cols[st] = [];
     cols[st].push({ id: map.id >= 0 ? cs[map.id] : "", title: map.title >= 0 ? cs[map.title] : "" });
   }
   return cols;
@@ -866,11 +885,13 @@ function statusTerminal(entries, memDirRel, style) {
 
   // Synthèse visuelle : avancement + kanban (toujours affichés)
   if (board) {
-    const total = STATUSES.reduce((n, s) => n + board[s].length, 0);
+    const total = Object.values(board).reduce((n, arr) => n + arr.length, 0);
     const done = board.DONE.length;
     const pct = total ? Math.round((done / total) * 100) : 0;
+    const extra = Object.keys(board).filter((s) => STATUSES.indexOf(s) < 0 && board[s].length);
+    const cols = STATUSES.concat(extra).map((s) => `${s} ${c.bold(board[s].length)}`).join("   ");
     console.log(`  ${c.bold("Avancement")}  ${c.green(progressBar(pct, 24))} ${c.bold(pct + "%")}  ${c.dim(`(${done}/${total} tickets DONE)`)}`);
-    console.log(`  ${c.bold("Kanban")}      ${STATUSES.map((s) => `${s} ${c.bold(board[s].length)}`).join("   ")}\n`);
+    console.log(`  ${c.bold("Kanban")}      ${cols}\n`);
   }
 
   // Fraîcheur des fichiers — omise en mode concis
@@ -962,6 +983,304 @@ function status() {
     console.log(`  Ouvre-le dans un navigateur : ${c.dim("file://" + out)}\n`);
   } else {
     statusTerminal(entries, path.relative(cwd, memDir) || memDir, style);
+  }
+}
+
+// ── kanban tree view (EPIC → ticket, with Status/Priority/Effort/Solution badges) ──
+
+function escHtml(s) {
+  return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// assigns each distinct value its own hue, spaced by the golden angle so that even
+// near-identical strings (e.g. "P0"/"P1"/"P2") land on visually distinct colors —
+// a plain hash-mod-360 clusters those together since the input strings are so similar
+function makeColorAssigner() {
+  const hues = new Map();
+  const GOLDEN_ANGLE = 137.508;
+  let i = 0;
+  return function colorOf(val) {
+    const v = String(val || "").trim();
+    if (!v || v === "—") return null;
+    if (!hues.has(v)) { hues.set(v, Math.round((i * GOLDEN_ANGLE) % 360)); i++; }
+    return hues.get(v);
+  };
+}
+function hueStyle(hue) {
+  return `background:hsla(${hue},65%,50%,.16);border-color:hsla(${hue},60%,55%,.45);color:hsl(${hue},70%,80%)`;
+}
+
+// a colored pill for an open-vocabulary value, or a muted dash when empty
+function valueBadge(val, colorOf) {
+  const v = stripWrappers(val);
+  if (!v || v === "—") return `<span class="badge muted">—</span>`;
+  return `<span class="badge" style="${hueStyle(colorOf(v))}">${escHtml(v)}</span>`;
+}
+
+// Solution(s) can list several short IDs (comma/slash separated) → one badge each
+function solutionBadges(val, colorOf) {
+  const v = stripWrappers(val);
+  if (!v || v === "—") return `<span class="badge muted">—</span>`;
+  const parts = v.split(/[,/]/).map((s) => stripWrappers(s)).filter(Boolean);
+  if (!parts.length) return `<span class="badge muted">—</span>`;
+  return parts.map((p) => `<span class="badge" style="${hueStyle(colorOf(p))}">${escHtml(p)}</span>`).join(" ");
+}
+
+// a trailing "(...)" on the raw status ("DONE (v1.4.0)", "DONE (#103 mergé)") is kept
+// out of the badge text and only surfaced as a native tooltip on hover
+function splitStatusLabel(raw) {
+  const s = String(raw || "").trim();
+  const m = /^(.*?)\s*\(([^)]*)\)\s*$/.exec(s);
+  return m ? { label: m[1].trim(), extra: m[2].trim() } : { label: s, extra: "" };
+}
+
+// pull the "(...)" suffix off a raw status cell *before* stripping `*'` wrappers, so
+// "**DONE** (v1.4.0)" cleans up to base "DONE" + extra "v1.4.0" instead of leaving
+// stray asterisks stuck to the base (which would break canonical status matching)
+function parseStatusCell(raw) {
+  const split = splitStatusLabel(raw);
+  const base = stripWrappers(split.label);
+  return { base, extra: split.extra, display: split.extra ? `${base} (${split.extra})` : base };
+}
+
+// known statuses keep their fixed color (st-TODO, st-DONE...) regardless of any suffix
+// in the raw label ("DONE (v1.4.0)" colors like "DONE"); anything else gets a hue-based color
+function statusBadge(rawLabel, status, colorOf) {
+  const src = rawLabel != null && rawLabel !== "" ? rawLabel : status || "—";
+  const split = splitStatusLabel(src);
+  const label = escHtml(split.label || status || "—");
+  const titleAttr = split.extra ? ` title="${escHtml(split.extra)}"` : "";
+  if (STATUSES.indexOf(status) >= 0) return `<span class="badge st-${status}"${titleAttr}>${label}</span>`;
+  if (!colorOf) return `<span class="badge muted"${titleAttr}>${label}</span>`;
+  return `<span class="badge" style="${hueStyle(colorOf(status))}"${titleAttr}>${label}</span>`;
+}
+
+// one <dt>/<dd> pair for the detail popup
+function detailRow(label, val) {
+  const v = String(val || "").trim();
+  return `<dt>${escHtml(label)}</dt><dd>${v && v !== "—" ? escHtml(v) : "—"}</dd>`;
+}
+
+// aggregate an EPIC's status from its tickets; falls back to the epics.md status when it has none
+function epicAggStatus(epic, tickets) {
+  const ts = tickets.filter((t) => epic.id && t.epic === epic.id);
+  if (!ts.length) return { done: "DONE", current: "IN_PROGRESS", todo: "TODO" }[epic.status] || "TODO";
+  if (ts.some((t) => t.status === "IN_PROGRESS")) return "IN_PROGRESS";
+  if (ts.some((t) => t.status === "TO_CHECK")) return "TO_CHECK";
+  if (ts.some((t) => t.status === "TO_TEST")) return "TO_TEST";
+  if (ts.every((t) => t.status === "DONE")) return "DONE";
+  return "TODO";
+}
+
+function kanbanHtml(epics, tickets, outPath) {
+  const withStatus = epics.map((e) => ({ ...e, agg: epicAggStatus(e, tickets) }));
+  const knownIds = new Set(withStatus.map((e) => e.id));
+  // tickets referencing an EPIC id absent from epics.md still get a (title-less) bucket
+  for (const t of tickets) {
+    if (t.epic && !knownIds.has(t.epic)) {
+      knownIds.add(t.epic);
+      withStatus.push({ id: t.epic, title: "", status: "todo", priority: "", agg: epicAggStatus({ id: t.epic, status: "todo" }, tickets) });
+    }
+  }
+
+  const colorOf = makeColorAssigner(); // shared so the same Prio/Effort/Solution value always gets the same hue
+  const details = {};
+
+  const ticketRow = (t) => {
+    details["t:" + t.id] = {
+      title: t.title || "(sans titre)",
+      id: t.id,
+      bodyHtml: detailRow("Statut", t.statusRaw || t.status)
+        + detailRow("EPIC", t.epic)
+        + detailRow("Priorité", t.priority)
+        + detailRow("Effort", t.effort)
+        + detailRow("Solution(s)", t.solution)
+        + detailRow("Description", t.description)
+        + detailRow("Détail technique", t.technicalDetail)
+        + detailRow("Maquette", t.mockup),
+    };
+    return `
+      <tr class="ticket-row">
+        <td class="depth"></td>
+        <td class="tid">${escHtml(t.id)}</td>
+        <td class="ttitle"><span class="title-link" data-key="t:${escHtml(t.id)}">${escHtml(t.title) || "<em>(sans titre)</em>"}</span></td>
+        <td>${statusBadge(t.statusRaw, t.status, colorOf)}</td>
+        <td>${valueBadge(t.priority, colorOf)}</td>
+        <td>${valueBadge(t.effort, colorOf)}</td>
+        <td>${solutionBadges(t.solution, colorOf)}</td>
+      </tr>`;
+  };
+
+  const epicGroup = (epic) => {
+    const linked = tickets.filter((t) => epic.id && t.epic === epic.id);
+    details["e:" + epic.id] = {
+      title: epic.title || "(sans titre)",
+      id: epic.id,
+      bodyHtml: detailRow("Statut", epic.agg)
+        + detailRow("Priorité", epic.priority)
+        + detailRow("Objectif", epic.objective)
+        + detailRow("Features SPEC", epic.specFeatures)
+        + detailRow("Solutions cibles", epic.solutions),
+    };
+    const rows = linked.length ? linked.map(ticketRow).join("") :
+      `<tr class="ticket-row"><td class="depth"></td><td colspan="6" class="empty">Aucun ticket rattaché.</td></tr>`;
+    const collapsed = epic.agg === "DONE" ? " collapsed" : "";
+    return `
+    <tbody class="epic-group${collapsed}">
+      <tr class="epic-row" onclick="toggleGroup(this)">
+        <td class="chev"></td>
+        <td class="eid">${escHtml(epic.id)}</td>
+        <td class="etitle"><span class="title-link" data-key="e:${escHtml(epic.id)}">${escHtml(epic.title) || "<em>(sans titre)</em>"}</span> <span class="badge count">${linked.length} tâche${linked.length > 1 ? "s" : ""}</span></td>
+        <td>${statusBadge(epic.agg, epic.agg, colorOf)}</td>
+        <td>${epic.priority ? valueBadge(epic.priority, colorOf) : ""}</td>
+        <td></td>
+        <td></td>
+      </tr>
+${rows}
+    </tbody>`;
+  };
+
+  const orphans = tickets.filter((t) => !t.epic);
+  const orphanGroup = orphans.length ? `
+    <tbody class="epic-group">
+      <tr class="epic-row" onclick="toggleGroup(this)">
+        <td class="chev"></td>
+        <td class="eid">—</td>
+        <td class="etitle">Sans EPIC <span class="badge count">${orphans.length} tâche${orphans.length > 1 ? "s" : ""}</span></td>
+        <td><span class="badge muted">—</span></td>
+        <td></td>
+        <td></td>
+        <td></td>
+      </tr>
+${orphans.map(ticketRow).join("")}
+    </tbody>` : "";
+
+  const total = tickets.length;
+  const done = tickets.filter((t) => t.status === "DONE").length;
+  const generated = new Date().toISOString().slice(0, 16).replace("T", " ");
+  const body = withStatus.map(epicGroup).join("") + orphanGroup;
+  const detailsJson = JSON.stringify(details).replace(/<\//g, "<\\/");
+
+  fs.writeFileSync(outPath, KANBAN_HTML_TEMPLATE
+    .replace("__GENERATED__", generated)
+    .replace("__SUMMARY__", `${withStatus.length} EPIC${withStatus.length > 1 ? "s" : ""} · ${done}/${total} tickets DONE`)
+    .replace("/*__DETAILS__*/", detailsJson)
+    .replace("/*__BODY__*/", body || `<tbody><tr><td class="empty">Aucune EPIC ni ticket dans memory/epics.md / memory/kanban.md.</td></tr></tbody>`));
+}
+
+const KANBAN_HTML_TEMPLATE = `<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI-Led — Kanban</title>
+<style>
+  :root { --bg:#0f1117; --panel:#171a21; --panel2:#1d212b; --border:#252a34; --text:#e6e8eb; --muted:#8b929e; --accent:#6ea8fe;
+    --sTO_CHECK:#c08be8; --sTODO:#8b929e; --sIN_PROGRESS:#6ea8fe; --sTO_TEST:#f0c674; --sDONE:#6cc070; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--text); }
+  header { padding:18px 28px; border-bottom:1px solid var(--border); display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; }
+  header h1 { margin:0; font-size:18px; }
+  header .gen { color:var(--muted); font-size:13px; }
+  header .sum { margin-left:auto; color:var(--muted); font-size:13px; }
+  main { max-width:1200px; margin:0 auto; padding:24px 28px 80px; }
+  table.kanban { width:100%; border-collapse:collapse; font-size:14px; }
+  table.kanban th { text-align:left; color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; padding:0 10px 8px; font-weight:600; }
+  table.kanban tbody.epic-group { border-top:8px solid var(--bg); }
+  table.kanban td { padding:8px 10px; border-top:1px solid var(--border); vertical-align:middle; }
+  .epic-row { background:var(--panel); cursor:pointer; }
+  .epic-row:hover { background:var(--panel2); }
+  .epic-row td { border-top:1px solid var(--border); font-weight:600; }
+  .epic-row .chev:before { content:"▾"; color:var(--muted); display:inline-block; width:14px; }
+  tbody.collapsed .epic-row .chev:before { content:"▸"; }
+  tbody.collapsed .ticket-row { display:none; }
+  .epic-row .eid { font-family:ui-monospace,monospace; color:var(--accent); font-weight:400; font-size:13px; }
+  .ticket-row { background:var(--panel2); }
+  .ticket-row td.depth { width:14px; padding:8px 0 8px 10px; position:relative; }
+  .ticket-row td.depth:before { content:""; position:absolute; left:16px; top:0; bottom:0; width:1px; background:var(--border); }
+  .ticket-row .tid { font-family:ui-monospace,monospace; color:var(--muted); font-size:12px; white-space:nowrap; }
+  .empty { color:var(--muted); font-style:italic; font-size:13px; }
+  .badge { display:inline-block; border-radius:999px; padding:2px 10px; font-size:12px; border:1px solid var(--border); white-space:nowrap; }
+  .badge.muted { color:var(--muted); background:var(--panel2); }
+  .badge.count { color:var(--muted); background:var(--panel2); font-weight:400; margin-left:6px; }
+  .badge.st-TO_CHECK { background:rgba(192,139,232,.16); border-color:rgba(192,139,232,.45); color:#dcb9ef; }
+  .badge.st-TODO { background:rgba(139,146,158,.16); border-color:rgba(139,146,158,.45); color:#c7ccd4; }
+  .badge.st-IN_PROGRESS { background:rgba(110,168,254,.16); border-color:rgba(110,168,254,.45); color:#b7d2ff; }
+  .badge.st-TO_TEST { background:rgba(240,198,116,.16); border-color:rgba(240,198,116,.45); color:#f3d99b; }
+  .badge.st-DONE { background:rgba(108,192,112,.16); border-color:rgba(108,192,112,.45); color:#bfe6c2; }
+  .title-link { cursor:pointer; } .title-link:hover { text-decoration:underline; color:var(--accent); }
+  .overlay { position:fixed; inset:0; background:rgba(4,5,8,.65); display:none; align-items:center; justify-content:center; padding:24px; z-index:50; }
+  .overlay.open { display:flex; }
+  .modal { position:relative; background:var(--panel); border:1px solid var(--border); border-radius:12px; max-width:620px; width:100%; max-height:80vh; overflow:auto; padding:22px 24px; }
+  .modal .mclose { position:absolute; top:12px; right:12px; background:var(--panel2); border:1px solid var(--border); color:var(--text); border-radius:8px; width:28px; height:28px; cursor:pointer; font-size:14px; }
+  .modal .mclose:hover { border-color:var(--accent); }
+  .modal .mid { font-family:ui-monospace,monospace; color:var(--accent); font-size:12px; }
+  .modal h2 { margin:4px 0 0; font-size:17px; padding-right:24px; }
+  .modal dl { margin:16px 0 0; }
+  .modal dt { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.04em; margin-top:12px; }
+  .modal dt:first-child { margin-top:0; }
+  .modal dd { margin:3px 0 0; white-space:pre-wrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>AI-Led — Kanban</h1>
+  <span class="gen">généré le __GENERATED__ · lecture seule</span>
+  <span class="sum">__SUMMARY__</span>
+</header>
+<main>
+  <table class="kanban">
+    <thead>
+      <tr><th></th><th>ID</th><th>Titre</th><th>Statut</th><th>Priorité</th><th>Effort</th><th>Solution(s)</th></tr>
+    </thead>
+/*__BODY__*/
+  </table>
+</main>
+<div id="overlay" class="overlay" onclick="if(event.target===this) closeDetail()">
+  <div class="modal">
+    <button class="mclose" type="button" onclick="closeDetail()" aria-label="Fermer">✕</button>
+    <div class="mid" id="mId"></div>
+    <h2 id="mTitle"></h2>
+    <dl id="mBody"></dl>
+  </div>
+</div>
+<script>
+  var DETAILS = /*__DETAILS__*/;
+  function toggleGroup(row) { row.parentElement.classList.toggle("collapsed"); }
+  function closeDetail() { document.getElementById("overlay").classList.remove("open"); }
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeDetail(); });
+  document.querySelectorAll(".title-link").forEach(function (el) {
+    el.addEventListener("click", function (ev) {
+      ev.stopPropagation();
+      var d = DETAILS[el.getAttribute("data-key")];
+      if (!d) return;
+      document.getElementById("mId").textContent = d.id;
+      document.getElementById("mTitle").textContent = d.title;
+      document.getElementById("mBody").innerHTML = d.bodyHtml;
+      document.getElementById("overlay").classList.add("open");
+    });
+  });
+</script>
+</body>
+</html>
+`;
+
+function kanban() {
+  const memDir = path.join(cwd, "memory");
+  if (!fs.existsSync(memDir)) {
+    console.error(`\n${c.yellow("memory/ introuvable")} dans ${cwd}.`);
+    console.error(`Lance d'abord : ${c.cyan("npx @s2bp/ai-led-framework init")}\n`);
+    process.exit(1);
+  }
+  const epics = parseEpics(safeRead(path.join(memDir, "epics.md")));
+  const tickets = parseKanbanFull(safeRead(path.join(memDir, "kanban.md")));
+  if (argv.includes("--html")) {
+    const out = path.resolve(cwd, flag("out") || "ailed-kanban.html");
+    kanbanHtml(epics, tickets, out);
+    console.log(`\n${c.green("✓")} Arborescence Kanban générée : ${c.cyan(path.relative(cwd, out) || out)}`);
+    console.log(`  Ouvre-la dans un navigateur : ${c.dim("file://" + out)}\n`);
+  } else {
+    console.log(`\n${c.dim("Vue arborescente :")} npx @s2bp/ai-led-framework kanban --html\n`);
   }
 }
 
@@ -1079,7 +1398,21 @@ const HTML_TEMPLATE = `<!doctype html>
   var DATA = /*__DATA__*/;
   var STYLE = "__STYLE__";
   var STATUSES = ['TO_CHECK','TODO','IN_PROGRESS','TO_TEST','DONE'];
-  var LABEL = {TO_CHECK:'À vérifier',TODO:'À faire',IN_PROGRESS:'En cours',TO_TEST:'À tester',DONE:'Terminé'};
+  function canonicalStatus(raw){
+    var m=/^([A-Za-z_]+)/.exec(String(raw||'').trim());
+    var token = m ? m[1].toUpperCase() : '';
+    return STATUSES.indexOf(token)>=0 ? token : null;
+  }
+  function stripWrappers(raw){
+    return String(raw||'').trim().replace(/^[\`*']+/,'').replace(/[\`*']+$/,'').trim();
+  }
+  // strip a trailing "(...)" and any backtick/star/quote wrappers before canonical
+  // matching, so "**DONE** (v1.4.0)" buckets as DONE like a plain "DONE" cell would
+  function statusBase(raw){
+    var s=String(raw||'').trim();
+    var m=/^(.*?)\s*\(([^)]*)\)\s*$/.exec(s);
+    return stripWrappers(m ? m[1] : s);
+  }
   function staleLimit(name){ return name === 'market-watch' ? 30 : 60; }
   function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
   function get(name){ return DATA.filter(function(e){ return e.name===name; })[0]; }
@@ -1097,8 +1430,10 @@ const HTML_TEMPLATE = `<!doctype html>
         return;
       }
       if(isSep(line)||!map) return;
-      var st=cs[map.status];
-      if(STATUSES.indexOf(st)<0) return;
+      var base=statusBase(cs[map.status]);
+      if(!base) return;
+      var st=canonicalStatus(base)||base;
+      if(!cols[st]) cols[st]=[];
       cols[st].push({ id:map.id>=0?cs[map.id]:'', title:map.title>=0?cs[map.title]:'' });
     });
     return cols;
@@ -1177,9 +1512,9 @@ const HTML_TEMPLATE = `<!doctype html>
         return;
       }
       if(isSep(line)||!map) return;
-      var st=cs[map.status];
-      if(STATUSES.indexOf(st)<0) return;
-      out.push({ id:map.id>=0?cs[map.id]:'', title:map.title>=0?cs[map.title]:'', status:st, epic:map.epic>=0?(cs[map.epic]||'').replace(/\`/g,'').trim().toUpperCase():'' });
+      var base=statusBase(cs[map.status]);
+      if(!base) return;
+      out.push({ id:map.id>=0?cs[map.id]:'', title:map.title>=0?cs[map.title]:'', status:canonicalStatus(base)||base, epic:map.epic>=0?stripWrappers(cs[map.epic]).toUpperCase():'' });
     });
     return out;
   }
@@ -1285,15 +1620,19 @@ const HTML_TEMPLATE = `<!doctype html>
   var board = parseBoard((get('kanban')||{}).content);
   var tickets = parseKanbanFull((get('kanban')||{}).content);
   var epics = parseEpics((get('epics')||{}).content);
-  var total = STATUSES.reduce(function(n,s){ return n+board[s].length; },0);
+  var total = Object.keys(board).reduce(function(n,s){ return n+board[s].length; },0);
   var done = board.DONE.length;
   var pct = total ? Math.round(done/total*100) : 0;
   var summary = stateSummary((get('project-state')||{}).content);
 
   // ── Camemberts : avancement global + jalon en cours ───────
-  var globalSegs = STATUSES.slice().reverse().map(function(s){ return { value:board[s].length, color:SCOL[s], label:LABEL[s], st:s }; });
-  var globalLegend = STATUSES.slice().reverse().filter(function(s){ return board[s].length; })
-    .map(function(s){ return '<li><span class="ldot" style="background:'+SCOL[s]+'"></span>'+LABEL[s]+'<b>'+board[s].length+'</b></li>'; }).join('');
+  // statuts hors des 5 connus (libellé custom trouvé dans le fichier) regroupés en gris "Autres"
+  var otherCount = Object.keys(board).filter(function(s){ return STATUSES.indexOf(s)<0; })
+    .reduce(function(n,s){ return n+board[s].length; },0);
+  var globalSegs = STATUSES.slice().reverse().map(function(s){ return { value:board[s].length, color:SCOL[s], label:s, st:s }; });
+  if(otherCount) globalSegs.unshift({ value:otherCount, color:'#7a8290', label:'Autres', st:'OTHER' });
+  var globalLegend = globalSegs.filter(function(s){ return s.value; })
+    .map(function(s){ return '<li><span class="ldot" style="background:'+s.color+'"></span>'+s.label+'<b>'+s.value+'</b></li>'; }).join('');
   var globalCard =
     '<div class="card pie-card">'
     + '<div class="piefig">'+pieSvg(globalSegs)+'</div>'
@@ -1459,7 +1798,7 @@ function classifyEpicStatus(s) {
   return "todo";
 }
 
-// parse memory/epics.md overview table → [{id,title,status}] in declaration order
+// parse memory/epics.md overview table → [{id,title,status,priority,objective,specFeatures,solutions}] in declaration order
 function parseEpics(content) {
   const out = [];
   if (!content) return out;
@@ -1474,22 +1813,30 @@ function parseEpics(content) {
         epic: epicIdx,
         title: lo.indexOf("title") >= 0 ? lo.indexOf("title") : lo.indexOf("titre"),
         status: lo.indexOf("status") >= 0 ? lo.indexOf("status") : lo.indexOf("statut"),
+        priority: lo.findIndex((c) => /priorit|priority/.test(c)),
+        objective: lo.findIndex((c) => /objectif|goal/.test(c)),
+        specFeatures: lo.findIndex((c) => /spec|feature/.test(c)),
+        solutions: lo.findIndex((c) => /solution/.test(c)),
       };
       continue;
     }
     if (isSeparatorRow(line) || !map) continue;
-    const id = (cs[map.epic] || "").replace(/`/g, "").trim();
+    const id = stripWrappers(cs[map.epic]);
     if (!id || /^—$/.test(id)) continue;
     out.push({
       id,
       title: (map.title >= 0 ? cs[map.title] : "") || "",
       status: classifyEpicStatus(map.status >= 0 ? cs[map.status] : ""),
+      priority: map.priority >= 0 ? stripWrappers(cs[map.priority]) : "",
+      objective: map.objective >= 0 ? (cs[map.objective] || "").trim() : "",
+      specFeatures: map.specFeatures >= 0 ? (cs[map.specFeatures] || "").trim() : "",
+      solutions: map.solutions >= 0 ? stripWrappers(cs[map.solutions]) : "",
     });
   }
   return out;
 }
 
-// parse memory/kanban.md → [{id,title,status,epic}] keeping the EPIC link
+// parse memory/kanban.md → [{id,title,status,epic,priority,effort,solution}] keeping the EPIC link
 function parseKanbanFull(content) {
   const out = [];
   if (!content) return out;
@@ -1504,17 +1851,30 @@ function parseKanbanFull(content) {
         title: lo.indexOf("titre") >= 0 ? lo.indexOf("titre") : lo.indexOf("title"),
         id: lo.indexOf("id"),
         epic: lo.indexOf("epic"),
+        description: lo.indexOf("description"),
+        priority: lo.findIndex((c) => /priorit|priority/.test(c)),
+        effort: lo.indexOf("effort"),
+        solution: lo.findIndex((c) => /solution/.test(c)),
+        technicalDetail: lo.findIndex((c) => /d[ée]tail|technical/.test(c)),
+        mockup: lo.findIndex((c) => /maquette|mockup/.test(c)),
       };
       continue;
     }
     if (isSeparatorRow(line) || !map) continue;
-    const st = cs[map.status];
-    if (STATUSES.indexOf(st) < 0) continue;
+    const cell = parseStatusCell(cs[map.status]);
+    if (!cell.base) continue;
     out.push({
       id: map.id >= 0 ? cs[map.id] : "",
       title: map.title >= 0 ? cs[map.title] : "",
-      status: st,
-      epic: map.epic >= 0 ? (cs[map.epic] || "").replace(/`/g, "").trim() : "",
+      status: canonicalStatus(cell.base) || cell.base,
+      statusRaw: cell.display,
+      epic: map.epic >= 0 ? stripWrappers(cs[map.epic]) : "",
+      description: map.description >= 0 ? (cs[map.description] || "").trim() : "",
+      priority: map.priority >= 0 ? stripWrappers(cs[map.priority]) : "",
+      effort: map.effort >= 0 ? stripWrappers(cs[map.effort]) : "",
+      solution: map.solution >= 0 ? stripWrappers(cs[map.solution]) : "",
+      technicalDetail: map.technicalDetail >= 0 ? (cs[map.technicalDetail] || "").trim() : "",
+      mockup: map.mockup >= 0 ? (cs[map.mockup] || "").trim() : "",
     });
   }
   return out;
@@ -1868,6 +2228,7 @@ ${c.bold("Commands")}
   init            Installe agents, skills et mémoire dans le projet courant
   update          Met à jour le framework (agents/skills/commands) en préservant memory/ et CLAUDE.md
   status          Affiche l'état du projet (terminal) ; --html pour un tableau de bord navigateur
+  kanban --html   Génère une arborescence EPIC → ticket (ailed-kanban.html) avec badges de statut
   watch           Panneau de progression vertical (epics → tâches → agents), rafraîchi en continu
   dashboard       Ouvre un split (gauche: watch figé · droite: claude) via tmux ou zellij
   models          Affiche le modèle LLM de chaque agent (source : memory/config.md)
@@ -1911,6 +2272,15 @@ ${c.bold("Options de status")}
   Le terminal et le HTML montrent d'abord une synthèse (avancement, board kanban, jalons,
   « à surveiller ») ; le HTML met le détail des fichiers memory/ dans des accordéons repliés.
 
+${c.bold("Options de kanban")}
+  --html              Génère l'arborescence HTML statique (ailed-kanban.html), sans serveur
+  --out=CHEMIN        Chemin du fichier HTML généré (défaut : ailed-kanban.html)
+
+  Une ligne par EPIC (repliable), avec le nombre de tickets rattachés et son statut agrégé
+  (déduit des tickets liés) ; une ligne par ticket en dessous avec Statut / Priorité / Effort /
+  Solution(s) en badges de couleur (Priorité/Effort restent vides tant que memory/kanban.md ne
+  les renseigne pas au niveau ticket).
+
 ${c.bold("Options de watch / dashboard")}
   --once              (watch) Affiche le panneau une fois puis quitte (utile pour scripter)
   --width=N           Largeur du panneau de progression (défaut : largeur du terminal / 34)
@@ -1933,6 +2303,9 @@ ${c.dim("Sans flag et en terminal interactif, init pose les questions de configu
       break;
     case "status":
       status();
+      break;
+    case "kanban":
+      kanban();
       break;
     case "watch":
       watch();

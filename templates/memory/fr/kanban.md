@@ -8,10 +8,12 @@ Les tickets de clarification (`TO_CHECK`) portent un préfixe `CK-`.
 Les tickets intégrés dans une release peuvent être supprimés. Maintenu par `@ailed-pm` / `@ailed-planner`.
 
 Colonne **EPIC** : EPIC de rattachement (`memory/epics.md`). Colonne **Solution(s)** : `ID court`
-des cibles impactées (registre `memory/architecture.md`).
+des cibles impactées (registre `memory/architecture.md`). Colonnes **Priorité** / **Effort** :
+facultatives au niveau ticket (peuvent rester vides ; `npx @s2bp/ai-led-framework kanban --html`
+les affiche en badge quand elles sont renseignées).
 
-| ID | Date création | Status | EPIC | Titre | Description | Solution(s) | Détail technique | Maquette |
-| -- | ------------- | ------ | ---- | ----- | ----------- | ----------- | ---------------- | -------- |
+| ID | Date création | Status | EPIC | Titre | Description | Priorité | Effort | Solution(s) | Détail technique | Maquette |
+| -- | ------------- | ------ | ---- | ----- | ----------- | -------- | ------ | ----------- | ---------------- | -------- |
 
 
 ## Backlog de développement (tickets {{TICKET_PREFIX}}-*)
@@ -20,5 +22,5 @@ Découpés par `@ailed-planner` depuis `memory/epics.md`. Chaque ticket : indép
 Statut initial : `TODO`. Convention de branche : `feat/{{TICKET_PREFIX}}-00000X-...`.
 
 ### EPIC-1 — Fondations app
-| ID | Date création | Status | EPIC | Titre | Description | Solution(s) | Détail technique | Maquette |
-| -- | ------------- | ------ | ---- | ----- | ----------- | ----------- | ---------------- | -------- |
+| ID | Date création | Status | EPIC | Titre | Description | Priorité | Effort | Solution(s) | Détail technique | Maquette |
+| -- | ------------- | ------ | ---- | ----- | ----------- | -------- | ------ | ----------- | ---------------- | -------- |

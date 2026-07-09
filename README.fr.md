@@ -282,6 +282,18 @@ ajoute jalons et tickets en cours et déplie les accordéons HTML) ; `--style=�
 Le HTML charge `marked` + `mermaid` via CDN pour le rendu markdown et les diagrammes des
 accordéons (connexion internet nécessaire à l'affichage).
 
+### Vue arborescente Kanban
+
+```bash
+npx @s2bp/ai-led-framework kanban --html   # → ailed-kanban.html (à ouvrir au navigateur)
+```
+
+Une **arborescence EPIC → ticket** statique, hors-ligne, repliable, construite à partir de
+`memory/epics.md` et `memory/kanban.md` : chaque ligne d'EPIC affiche un badge de statut agrégé
+(déduit de ses tickets) et le nombre de tickets rattachés ; chaque ligne de ticket affiche son
+Statut / Priorité / Effort / Solution(s) en badges de couleur (Priorité/Effort restent vides tant
+que `kanban.md` ne les renseigne pas au niveau ticket).
+
 ## Panneau de progression en direct (`watch` / `dashboard`)
 
 Pour **suivre l'avancement pendant une session Claude Code** — quelle epic / tâche est en cours,

@@ -274,6 +274,18 @@ milestones and in-progress tickets and expands the HTML accordions); `--style=�
 run. The HTML loads `marked` + `mermaid` from a CDN to render the accordions' markdown and diagrams
 (internet needed at view time).
 
+### Kanban tree view
+
+```bash
+npx @s2bp/ai-led-framework kanban --html   # → ailed-kanban.html (open in a browser)
+```
+
+A fully static, offline, collapsible **EPIC → ticket tree** built from `memory/epics.md` and
+`memory/kanban.md`: each EPIC row shows a badge with its aggregated status (derived from its
+tickets) and the number of tickets underneath; each ticket row shows its own Status / Priority /
+Effort / Solution(s) as color-coded badges (Priority/Effort stay empty until filled in at ticket
+level in `kanban.md`).
+
 ## Live progress sidebar (`watch` / `dashboard`)
 
 To **follow progress during a Claude Code session** — which epic / task is in flight, which agent

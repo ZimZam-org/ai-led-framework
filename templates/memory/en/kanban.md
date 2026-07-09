@@ -8,10 +8,12 @@ Clarification tickets (`TO_CHECK`) carry a `CK-` prefix.
 Tickets shipped in a release may be removed. Maintained by `@ailed-pm` / `@ailed-planner`.
 
 **EPIC** column: parent EPIC (`memory/epics.md`). **Solution(s)** column: `short ID` of the
-impacted targets (registry `memory/architecture.md`).
+impacted targets (registry `memory/architecture.md`). **Priority** / **Effort** columns: optional
+at ticket level (may stay empty; `npx @s2bp/ai-led-framework kanban --html` renders them as a
+badge when filled in).
 
-| ID | Created | Status | EPIC | Title | Description | Solution(s) | Technical detail | Mockup |
-| -- | ------- | ------ | ---- | ----- | ----------- | ----------- | ---------------- | ------ |
+| ID | Created | Status | EPIC | Title | Description | Priority | Effort | Solution(s) | Technical detail | Mockup |
+| -- | ------- | ------ | ---- | ----- | ----------- | -------- | ------ | ----------- | ---------------- | ------ |
 
 ## Development backlog (tickets {{TICKET_PREFIX}}-*)
 
@@ -19,5 +21,5 @@ Broken down by `@ailed-planner` from `memory/epics.md`. Each ticket: independent
 Initial status: `TODO`. Branch convention: `feat/{{TICKET_PREFIX}}-00000X-...`.
 
 ### EPIC-1 — App foundations
-| ID | Created | Status | EPIC | Title | Description | Solution(s) | Technical detail | Mockup |
-| -- | ------- | ------ | ---- | ----- | ----------- | ----------- | ---------------- | ------ |
+| ID | Created | Status | EPIC | Title | Description | Priority | Effort | Solution(s) | Technical detail | Mockup |
+| -- | ------- | ------ | ---- | ----- | ----------- | -------- | ------ | ----------- | ---------------- | ------ |
