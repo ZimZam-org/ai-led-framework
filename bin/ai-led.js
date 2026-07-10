@@ -1567,6 +1567,26 @@ function buildSidebar(epics, tickets, rt, width) {
   const paintOf = { done: c.green, current: cur, todo: c.dim };
   const epLabel = (e) => `${e.id}${e.title ? "  " + e.title : ""}`;
   const tkLabel = (t) => `${t.id ? t.id + " " : ""}${t.title || ""}`.trim() || "(sans titre)";
+  // compact filled/empty bar of a given length
+  const bar = (pct, len) => {
+    const f = Math.round((Math.max(0, Math.min(100, pct)) / 100) * len);
+    return "█".repeat(f) + "░".repeat(Math.max(0, len - f));
+  };
+  // epic row with the completion % flush-right (padded on plain text, then painted)
+  const epicRow = (glyph, label, pct, paint) => {
+    const pctStr = pct == null ? "" : String(pct).padStart(3, " ") + "%";
+    const head = glyph ? glyph + " " : "";
+    const budget = Math.max(1, w - head.length - (pctStr ? pctStr.length + 1 : 0));
+    const lbl = label.length > budget ? label.slice(0, Math.max(1, budget - 1)) + "…" : label;
+    const gap = Math.max(1, w - head.length - lbl.length - pctStr.length);
+    const plain = head + lbl + (pctStr ? " ".repeat(gap) + pctStr : "");
+    L.push(paint ? paint(plain) : plain);
+  };
+  // completion % from a ticket set, falling back to the epic's derived status
+  const pctOf = (ts, eff) => {
+    if (ts.length) return Math.round((100 * ts.filter((t) => t.status === "DONE").length) / ts.length);
+    return eff === "done" ? 100 : 0;
+  };
 
   L.push(c.bold("AI-LED") + c.dim(" · progress"));
   L.push(c.dim("─".repeat(Math.min(w, 28))));
@@ -1592,18 +1612,20 @@ function buildSidebar(epics, tickets, rt, width) {
   let ci = withStatus.findIndex((e) => e.eff === "current");
   if (ci < 0) ci = withStatus.findIndex((e) => e.eff !== "done");
   if (ci < 0) ci = withStatus.length - 1;
-  const curEpic = withStatus[ci];
 
-  // previous (last treated) epic
-  const prev = [...withStatus.slice(0, ci)].reverse().find((e) => e.eff === "done") || withStatus[ci - 1];
-  if (prev) row(0, G[prev.eff], epLabel(prev), paintOf[prev.eff]);
+  // any ticket carries an EPIC link? if not, the whole board belongs to the
+  // current epic (single-epic / un-tagged kanban) so its tasks still expand.
+  const anyLinked = tickets.some((t) => t.epic);
 
-  // current epic
-  if (curEpic) {
-    row(0, G[curEpic.eff], epLabel(curEpic), paintOf[curEpic.eff]);
+  // list every epic, in declaration order, with its completion %; the current
+  // one (▶, yellow) expands to show its last-done / in-progress / next tasks.
+  withStatus.forEach((e, i) => {
+    const isCur = i === ci;
+    const linked = tickets.filter((t) => e.id && t.epic === e.id);
+    const etx = isCur ? (linked.length ? linked : (anyLinked ? [] : tickets)) : linked;
+    epicRow(G[e.eff], epLabel(e), pctOf(etx, e.eff), paintOf[e.eff]);
+    if (!isCur) return;
 
-    const linked = tickets.filter((t) => curEpic.id && t.epic === curEpic.id);
-    const etx = linked.length ? linked : (epics.length ? [] : tickets);
     const doneTk = etx.filter((t) => t.status === "DONE");
     const lastDone = doneTk[doneTk.length - 1];
     const curTk = etx.find((t) => t.status === "IN_PROGRESS");
@@ -1621,15 +1643,12 @@ function buildSidebar(epics, tickets, rt, width) {
 
     for (const t of nextTk.slice(0, 4)) row(2, G.todo, tkLabel(t), c.dim);
     if (nextTk.length > 4) row(2, "", c.dim(`+${nextTk.length - 4} autres tâches`));
-  }
-
-  // next epic
-  const next = withStatus.slice(ci + 1).find((e) => e.eff !== "done") || withStatus[ci + 1];
-  if (next && next !== curEpic) row(0, G[next.eff], epLabel(next), paintOf[next.eff]);
+  });
 
   // footer
   const total = tickets.length;
   const done = tickets.filter((t) => t.status === "DONE").length;
+  const pctAll = total ? Math.round((100 * done) / total) : 0;
   const wf = rt && rt.workflow ? rt.workflow : null;
   const running0 = rt && rt.running && rt.running[0];
   L.push("");
@@ -1639,6 +1658,7 @@ function buildSidebar(epics, tickets, rt, width) {
   if (!running0 && rt && rt.lastTool && rt.lastTool.tool) {
     L.push(c.dim(`⋯ ${rt.lastTool.tool} · ${fmtElapsed(rt.lastTool.at)}`));
   }
+  L.push(c.dim(`${bar(pctAll, Math.min(w - 6, 18))} ${pctAll}%`));
   L.push(c.dim(`${done}/${total} tickets DONE${wf ? " · " + wf : ""}`));
   return L;
 
