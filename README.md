@@ -306,6 +306,10 @@ AI-LED · progress
 2/6 tickets DONE · feature
 ```
 
+**Glyph legend:** `✓` done (green) · `▶` in progress (blue) · `·` upcoming (dimmed). Status
+detection is tolerant: `IN_PROGRESS`, `` `IN_PROGRESS` `` (backticks), `in progress`, `WIP`… are
+all recognized (the `Status` column of `memory/kanban.md` / `memory/epics.md`).
+
 > ⚠️ **Why a separate pane and not a frozen zone *inside* the Claude Code window?**
 > Claude Code is a closed TUI whose rendering we don't control: a frozen in-window column can't be
 > injected. A true frozen vertical left column is therefore obtained via a **terminal split** (tmux

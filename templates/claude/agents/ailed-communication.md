@@ -21,7 +21,10 @@ Documenter et communiquer la valeur livrée.
 - Optionnel : `/ailed-promo` → trailer, short, poster.
 
 ## Quality gates
-- `features.md` reflète l'état réel livré.
+- `features.md` reflète l'état réel livré. **C'est le pré-requis du nettoyage du kanban** :
+  `@ailed-release` n'archive un ticket `DONE` que si sa fonctionnalité y figure (cf.
+  « Rotation & nettoyage de la mémoire » dans `memory/process.md`). Un livrable non capté ici
+  bloque l'archivage du ticket correspondant.
 - Changelog mis à jour avant `@ailed-release`.
 
 ## Miroir Confluence (si `Documentation externe` ≠ `aucun` dans `memory/config.md`)
