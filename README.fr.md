@@ -314,6 +314,10 @@ AI-LED · progress
 2/6 tickets DONE · feature
 ```
 
+**Légende des glyphes :** `✓` terminé (vert) · `▶` en cours (bleu) · `·` à venir (grisé). La
+détection du statut est tolérante : `IN_PROGRESS`, `` `IN_PROGRESS` `` (backticks), `en cours`,
+`WIP`… sont tous reconnus (colonne `Status` de `memory/kanban.md` / `memory/epics.md`).
+
 > ⚠️ **Pourquoi un panneau séparé et pas une zone figée *dans* la fenêtre Claude Code ?**
 > Claude Code est une TUI fermée dont on ne contrôle pas le rendu : on ne peut pas y injecter une
 > colonne figée. La vraie colonne verticale figée à gauche s'obtient donc par un **split de

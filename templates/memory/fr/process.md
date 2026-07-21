@@ -12,20 +12,35 @@ Décrit les workflows pilotés par agents. Chaque étape consomme les artefacts 
 
 ---
 
-## Rotation de la mémoire (fichiers append-only)
+## Rotation & nettoyage de la mémoire
 
-`incidents.md`, `decisions.md` et `market-watch.md` grossissent sans limite : chaque lecture
-par un agent devient plus coûteuse. Pour garder les lectures légères, ils sont **scindés en
-actif + archive** :
+Plusieurs fichiers grossissent sans limite : chaque lecture par un agent devient plus coûteuse
+**en tokens**. Pour garder les lectures légères, on ne conserve **inline que les entrées
+actives** ; le reste part en archive (même nom sous `memory/archive/`, créé à la demande), avec
+en tête du fichier actif une ligne `> Archives : memory/archive/<fichier>.md`.
 
-- Ne garder **inline** que les entrées actives : incidents non clôturés ou < 90 j, ADR encore
-  en vigueur, observations de veille < 6 mois et non écartées.
-- Déplacer le reste vers `memory/archive/<fichier>.md` (même nom, créé à la demande), et
-  laisser en tête du fichier actif une ligne `> Archives : memory/archive/<fichier>.md`.
-- Les agents lisent **uniquement le fichier actif** ; l'archive n'est ouverte que pour une
-  investigation historique explicite.
-- L'archivage se fait **au fil de l'eau** par l'agent mainteneur, au moment où il édite le
-  fichier (rien n'est jamais supprimé, seulement déplacé).
+Principe : **rien n'est jamais supprimé, seulement déplacé.** Les agents lisent **uniquement le
+fichier actif** ; l'archive n'est ouverte que pour une investigation historique explicite.
+
+| Fichier | Reste inline (actif) | Part en archive |
+| ------- | -------------------- | --------------- |
+| `kanban.md` | tickets vivants (`TO_CHECK`→`TO_TEST`) + `DONE` pas encore livrés en release | tickets `DONE` livrés **dont la fonctionnalité est captée dans `features.md`** |
+| `incidents.md` | incidents ouverts ou clôturés < 90 j | le reste |
+| `decisions.md` | ADR encore en vigueur | ADR supersédés / obsolètes |
+| `market-watch.md` | observations < 6 mois et non écartées | le reste |
+
+**Déclencheurs** (pour que l'archivage ait réellement lieu, jamais « au feeling ») :
+
+- **Au fil de l'eau** : l'agent mainteneur archive dès qu'il édite le fichier et qu'une entrée
+  bascule d'« active » à « archivable ».
+- **Seuil de taille** : dès qu'un fichier dépasse **~40 entrées actives** (lignes de tableau /
+  blocs), l'agent qui le touche **doit** archiver le surplus **avant** d'écrire — le seuil rend
+  le nettoyage déterministe plutôt que dépendant de la vigilance.
+- **Kanban à la release** : `@ailed-release` **archive les tickets `DONE` embarqués vers
+  `memory/archive/kanban.md`**, mais **seulement une fois vérifié que `features.md` reflète la
+  fonctionnalité livrée** (sinon le ticket reste inline : on ne perd jamais une info pas encore
+  captée ailleurs). `features.md` est la **trace durable du livré** ; `archive/kanban.md` ne
+  conserve que l'historique brut ticket→MR→date.
 
 ---
 
