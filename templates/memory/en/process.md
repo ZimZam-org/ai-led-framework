@@ -12,19 +12,52 @@ Describes the agent-driven workflows. Each step consumes the artefacts of the pr
 
 ---
 
-## Memory rotation (append-only files)
+## Memory rotation & cleanup
 
-`incidents.md`, `decisions.md` and `market-watch.md` grow unbounded: every agent read gets
-more expensive over time. To keep reads light, they are **split into active + archive**:
+Several files grow unbounded: every agent read gets more expensive **in tokens** over time. To
+keep reads light, only the **active entries stay inline**; the rest is archived (same name under
+`memory/archive/`, created on demand), with a `> Archives: memory/archive/<file>.md` line at the
+top of the active file.
 
-- Keep **inline** only the active entries: open or < 90-day incidents, ADRs still in force,
-  market-watch observations < 6 months old and not dropped.
-- Move the rest to `memory/archive/<file>.md` (same name, created on demand), and leave a
-  `> Archives: memory/archive/<file>.md` line at the top of the active file.
-- Agents read **only the active file**; the archive is opened solely for explicit historical
-  investigation.
-- Archiving happens **incrementally** by the maintaining agent, when it edits the file
-  (nothing is ever deleted, only moved).
+Principle: **nothing is ever deleted, only moved.** Agents read **only the active file**; the
+archive is opened solely for explicit historical investigation.
+
+| File | Stays inline (active) | Moved to archive |
+| ---- | --------------------- | ---------------- |
+| `kanban.md` | live tickets (`TO_CHECK`→`TO_TEST`) + `DONE` not yet shipped in a release | shipped `DONE` tickets **whose functionality is captured in `features.md`** |
+| `incidents.md` | open incidents or closed < 90 days ago | the rest |
+| `decisions.md` | ADRs still in force | superseded / obsolete ADRs |
+| `market-watch.md` | observations < 6 months old and not dropped | the rest |
+
+**Triggers** (so archiving actually happens, never left to chance):
+
+- **Incrementally**: the maintaining agent archives as soon as it edits the file and an entry
+  flips from "active" to "archivable".
+- **Size threshold**: once a file exceeds **~40 active entries** (table rows / blocks), the agent
+  touching it **must** archive the overflow **before** writing — the threshold makes cleanup
+  deterministic rather than reliant on vigilance.
+- **Kanban at release**: `@ailed-release` **archives the shipped `DONE` tickets to
+  `memory/archive/kanban.md`**, but **only once it has verified that `features.md` reflects the
+  delivered functionality** (otherwise the ticket stays inline: no information is ever lost before
+  it is captured elsewhere). `features.md` is the **durable record of what shipped**;
+  `archive/kanban.md` only keeps the raw ticket→MR→date history.
+
+---
+
+## Session hygiene (cost & context)
+
+Since `memory/` is the **source of truth**, the conversation does not need to hold everything.
+Long sessions cost tokens *even when cached* — hence a few rules:
+
+- **One unit of work = one session.** A dev ticket, an incident, a watch pass each run in a
+  clean session; reload the useful context from `memory/` at startup instead of dragging along
+  a history that keeps growing.
+- **`/clear` at boundaries.** When a workflow ends (capstone) or an MR is opened, the
+  `ailed-runtime-hook.js` hook suggests `/clear`: following it resets the context with no loss
+  (state lives in `memory/`).
+- **`/compact` mid-task** if a single session grows long, to condense without starting over.
+- Agents never rely on "what was said above" for a durable fact: they write it to `memory/`
+  and read it back.
 
 ---
 

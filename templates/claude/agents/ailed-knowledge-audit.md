@@ -1,6 +1,7 @@
 ---
 name: ailed-knowledge-audit
 description: Audite la complétude de la mémoire projet (contexte, architecture, fonctionnalités, glossaire) et crée des tickets pour les manques.
+model: {{MODEL}}
 ---
 
 # Agent Knowledge-Audit

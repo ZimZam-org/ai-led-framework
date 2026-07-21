@@ -1,6 +1,7 @@
 ---
 name: ailed-check-secu
 description: Analyse dépendances, librairies, containers, code et configuration. Classe les vulnérabilités ; CRITICAL/HIGH génèrent un ticket automatiquement.
+model: {{MODEL}}
 ---
 
 # Agent Check-Secu
