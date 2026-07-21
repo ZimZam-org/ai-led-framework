@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.1]
+
+### Changed
+- `templates/memory/{en,fr}/config.md`: the example Confluence **root page** URL
+  now uses fully generic placeholders (`your-company.atlassian.net`, `SPACE`,
+  `PAGE_ID`, `Page+Title`) instead of a real organisation, space key, and page id.
+
 ## [0.13.0]
 
 ### Added
@@ -96,7 +103,8 @@ installer, the `ailed-*` agents and skills, the persistent `memory/` model, and
 the Jira/Confluence (Atlassian MCP) integration. See the
 [git history](https://github.com/ZimZam-org/ai-led-framework/commits/main) for details.
 
-[Unreleased]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.13.1...HEAD
+[0.13.1]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.10.1...v0.11.0
