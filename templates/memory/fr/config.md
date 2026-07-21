@@ -11,12 +11,48 @@ adaptent leur comportement (notamment si une intégration vaut `{{DISABLED}}`).
 - Trigramme projet (préfixe de ticket) : `{{TICKET_PREFIX}}`
   → les tickets de dev sont nommés `{{TICKET_PREFIX}}-000001`, `{{TICKET_PREFIX}}-000002`, …
 
+## Style de sortie
+
+- Style de communication des agents et rapports : `{{OUTPUT_STYLE}}`
+  → valeurs : `concis` · `standard` · `détaillé` (défaut : `standard`).
+
+**Lu par tous les agents et par `ai-led status`.** Ce réglage pilote *uniquement la présentation* —
+jamais le contenu de `memory/`, qui reste la **source de vérité complète et versionnée**. Il
+s'applique à : l'affichage dans Claude Code, les synthèses (`/ailed-status`) et le texte poussé
+vers les outils externes (Jira / Confluence).
+
+| Valeur     | Comportement attendu |
+| ---------- | -------------------- |
+| `concis`   | Mode « à l'essentiel ». Pas de préambule ni de conclusion, pas de reformulation de la demande, pas de phrases de transition. Puces courtes (une idée par ligne), tableaux plutôt que prose. Sur Jira : titre + critères d'acceptation en puces, sans narration. |
+| `standard` | Synthèse claire et structurée, contexte utile mais sans remplissage. Comportement par défaut. |
+| `détaillé` | Explications complètes : raisonnement, alternatives écartées, contexte étendu. Pour onboarding, audits ou revues approfondies. |
+
+> `concis` ne signifie **jamais** omettre une information critique (risque, décision, blocage) :
+> on coupe le superflu, pas le fond. La `memory/` est toujours renseignée intégralement, quel
+> que soit ce réglage.
+
 ## Conventions techniques (facultatif)
 
 Les conventions de code et l'organisation technique **en place** sont décrites dans
 `memory/conventions.md`. Renseignable à l'install (`--conventions=<chemin>`, import brut)
 ou complété à la main / via `@ailed-init-memory`. **Lu par `@ailed-architect`, `@ailed-dev`
 et `@ailed-ux`** avant d'agir. Le fichier peut rester partiellement vide.
+
+## Modèles LLM par agent
+
+Chaque agent tourne sur un **modèle choisi selon sa fonction**, pour réduire la consommation de
+tokens sans dégrader la qualité là où elle compte :
+
+- `opus` — raisonnement, jugement, revue critique (une mauvaise sortie coûte du rework en aval) ;
+- `sonnet` — exécution standard, gros volume (dev, tests, rédaction) ;
+- `haiku` — collecte / extraction mécanique, peu de raisonnement.
+
+**Cette table est la source de vérité.** Le harness lit le modèle dans le *frontmatter* de chaque
+agent (`.claude/agents/*.md`) : après avoir édité une ligne ci-dessous, applique-la avec
+`npx @s2bp/ai-led-framework models sync`. `models` (sans argument) affiche la table effective.
+Valeurs possibles : `opus` · `sonnet` · `haiku` · `inherit` (hérite du modèle de session).
+
+{{MODELS_TABLE}}
 
 ## Intégrations
 
@@ -74,7 +110,7 @@ MCP — ils ne remplacent jamais la `memory/`.
 | Confluence | Page racine (URL de la page parente)         | `à renseigner`     |
 | Confluence | Sous-page conteneur (créée si absente)       | `AI LED FRAMEWORK` |
 
-> Exemple de **page racine** : `https://skeepers.atlassian.net/wiki/spaces/RDP/pages/2883387645/Feedback+Management`.
+> Exemple de **page racine** : `https://your-company.atlassian.net/wiki/spaces/SPACE/pages/PAGE_ID/Page+Title`.
 > Le MCP en déduit l'espace et la page parente ; la sous-page `AI LED FRAMEWORK` y est créée si
 > absente, puis peuplée d'une page par fichier `memory/*.md`.
 >

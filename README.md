@@ -22,15 +22,17 @@ npx @s2bp/ai-led-framework init
 | `.claude/agents/`   | 21 `ailed-*.md` agents (callable via `@ailed-<name>`)          |
 | `.claude/skills/`   | 10 `ailed-*` skills (callable via `/ailed-<name>`)             |
 | `.claude/commands/` | `/ailed-bootstrap` slash-command (framework bootstrap)         |
+| `.claude/hooks/`    | `ailed-runtime-hook.js` + `Task` hooks in `settings.json` feeding the live progress sidebar (`watch`/`dashboard`) |
 | `memory/`           | 15 project memory files (including `config.md`, `process.md`, `conventions.md` and `market-watch.md`), in the chosen language |
 | `CLAUDE.md`         | framework pointer (created only if absent)                     |
 
-Existing files are **never overwritten** unless you pass `--force`.
+Existing files are **never overwritten** unless you pass `--force` (the `settings.json` hooks are
+merged in non-destructively, and `.ailed/` is added to `.gitignore`).
 
 ## Configuration (`memory/config.md`)
 
 `init` generates `memory/config.md`, the **source of truth for tooling** that agents read
-before acting. Two things are configured there:
+before acting. It configures the language, trigram, output style and integrations:
 
 ### Language of the `memory/` files
 
@@ -53,6 +55,46 @@ The dev ticket prefix (e.g. `ZZM-000001`) is a **trigram derived from the projec
 ```bash
 npx @s2bp/ai-led-framework init --trigram=ZZM
 ```
+
+### Output style
+
+The **verbosity level** of agents and reports — `concise` · `standard` (default) · `detailed`.
+This setting drives *presentation only* (the Claude Code display, `/ailed-status` syntheses, text
+pushed to Jira/Confluence); `memory/` always stays **complete and git-versioned** whatever you pick.
+
+```bash
+npx @s2bp/ai-led-framework init --style=concise
+```
+
+- `concise` — "get to the point" mode: no preamble or restating, short bullets, tables over prose,
+  and on Jira a title + acceptance criteria as bullets. It **never** hides a risk, decision or
+  blocker — cut the fluff, not the substance.
+- `standard` — clear, structured summary (default).
+- `detailed` — full explanations: reasoning, discarded alternatives, extended context.
+
+Editable any time in `memory/config.md`, or forced for a single run: `ai-led status --style=detailed`.
+
+### LLM model per agent (token savings)
+
+Each of the 21 agents runs on a **model chosen for its function**, so simple agents don't burn
+premium tokens:
+
+- `opus` — reasoning / judgment / critical review, where a bad output causes downstream rework
+  (`brainstorm`, `architect`, `planner`, `pm`, `analyst`, `review`, `security-review`, `rca`);
+- `sonnet` — capable standard execution at volume (`dev`, `ux`, `test`, `communication`, `release`,
+  `fact-check`, `check-secu`, `seo-aso`, `monetization`, `knowledge-audit`, `init-memory`);
+- `haiku` — mechanical collection / extraction (`scout`, `check-log`).
+
+The mapping is the **“LLM model per agent” table in `memory/config.md`** (source of truth). The
+harness reads the model from each agent's frontmatter, so after editing the table apply it:
+
+```bash
+npx @s2bp/ai-led-framework models        # print the effective mapping
+npx @s2bp/ai-led-framework models sync    # apply the table to .claude/agents/*.md
+```
+
+You can also set a model at install time: `init --model-dev=opus --model-scout=sonnet`
+(tier: `opus` · `sonnet` · `haiku` · `inherit`). `update` re-applies whatever the table says.
 
 ### Integrations (optional)
 
@@ -120,6 +162,7 @@ may stay partially empty and be filled later by hand or via `@ailed-init-memory`
 --seo-aso=NAME      SEO / ASO tool (Search Console, Ahrefs, App Store Connect), or disabled (default)
 --ticketing=NAME    External ticketing (e.g. Jira, via MCP), or disabled (default)
 --docs=NAME         External documentation (e.g. Confluence, via MCP), or disabled (default)
+--style=LEVEL       Agent/report output style: concise | standard | detailed (default: standard)
 --conventions=PATH  Import an existing conventions / technical-organization file into memory/conventions.md (optional)
 -y, --yes           Non-interactive mode (otherwise questions are asked in the terminal)
 -f, --force         Overwrite existing files
@@ -138,12 +181,22 @@ npx @s2bp/ai-led-framework@latest update
 | Target                                          | `update` behaviour                          |
 | ----------------------------------------------- | ------------------------------------------- |
 | `.claude/agents/`, `.claude/skills/`, `.claude/commands/` | **always rewritten** to the new version     |
-| `memory/*.md` (your project data)               | **preserved**; only **new** files are added |
+| `memory/config.md`, `memory/process.md` (scaffold files) | **additive section merge**: sections the template gained are appended; your existing sections are **never** touched |
+| `memory/*.md` (project data) **never edited**   | **cleanly rewritten** to the new version (detected via `.ailed/manifest.json`) |
+| `memory/*.md` (project data) **edited**         | **preserved** as-is                          |
+| New `memory/` files                             | **added**                                    |
 | `CLAUDE.md`                                      | **left untouched**                          |
 
 The config (trigram, integrations, language) is **re-read from `memory/config.md`**, so the
 `{{TICKET_PREFIX}}`, `{{MONITORING}}`, … placeholders are re-applied correctly — you don't pass the
 `init` flags again. Your own non-`ailed-` agents/skills/commands are left alone.
+
+> **How does `update` know what you edited?** `init`/`update` record a hash of every `memory/` file
+> they write into `.ailed/manifest.json` (gitignored, local). On the next `update`, a file whose hash
+> is unchanged is deemed *pristine* → rewritten cleanly; otherwise it's preserved (data) or merged
+> section-by-section (scaffold files `config.md`/`process.md`). Sections present on both sides but
+> **diverging** are reported, never overwritten. A `conventions.md` imported via `--conventions=` is
+> excluded from the manifest, so it's never treated as pristine and never overwritten.
 
 > **Why `@latest`?** `npx` reuses a cached copy of the package; the `@latest` tag forces a fetch of
 > the newest published version instead of re-running the one already cached.
@@ -203,17 +256,86 @@ features, market watch, process):
 - **`/ailed-status`** (in Claude Code) — an **intelligent synthesis** of `memory/` that
   highlights **what needs a decision** (pending human validations, candidate topics to
   promote, stale watch, disabled integrations).
-- **`ai-led status`** (CLI) — a **deterministic, zero-token** terminal snapshot. Add `--html`
-  to generate `ailed-status.html`, a **static** dashboard (kanban columns, tables, process
-  diagrams) you open in a browser — **no server, no data sent anywhere**:
+- **`ai-led status`** (CLI) — a **deterministic, zero-token** terminal snapshot: progress bar,
+  kanban counts and a "watch" list. Add `--html` to generate `ailed-status.html`, a **static**
+  dashboard that opens on a **visual synthesis**: two **pie charts** (global progress + current
+  milestone, approximate), three action counters (**bugs** to handle, open **vulnerabilities**,
+  product **arbitrations** discovery → roadmap), a **chronological EPIC timeline**, and the
+  **current EPIC's breakdown** (tasks done / in progress / upcoming); each `memory/` file's raw
+  detail stays available, **collapsed** at the bottom — **no server, no project data sent**:
 
 ```bash
 npx @s2bp/ai-led-framework status          # terminal snapshot
 npx @s2bp/ai-led-framework status --html   # → ailed-status.html (open in a browser)
 ```
 
-The HTML loads `marked` + `mermaid` from a CDN to render markdown and diagrams (internet
-needed at view time).
+Both honor the **Output style** from `config.md` (`concise` tightens the output, `detailed` adds
+milestones and in-progress tickets and expands the HTML accordions); `--style=…` forces it for a
+run. The HTML loads `marked` + `mermaid` from a CDN to render the accordions' markdown and diagrams
+(internet needed at view time).
+
+## Live progress sidebar (`watch` / `dashboard`)
+
+To **follow progress during a Claude Code session** — which epic / task is in flight, which agent
+just finished, is working, or is about to work — without re-running `status`, the framework ships a
+continuously refreshed **vertical sidebar**:
+
+```bash
+npx @s2bp/ai-led-framework watch        # the sidebar alone (drop it in a left-hand terminal)
+npx @s2bp/ai-led-framework dashboard    # tmux/zellij split: sidebar on the left · claude on the right
+```
+
+Top to bottom, the sidebar shows exactly the requested hierarchy:
+
+```
+AI-LED · progress
+────────────────────────────
+✓ EPIC-1  Foundations         ← last treated epic
+▶ EPIC-2  Payments            ← current epic
+  ✓ ZZM-000011 Payment model    ← last treated task
+  ▶ ZZM-000012 Checkout flow     ← current task
+    ✓ @architect (done)          ← last agent
+    ▶ @dev  impl checkout        ← current agent
+    · @review                    ← upcoming agents (workflow chain)
+    · @test
+    · @communication
+  · ZZM-000013 Refund           ← upcoming tasks
+  · ZZM-000014 Webhooks
+· EPIC-3  Reporting           ← next epic
+
+2/6 tickets DONE · feature
+```
+
+**Glyph legend:** `✓` done (green) · `▶` in progress (blue) · `·` upcoming (dimmed). Status
+detection is tolerant: `IN_PROGRESS`, `` `IN_PROGRESS` `` (backticks), `in progress`, `WIP`… are
+all recognized (the `Status` column of `memory/kanban.md` / `memory/epics.md`).
+
+> ⚠️ **Why a separate pane and not a frozen zone *inside* the Claude Code window?**
+> Claude Code is a closed TUI whose rendering we don't control: a frozen in-window column can't be
+> injected. A true frozen vertical left column is therefore obtained via a **terminal split** (tmux
+> or zellij), with Claude Code on the right — hence `dashboard`.
+
+**Data sources:**
+
+- **Epics / tasks**: read from `memory/epics.md` and `memory/kanban.md` (statuses `DONE`,
+  `IN_PROGRESS`, `TODO`…). Works even without the hook.
+- **Agents (last / current / upcoming)**: fed by the `.claude/hooks/ailed-runtime-hook.js` hook
+  (installed by `init`/`update`), wired via `.claude/settings.json` (`PostToolUse` on `Task`). On
+  every subagent call it writes the active agent to `.ailed/runtime.json` (gitignored); the running
+  agent shows a **live chrono** (`▶ @dev impl · 2m14s`) so the panel breathes even during a long
+  agent run. **Upcoming agents** are projected from the detected workflow chain (Discovery / Feature
+  / Incident / Security, see `memory/process.md`).
+- **Main-loop heartbeat**: `PreToolUse` (matcher `*`) records the last tool the main loop touched,
+  shown as `⋯ Edit · 3s` when no subagent is running — so the panel stays live during direct work,
+  not only at agent boundaries. (This fires the hook on every tool call; remove the `PreToolUse`
+  `*` entry from `.claude/settings.json` to opt out.)
+
+> **Tilix / GNOME Terminal (VTE):** the refresh clears the scrollback (`\x1b[3J`) on each redraw, so
+> the live pane no longer stacks stale frames in your scroll history.
+
+**Options:** `--width=N` (sidebar width), `--once` (render once and exit),
+`dashboard --cmd="…"` (command launched on the right of the split, default `claude`). A zellij
+layout is generated at `.ailed/dashboard.kdl`.
 
 ## The 4 workflows (see `memory/process.md`)
 

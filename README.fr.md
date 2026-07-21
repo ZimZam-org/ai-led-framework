@@ -22,15 +22,17 @@ npx @s2bp/ai-led-framework init
 | `.claude/agents/`   | 21 agents `ailed-*.md` (invocables via `@ailed-<nom>`)         |
 | `.claude/skills/`   | 10 skills `ailed-*` (invocables via `/ailed-<nom>`)            |
 | `.claude/commands/` | slash-command `/ailed-bootstrap` (amorçage du framework)       |
+| `.claude/hooks/`    | `ailed-runtime-hook.js` + hooks `Task` dans `settings.json` qui alimentent le panneau de progression (`watch`/`dashboard`) |
 | `memory/`           | 15 fichiers de mémoire projet (dont `config.md`, `process.md`, `conventions.md` et `market-watch.md`), dans la langue choisie |
 | `CLAUDE.md`         | pointeur framework (créé seulement s'il n'existe pas)          |
 
-Les fichiers existants ne sont **jamais écrasés** sauf avec `--force`.
+Les fichiers existants ne sont **jamais écrasés** sauf avec `--force` (les hooks de `settings.json`
+sont fusionnés sans rien casser, et `.ailed/` est ajouté au `.gitignore`).
 
 ## Configuration (`memory/config.md`)
 
 `init` génère `memory/config.md`, **source de vérité de l'outillage** que les agents lisent
-avant d'agir. Deux choses y sont paramétrées :
+avant d'agir. On y paramètre la langue, le trigramme, le style de sortie et les intégrations :
 
 ### Langue des fichiers `memory/`
 
@@ -53,6 +55,49 @@ Le préfixe des tickets de dev (ex. `ZZM-000001`) est un **trigramme dérivé du
 ```bash
 npx @s2bp/ai-led-framework init --trigram=ZZM
 ```
+
+### Style de sortie
+
+Le **niveau de verbosité** des agents et des rapports — `concis` · `standard` (défaut) · `détaillé`.
+Ce réglage pilote *uniquement la présentation* (affichage dans Claude Code, synthèses
+`/ailed-status`, texte poussé vers Jira/Confluence) ; la `memory/` reste toujours **complète et
+versionnée** quel que soit le choix.
+
+```bash
+npx @s2bp/ai-led-framework init --style=concis
+```
+
+- `concis` — mode « à l'essentiel » : pas de préambule ni de reformulation, puces courtes, tableaux
+  plutôt que prose, et sur Jira titre + critères d'acceptation en puces. Ne masque **jamais** un
+  risque, une décision ou un blocage — on coupe le superflu, pas le fond.
+- `standard` — synthèse claire et structurée (défaut).
+- `détaillé` — explications complètes : raisonnement, alternatives écartées, contexte étendu.
+
+Modifiable à tout moment dans `memory/config.md`, ou forcé le temps d'un run :
+`ai-led status --style=détaillé`.
+
+### Modèle LLM par agent (économie de tokens)
+
+Chacun des 21 agents tourne sur un **modèle choisi selon sa fonction**, pour que les agents
+simples ne consomment pas de tokens premium :
+
+- `opus` — raisonnement / jugement / revue critique, là où une mauvaise sortie coûte du rework
+  (`brainstorm`, `architect`, `planner`, `pm`, `analyst`, `review`, `security-review`, `rca`) ;
+- `sonnet` — exécution standard performante et volumineuse (`dev`, `ux`, `test`, `communication`,
+  `release`, `fact-check`, `check-secu`, `seo-aso`, `monetization`, `knowledge-audit`, `init-memory`) ;
+- `haiku` — collecte / extraction mécanique (`scout`, `check-log`).
+
+Le mapping vit dans la **table « Modèles LLM par agent » de `memory/config.md`** (source de vérité).
+Le harness lit le modèle dans le frontmatter de chaque agent : après avoir édité la table,
+applique-la :
+
+```bash
+npx @s2bp/ai-led-framework models        # affiche le mapping effectif
+npx @s2bp/ai-led-framework models sync    # applique la table à .claude/agents/*.md
+```
+
+Tu peux aussi fixer un modèle à l'install : `init --model-dev=opus --model-scout=sonnet`
+(tier : `opus` · `sonnet` · `haiku` · `inherit`). `update` réapplique ce que dit la table.
 
 ### Intégrations (optionnelles)
 
@@ -121,6 +166,7 @@ fichier peut rester partiellement vide et être complété plus tard à la main 
 --seo-aso=NOM       Outil SEO / ASO (Search Console, Ahrefs, App Store Connect) ou désactivé (défaut)
 --ticketing=NOM     Ticketing externe (ex. Jira, via MCP) ou désactivé (défaut)
 --docs=NOM          Documentation externe (ex. Confluence, via MCP) ou désactivé (défaut)
+--style=NIVEAU      Style de sortie agents/rapports : concis | standard | détaillé (défaut : standard)
 --conventions=CHEMIN  Importe un fichier de conventions/organisation technique dans memory/conventions.md (facultatif)
 -y, --yes           Mode non interactif (sinon, questions posées en terminal)
 -f, --force         Écrase les fichiers existants
@@ -139,13 +185,24 @@ npx @s2bp/ai-led-framework@latest update
 | Cible                                                       | Comportement d'`update`                             |
 | ---------------------------------------------------------- | -------------------------------------------------- |
 | `.claude/agents/`, `.claude/skills/`, `.claude/commands/`  | **toujours réécrits** dans la nouvelle version      |
-| `memory/*.md` (tes données projet)                         | **préservés** ; seuls les **nouveaux** fichiers sont ajoutés |
+| `memory/config.md`, `memory/process.md` (fichiers cadre)   | **fusion additive de sections** : les sections que le template a gagnées sont ajoutées ; tes sections existantes ne sont **jamais** touchées |
+| `memory/*.md` (données projet) **jamais éditées**          | **réécrites proprement** dans la nouvelle version (détecté via `.ailed/manifest.json`) |
+| `memory/*.md` (données projet) **éditées**                 | **préservées** telles quelles                        |
+| Nouveaux fichiers `memory/`                                | **ajoutés**                                          |
 | `CLAUDE.md`                                                 | **laissé intact**                                  |
 
 La config (trigramme, intégrations, langue) est **relue depuis `memory/config.md`** : les
 placeholders `{{TICKET_PREFIX}}`, `{{MONITORING}}`, … sont donc réappliqués correctement — pas
 besoin de repasser les flags d'`init`. Tes propres agents/skills/commands non `ailed-` ne sont pas
 touchés.
+
+> **Comment `update` sait ce que tu as édité ?** `init`/`update` enregistrent l'empreinte de chaque
+> fichier `memory/` posé dans `.ailed/manifest.json` (gitignoré, local). Au prochain `update`, un
+> fichier dont l'empreinte n'a pas bougé est réputé *vierge* → réécrit proprement ; sinon il est
+> préservé (données) ou fusionné section par section (fichiers cadre `config.md`/`process.md`). Les
+> sections présentes des deux côtés mais **divergentes** sont signalées, jamais écrasées. Un
+> `conventions.md` importé via `--conventions=` est exclu du manifeste : jamais réputé vierge, donc
+> jamais écrasé.
 
 > **Pourquoi `@latest` ?** `npx` réutilise une copie en cache du package ; le tag `@latest` force la
 > récupération de la dernière version publiée au lieu de relancer celle déjà en cache.
@@ -206,18 +263,89 @@ roadmap, kanban, fonctionnalités, veille, process) :
 - **`/ailed-status`** (dans Claude Code) — une **synthèse intelligente** de `memory/` qui
   remonte **ce qui demande une décision** (validations humaines en attente, sujets candidats
   à promouvoir, veille périmée, intégrations désactivées).
-- **`ai-led status`** (CLI) — un snapshot terminal **déterministe et sans token**. Ajoute
-  `--html` pour générer `ailed-status.html`, un tableau de bord **statique** (kanban en
-  colonnes, tables, diagrammes du process) ouvrable dans le navigateur — **aucun serveur,
-  aucune donnée envoyée** :
+- **`ai-led status`** (CLI) — un snapshot terminal **déterministe et sans token** : barre
+  d'avancement, compteurs kanban et liste « À surveiller ». Ajoute `--html` pour générer
+  `ailed-status.html`, un tableau de bord **statique** qui ouvre sur une **synthèse visuelle** :
+  deux **camemberts** (avancement global + jalon en cours, approximatif), trois compteurs d'action
+  (**bugs** à traiter, **vulnérabilités** ouvertes, **arbitrages produit** discovery → roadmap),
+  une **timeline chronologique des EPICs** et le **détail de l'EPIC en cours** (tâches terminées /
+  en cours / à venir) ; le détail brut de chaque fichier `memory/` reste accessible, **replié** en
+  bas de page — **aucun serveur, aucune donnée projet envoyée** :
 
 ```bash
 npx @s2bp/ai-led-framework status          # snapshot terminal
 npx @s2bp/ai-led-framework status --html   # → ailed-status.html (à ouvrir au navigateur)
 ```
 
-Le HTML charge `marked` + `mermaid` via CDN pour le rendu markdown et les diagrammes
-(connexion internet nécessaire à l'affichage).
+Les deux respectent le **Style de sortie** de `config.md` (`concis` resserre la sortie, `détaillé`
+ajoute jalons et tickets en cours et déplie les accordéons HTML) ; `--style=…` le force pour un run.
+Le HTML charge `marked` + `mermaid` via CDN pour le rendu markdown et les diagrammes des
+accordéons (connexion internet nécessaire à l'affichage).
+
+## Panneau de progression en direct (`watch` / `dashboard`)
+
+Pour **suivre l'avancement pendant une session Claude Code** — quelle epic / tâche est en cours,
+quel agent vient de finir, travaille, ou va travailler — sans relancer `status`, le framework
+fournit un **panneau vertical** rafraîchi en continu :
+
+```bash
+npx @s2bp/ai-led-framework watch        # le panneau seul (à mettre dans un terminal à gauche)
+npx @s2bp/ai-led-framework dashboard    # split tmux/zellij : panneau à gauche · claude à droite
+```
+
+Le panneau affiche, de haut en bas, exactement la hiérarchie demandée :
+
+```
+AI-LED · progress
+────────────────────────────
+✓ EPIC-1  Fondations          ← dernière epic traitée
+▶ EPIC-2  Paiement            ← epic en cours
+  ✓ ZZM-000011 Modèle paiement  ← dernière tâche traitée
+  ▶ ZZM-000012 Tunnel checkout  ← tâche en cours
+    ✓ @architect (fini)         ← dernier agent
+    ▶ @dev  impl checkout       ← agent en cours
+    · @review                   ← agents à venir (chaîne du workflow)
+    · @test
+    · @communication
+  · ZZM-000013 Remboursement    ← tâches suivantes
+  · ZZM-000014 Webhooks
+· EPIC-3  Reporting           ← epic suivante
+
+2/6 tickets DONE · feature
+```
+
+**Légende des glyphes :** `✓` terminé (vert) · `▶` en cours (bleu) · `·` à venir (grisé). La
+détection du statut est tolérante : `IN_PROGRESS`, `` `IN_PROGRESS` `` (backticks), `en cours`,
+`WIP`… sont tous reconnus (colonne `Status` de `memory/kanban.md` / `memory/epics.md`).
+
+> ⚠️ **Pourquoi un panneau séparé et pas une zone figée *dans* la fenêtre Claude Code ?**
+> Claude Code est une TUI fermée dont on ne contrôle pas le rendu : on ne peut pas y injecter une
+> colonne figée. La vraie colonne verticale figée à gauche s'obtient donc par un **split de
+> terminal** (tmux ou zellij), Claude Code occupant la zone de droite — d'où `dashboard`.
+
+**Source des données :**
+
+- **Epics / tâches** : lus dans `memory/epics.md` et `memory/kanban.md` (statuts `DONE`,
+  `IN_PROGRESS`, `TODO`…). Fonctionne même sans hook.
+- **Agents (dernier / en cours / à venir)** : alimentés par le hook
+  `.claude/hooks/ailed-runtime-hook.js` (installé par `init`/`update`), câblé via
+  `.claude/settings.json` (`PostToolUse` sur `Task`). À chaque appel d'un sous-agent, il écrit
+  l'agent actif dans `.ailed/runtime.json` (gitignoré) ; l'agent en cours affiche un **chrono en
+  direct** (`▶ @dev impl · 2m14s`) pour que le panneau respire même pendant un long run. Les
+  **agents à venir** sont projetés depuis la chaîne du workflow détecté (Discovery / Feature /
+  Incident / Security, voir `memory/process.md`).
+- **Battement de cœur de la boucle principale** : `PreToolUse` (matcher `*`) enregistre le dernier
+  outil touché par la boucle principale, affiché en `⋯ Edit · 3s` quand aucun sous-agent ne tourne —
+  le panneau reste vivant même en travail direct, pas seulement aux frontières d'agents. (Ce hook se
+  déclenche à chaque appel d'outil ; retire l'entrée `PreToolUse` `*` de `.claude/settings.json`
+  pour le désactiver.)
+
+> **Tilix / GNOME Terminal (VTE) :** le rafraîchissement purge aussi le scrollback (`\x1b[3J`) à
+> chaque redraw — le panneau live n'empile plus de frames périmées dans l'historique de défilement.
+
+**Options :** `--width=N` (largeur du panneau), `--once` (affiche une fois puis quitte),
+`dashboard --cmd="…"` (commande lancée à droite du split, défaut `claude`). Un layout zellij
+est généré dans `.ailed/dashboard.kdl`.
 
 ## Les 4 workflows (voir `memory/process.md`)
 

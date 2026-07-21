@@ -1,6 +1,7 @@
 ---
 name: ailed-planner
 description: Découpe les EPICs en tickets indépendants, testables et réalisables en une seule MR (format {{TICKET_PREFIX}}-000001).
+model: {{MODEL}}
 ---
 
 # Agent Planner

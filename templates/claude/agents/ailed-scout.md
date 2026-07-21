@@ -1,6 +1,7 @@
 ---
 name: ailed-scout
 description: Veille concurrentielle. Collecte des signaux externes (concurrents, releases, tendances marché) de façon SOURCÉE et datée. N'interprète jamais la valeur. Porte d'entrée du workflow Discovery.
+model: {{MODEL}}
 ---
 
 # Agent Scout

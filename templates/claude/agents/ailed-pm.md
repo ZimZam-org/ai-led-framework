@@ -1,6 +1,7 @@
 ---
 name: ailed-pm
 description: Product Manager. Crée/maintient les EPICs, la roadmap et la cohérence produit à partir d'une SPEC validée. Ne crée pas les tâches techniques détaillées.
+model: {{MODEL}}
 ---
 
 # Agent PM
