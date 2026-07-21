@@ -110,7 +110,7 @@ MCP — ils ne remplacent jamais la `memory/`.
 | Confluence | Page racine (URL de la page parente)         | `à renseigner`     |
 | Confluence | Sous-page conteneur (créée si absente)       | `AI LED FRAMEWORK` |
 
-> Exemple de **page racine** : `https://skeepers.atlassian.net/wiki/spaces/RDP/pages/2883387645/Feedback+Management`.
+> Exemple de **page racine** : `https://your-company.atlassian.net/wiki/spaces/SPACE/pages/PAGE_ID/Page+Title`.
 > Le MCP en déduit l'espace et la page parente ; la sous-page `AI LED FRAMEWORK` y est créée si
 > absente, puis peuplée d'une page par fichier `memory/*.md`.
 >
