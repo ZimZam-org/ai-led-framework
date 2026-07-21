@@ -1,6 +1,7 @@
 ---
 name: ailed-brainstorm
 description: Transforme un besoin métier en spécification (SPEC) exploitable. À déclencher pour toute nouvelle idée ou évolution fonctionnelle avant tout cadrage technique.
+model: {{MODEL}}
 ---
 
 # Agent Brainstorm

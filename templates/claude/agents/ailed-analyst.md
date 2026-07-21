@@ -1,6 +1,7 @@
 ---
 name: ailed-analyst
 description: Synthèse de veille. Clusterise les observations vérifiées en tendances, les déduplique contre l'existant et en dérive des sujets candidats scorés (Impact/Effort/Alignement). Produit le backlog soumis à validation humaine.
+model: {{MODEL}}
 ---
 
 # Agent Analyst
