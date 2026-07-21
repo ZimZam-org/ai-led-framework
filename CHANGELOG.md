@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0]
+
+### Added
+- Memory rotation & cleanup policy generalised in `process.md`: a table-driven
+  active/archive split now also covers `kanban.md`, with **deterministic
+  triggers** (incremental on edit, a ~40 active-entry size threshold, and kanban
+  cleanup at release). `@ailed-release` archives shipped `DONE` tickets to
+  `memory/archive/kanban.md` **only once `features.md` reflects the delivered
+  functionality** — keeping agent reads light without ever losing data.
+- `status --html` dashboard is now interactive: clickable **Overall progress**
+  legend (lists the kanban tasks of each status), clickable **EPIC timeline**
+  (lists an epic's tasks with their status), clickable action counters (**Bugs**,
+  **Vulnerabilities**, **Product arbitrations**) opening detail popups, and a
+  **Feature list** button opening the feature inventory (delivery/release info in
+  the Notes column).
+
+### Changed
+- `status --html` report filename is now prefixed with a `YYYYMMDDHHmmss_` stamp
+  (overridable via `--out`) so each run yields a distinct, sortable file.
+- `status --html` dashboard UI is now in English; pie charts redrawn as donut
+  charts with the percentage centered, and explicit card titles.
+- Progress sidebar (`watch`) paints in-progress epics/tasks in **blue** (matching
+  the HTML dashboard accent) instead of yellow.
+
+### Fixed
+- `status --html` produced an empty synthesis on real projects: the inline `DATA`
+  JSON was injected with a string-pattern `String.replace`, so `$&`/`` $` ``/`$'`
+  sequences in memory content corrupted the script (`Uncaught SyntaxError`). It is
+  now injected via a function replacement, with `</`, U+2028 and U+2029 escaped.
+- Kanban/epic status parsing (`watch` and `status`, terminal and HTML) is now
+  tolerant of backticked (`` `IN_PROGRESS` ``), lower/mixed-case, accented and
+  FR/EN status values; previously strictly-matched rows were silently dropped, so
+  in-progress items showed neither the `▶` marker nor any highlight and progress
+  pies/counts came out empty.
+
 ## [0.12.0]
 
 ### Changed
@@ -61,7 +96,8 @@ installer, the `ailed-*` agents and skills, the persistent `memory/` model, and
 the Jira/Confluence (Atlassian MCP) integration. See the
 [git history](https://github.com/ZimZam-org/ai-led-framework/commits/main) for details.
 
-[Unreleased]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.10.0...v0.10.1

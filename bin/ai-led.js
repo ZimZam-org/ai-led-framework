@@ -741,6 +741,25 @@ const MEMORY_ORDER = [
 ];
 const STATUSES = ["TO_CHECK", "TODO", "IN_PROGRESS", "TO_TEST", "DONE"];
 
+// Normalise a raw kanban status cell into a canonical STATUSES value, tolerant to
+// the way statuses are actually written in the wild: backticks (the template styles
+// them as `IN_PROGRESS`), lower/mixed case, accents, spaces/hyphens, FR/EN wording.
+// Returns null when nothing plausible matches (row is then skipped, as before).
+function normStatus(raw) {
+  const v = String(raw || "")
+    .replace(/`/g, "")
+    .normalize("NFD").replace(/[̀-ͯ]/g, "") // strip accents
+    .trim().toUpperCase().replace(/[\s-]+/g, "_");
+  if (!v) return null;
+  if (STATUSES.indexOf(v) >= 0) return v;
+  if (/^(IN_?PROGRESS|EN_?COURS|WIP|DOING|ONGOING)$/.test(v)) return "IN_PROGRESS";
+  if (/^(DONE|TERMINE|LIVRE|CLOS|CLOSED|FERME|MERGED?)$/.test(v)) return "DONE";
+  if (/^(TO_?TEST|A_?TESTER|TESTING|TEST|IN_?TEST)$/.test(v)) return "TO_TEST";
+  if (/^(TO_?CHECK|A_?VERIFIER|CK|TO_?CLARIFY)$/.test(v)) return "TO_CHECK";
+  if (/^(TODO|A_?FAIRE|BACKLOG|OPEN|NEW)$/.test(v)) return "TODO";
+  return null;
+}
+
 function daysSince(dateStr) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr || "");
   if (!m) return null;
@@ -808,8 +827,8 @@ function parseBoard(content) {
       continue;
     }
     if (isSeparatorRow(line) || !map) continue;
-    const st = cs[map.status];
-    if (STATUSES.indexOf(st) < 0) continue;
+    const st = normStatus(cs[map.status]);
+    if (!st) continue;
     cols[st].push({ id: map.id >= 0 ? cs[map.id] : "", title: map.title >= 0 ? cs[map.title] : "" });
   }
   return cols;
@@ -930,14 +949,22 @@ function statusHtml(entries, outPath, style) {
   const data = entries.map((e) => ({
     name: e.name, file: e.file, title: e.title, date: e.date, age: e.age, content: e.content,
   }));
-  const json = JSON.stringify(data).replace(/<\//g, "<\\/");
+  // Embed as JSON inside an inline <script>. Guard the three sequences that are
+  // valid in JSON but break an inline script: `</…` (closes the tag early) and the
+  // U+2028/U+2029 line separators (illegal in older JS string literals).
+  const json = JSON.stringify(data)
+    .replace(/<\//g, "<\\/")
+    .replace(/[\u2028\u2029]/g, (m) => "\\u" + m.charCodeAt(0).toString(16));
   const generated = new Date().toISOString().slice(0, 16).replace("T", " ");
+  // IMPORTANT: pass function replacements so `$`-sequences in the injected values
+  // (`$&`, `$\``, `$'`, `$1`… — common in code/prices/apostrophes inside memory
+  // content) are inserted literally instead of triggering replace's special patterns.
   fs.writeFileSync(
     outPath,
     HTML_TEMPLATE
-      .replace("/*__DATA__*/", json)
-      .replace(/__GENERATED__/g, generated)
-      .replace(/__STYLE__/g, style || "standard")
+      .replace("/*__DATA__*/", () => json)
+      .replace(/__GENERATED__/g, () => generated)
+      .replace(/__STYLE__/g, () => style || "standard")
   );
 }
 
@@ -956,7 +983,11 @@ function status() {
   // --style flag overrides the config value for this run; otherwise read memory/config.md
   const style = flag("style") ? canonStyle(flag("style")) : readStyle(entries);
   if (argv.includes("--html")) {
-    const out = path.resolve(cwd, flag("out") || "ailed-status.html");
+    // default filename is prefixed with a local YYYYMMDDHHmmss stamp so each run
+    // produces a distinct, chronologically-sortable report (overridable via --out).
+    const d = new Date(), p = (n) => String(n).padStart(2, "0");
+    const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+    const out = path.resolve(cwd, flag("out") || `${stamp}_ailed-status.html`);
     statusHtml(entries, out, style);
     console.log(`\n${c.green("✓")} Tableau de bord généré : ${c.cyan(path.relative(cwd, out) || out)}`);
     console.log(`  Ouvre-le dans un navigateur : ${c.dim("file://" + out)}\n`);
@@ -966,11 +997,11 @@ function status() {
 }
 
 const HTML_TEMPLATE = `<!doctype html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI-Led — Tableau de bord</title>
+<title>AI-Led — Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 <style>
@@ -982,7 +1013,7 @@ const HTML_TEMPLATE = `<!doctype html>
   header { padding:18px 28px; border-bottom:1px solid var(--border); display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; }
   header h1 { margin:0; font-size:18px; }
   header .gen { color:var(--muted); font-size:13px; }
-  .badges { display:flex; gap:7px; flex-wrap:wrap; margin-left:auto; }
+  .badges { display:flex; gap:7px; flex-wrap:wrap; flex-basis:100%; margin-top:8px; }
   .badge { border-radius:999px; padding:3px 10px; font-size:12px; border:1px solid var(--border); }
   .badge.on { background:rgba(108,192,112,.12); border-color:rgba(108,192,112,.4); color:#bfe6c2; }
   .badge.off { background:var(--panel); color:var(--muted); text-decoration:line-through; }
@@ -1059,27 +1090,68 @@ const HTML_TEMPLATE = `<!doctype html>
   .md pre { background:var(--panel2); padding:12px; border-radius:8px; overflow:auto; }
   .md h1 { display:none; } .md h2, .md h3 { margin-top:18px; }
   .mermaid { background:#fff; border-radius:8px; padding:12px; margin:12px 0; }
+  /* clickable affordances */
+  .legend li.clickable { cursor:pointer; border-radius:6px; padding:3px 5px; margin:0 -5px; }
+  .legend li.clickable:hover { background:var(--panel2); color:var(--text); }
+  .legend li.clickable:hover b { color:var(--accent); }
+  .epic-timeline li.clickable { cursor:pointer; }
+  .epic-timeline li.clickable:hover .ep-title { color:var(--accent); }
+  .epic-timeline li.clickable:hover .node { border-color:var(--accent); }
+  .stat { cursor:pointer; }
+  header .featbtn { margin-left:auto; background:var(--accent); border:1px solid var(--accent); color:#0b1220; font-weight:600; border-radius:999px; padding:6px 15px; font-size:13px; cursor:pointer; white-space:nowrap; }
+  header .featbtn:hover { filter:brightness(1.08); }
+  /* modal */
+  .modal[hidden]{ display:none; }
+  .modal{ position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center; padding:24px; }
+  .modal .backdrop{ position:absolute; inset:0; background:rgba(4,6,10,.64); }
+  .modal .box{ position:relative; background:var(--panel); border:1px solid var(--border); border-radius:14px; width:min(880px,100%); max-height:86vh; display:flex; flex-direction:column; box-shadow:0 24px 64px rgba(0,0,0,.55); }
+  .modal .mhead{ display:flex; align-items:baseline; gap:12px; padding:15px 20px; border-bottom:1px solid var(--border); }
+  .modal .mhead h3{ margin:0; font-size:16px; }
+  .modal .mhead .mcount{ color:var(--muted); font-size:13px; }
+  .modal .mclose{ margin-left:auto; background:none; border:none; color:var(--muted); font-size:18px; cursor:pointer; line-height:1; padding:3px 8px; border-radius:6px; align-self:center; }
+  .modal .mclose:hover{ background:var(--panel2); color:var(--text); }
+  .modal .mbody{ padding:16px 20px 20px; overflow:auto; }
+  .modal-table{ border-collapse:collapse; width:100%; font-size:13.5px; }
+  .modal-table th,.modal-table td{ border-bottom:1px solid var(--border); padding:8px 11px; text-align:left; vertical-align:top; }
+  .modal-table th{ color:var(--muted); font-weight:600; font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; }
+  .modal-table tbody tr:hover{ background:var(--panel2); }
+  .mono{ font-family:ui-monospace,monospace; font-size:12px; color:var(--accent); white-space:nowrap; }
+  .badge-st{ display:inline-block; padding:2px 9px; border-radius:999px; font-size:11.5px; font-weight:600; white-space:nowrap; }
+  .modal-empty{ color:var(--muted); font-style:italic; }
+  .modal h4.mgrp{ margin:20px 0 9px; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--accent); }
+  .modal h4.mgrp:first-child{ margin-top:2px; }
+  .inc{ border:1px solid var(--border); border-radius:9px; padding:10px 13px; margin-bottom:9px; background:var(--panel2); }
+  .inc .inc-h{ font-weight:600; margin-bottom:5px; } .inc .inc-h .mono{ margin-right:9px; }
+  .inc ul{ margin:5px 0 0; padding-left:18px; color:var(--muted); font-size:12.5px; } .inc li{ margin:1px 0; }
 </style>
 </head>
 <body>
 <header>
-  <h1>AI-Led — Tableau de bord</h1>
-  <span class="gen">généré le __GENERATED__ · lecture seule</span>
+  <h1>AI-Led — Dashboard</h1>
+  <span class="gen">generated on __GENERATED__ · read-only</span>
+  <button id="featBtn" class="featbtn" type="button">Feature list</button>
   <div class="badges" id="badges"></div>
 </header>
 <main>
   <div id="synth"></div>
-  <button id="toggleDetail" class="toggle" type="button" aria-expanded="false">▸ Détail de la mémoire (lecture des fichiers bruts)</button>
+  <button id="toggleDetail" class="toggle" type="button" aria-expanded="false">▸ Memory detail (raw files)</button>
   <div id="detailWrap" hidden>
     <div id="toc" class="toc"></div>
     <div id="detail"></div>
   </div>
 </main>
+<div id="modal" class="modal" hidden>
+  <div class="backdrop" data-close="1"></div>
+  <div class="box" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="mhead"><h3 id="modalTitle"></h3><span id="modalCount" class="mcount"></span><button id="modalClose" class="mclose" type="button" aria-label="Close">✕</button></div>
+    <div id="modalBody" class="mbody"></div>
+  </div>
+</div>
 <script>
   var DATA = /*__DATA__*/;
   var STYLE = "__STYLE__";
   var STATUSES = ['TO_CHECK','TODO','IN_PROGRESS','TO_TEST','DONE'];
-  var LABEL = {TO_CHECK:'À vérifier',TODO:'À faire',IN_PROGRESS:'En cours',TO_TEST:'À tester',DONE:'Terminé'};
+  var LABEL = {TO_CHECK:'To check',TODO:'To do',IN_PROGRESS:'In progress',TO_TEST:'To test',DONE:'Done'};
   function staleLimit(name){ return name === 'market-watch' ? 30 : 60; }
   function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
   function get(name){ return DATA.filter(function(e){ return e.name===name; })[0]; }
@@ -1097,8 +1169,8 @@ const HTML_TEMPLATE = `<!doctype html>
         return;
       }
       if(isSep(line)||!map) return;
-      var st=cs[map.status];
-      if(STATUSES.indexOf(st)<0) return;
+      var st=normStatus(cs[map.status]);
+      if(!st) return;
       cols[st].push({ id:map.id>=0?cs[map.id]:'', title:map.title>=0?cs[map.title]:'' });
     });
     return cols;
@@ -1127,10 +1199,14 @@ const HTML_TEMPLATE = `<!doctype html>
     if(!s || /^TO IDENTIFY/i.test(s)) return ''; return s;
   }
   var SCOL={TO_CHECK:'#c08be8',TODO:'#8b929e',IN_PROGRESS:'#6ea8fe',TO_TEST:'#f0c674',DONE:'#6cc070'};
-  // camembert (pie) à partir de segments [{value,color}] ; tranche DONE en tête
-  function pieSvg(segs){
+  // donut à partir de segments [{value,color}] ; center = {big,small} affiché dans le trou
+  function pieSvg(segs, center){
+    center = center || {};
     var tot=segs.reduce(function(n,s){ return n+s.value; },0);
-    if(!tot) return '<svg width="128" height="128" viewBox="0 0 128 128"><circle cx="64" cy="64" r="56" fill="var(--panel2)" stroke="var(--border)"/><text x="64" y="68" text-anchor="middle" fill="var(--muted)" font-size="13">aucun</text></svg>';
+    var hole='<circle cx="64" cy="64" r="34" fill="var(--panel)"/>';
+    var ctr = center.big ? '<text x="64" y="61" text-anchor="middle" fill="var(--text)" font-size="22" font-weight="700">'+esc(center.big)+'</text>'
+      + (center.small?'<text x="64" y="80" text-anchor="middle" fill="var(--muted)" font-size="10.5">'+esc(center.small)+'</text>':'') : '';
+    if(!tot) return '<svg width="132" height="132" viewBox="0 0 132 132"><g transform="translate(2,2)"><circle cx="64" cy="64" r="56" fill="none" stroke="var(--panel2)" stroke-width="16"/><text x="64" y="69" text-anchor="middle" fill="var(--muted)" font-size="12">aucun</text></g></svg>';
     var cx=64, cy=64, r=56, a=-Math.PI/2, parts='';
     segs.forEach(function(s){
       if(!s.value) return;
@@ -1140,13 +1216,25 @@ const HTML_TEMPLATE = `<!doctype html>
       parts+='<path d="M'+cx+' '+cy+' L'+x1.toFixed(2)+' '+y1.toFixed(2)+' A'+r+' '+r+' 0 '+(frac>0.5?1:0)+' 1 '+x2.toFixed(2)+' '+y2.toFixed(2)+' Z" fill="'+s.color+'"/>';
       a=a2;
     });
-    return '<svg width="128" height="128" viewBox="0 0 128 128">'+parts+'<circle cx="64" cy="64" r="56" fill="none" stroke="var(--border)"/></svg>';
+    return '<svg width="132" height="132" viewBox="0 0 132 132"><g transform="translate(2,2)">'+parts+hole+'<circle cx="64" cy="64" r="56" fill="none" stroke="var(--border)"/>'+ctr+'</g></svg>';
   }
   function classifyEpic(s){
     var v=(s||'').toUpperCase();
     if(/DONE|TERMIN|LIVR|CLOS/.test(v)) return 'done';
     if(/IN[_ ]?PROGRESS|EN COURS|WIP|DOING/.test(v)) return 'current';
     return 'todo';
+  }
+  // canonical status, tolerant to backticks / case / accents / FR-EN wording
+  function normStatus(raw){
+    var v=String(raw||'').replace(/\`/g,'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').trim().toUpperCase().replace(/[\\s-]+/g,'_');
+    if(!v) return null;
+    if(STATUSES.indexOf(v)>=0) return v;
+    if(/^(IN_?PROGRESS|EN_?COURS|WIP|DOING|ONGOING)$/.test(v)) return 'IN_PROGRESS';
+    if(/^(DONE|TERMINE|LIVRE|CLOS|CLOSED|FERME|MERGED?)$/.test(v)) return 'DONE';
+    if(/^(TO_?TEST|A_?TESTER|TESTING|TEST|IN_?TEST)$/.test(v)) return 'TO_TEST';
+    if(/^(TO_?CHECK|A_?VERIFIER|CK|TO_?CLARIFY)$/.test(v)) return 'TO_CHECK';
+    if(/^(TODO|A_?FAIRE|BACKLOG|OPEN|NEW)$/.test(v)) return 'TODO';
+    return null;
   }
   // epics.md → [{id,title,status}] dans l'ordre de déclaration
   function parseEpics(md){
@@ -1177,8 +1265,8 @@ const HTML_TEMPLATE = `<!doctype html>
         return;
       }
       if(isSep(line)||!map) return;
-      var st=cs[map.status];
-      if(STATUSES.indexOf(st)<0) return;
+      var st=normStatus(cs[map.status]);
+      if(!st) return;
       out.push({ id:map.id>=0?cs[map.id]:'', title:map.title>=0?cs[map.title]:'', status:st, epic:map.epic>=0?(cs[map.epic]||'').replace(/\`/g,'').trim().toUpperCase():'' });
     });
     return out;
@@ -1274,6 +1362,130 @@ const HTML_TEMPLATE = `<!doctype html>
     return n;
   }
 
+  // ── Modal (popups) ────────────────────────────────────────
+  var modalEl=null;
+  function openModal(title, count, html){
+    if(!modalEl) modalEl=document.getElementById('modal');
+    document.getElementById('modalTitle').textContent=title;
+    document.getElementById('modalCount').textContent=count||'';
+    document.getElementById('modalBody').innerHTML=html||'';
+    modalEl.hidden=false;
+  }
+  function closeModal(){ if(modalEl) modalEl.hidden=true; }
+  // colored status pill
+  function badge(st){ var col=SCOL[st]||'#8b929e'; return '<span class="badge-st" style="background:'+col+'22;color:'+col+';border:1px solid '+col+'66">'+(LABEL[st]||st)+'</span>'; }
+  // table of tickets (id / title / [epic] / status)
+  function taskTable(list, withEpic){
+    if(!list.length) return '<p class="modal-empty">No matching task.</p>';
+    return '<table class="modal-table"><thead><tr><th>ID</th><th>Title</th>'+(withEpic?'<th>EPIC</th>':'')+'<th>Status</th></tr></thead><tbody>'
+      + list.map(function(t){ return '<tr><td class="mono">'+esc(t.id||'—')+'</td><td>'+esc(t.title||'(untitled)')+'</td>'
+          +(withEpic?'<td class="mono">'+esc(t.epic||'—')+'</td>':'')+'<td>'+badge(t.status)+'</td></tr>'; }).join('')
+      + '</tbody></table>';
+  }
+  // registre incidents → [{id,title,fields[]}]
+  function listIncidents(md){
+    var out=[]; if(!md) return out; var inReg=false, cur=null;
+    md.split('\\n').forEach(function(l){
+      if(/^##\\s/.test(l)){ if(cur){out.push(cur);cur=null;} inReg=/registre des incidents|incident registry/i.test(l); return; }
+      if(!inReg) return;
+      var m=l.match(/^###\\s+(INC-\\S+)\\s*[—-]?\\s*(.*)$/i);
+      if(m){ if(cur) out.push(cur); cur={id:m[1],title:(m[2]||'').trim(),fields:[]}; return; }
+      if(cur){ var t=l.trim(); if(/^[-*]\\s+/.test(t)) cur.fields.push(t.replace(/^[-*]\\s+/,'')); }
+    });
+    if(cur) out.push(cur);
+    return out;
+  }
+  // table sécurité → vulnérabilités ouvertes [{id,sev,comp,risk,status}]
+  function listVulns(md){
+    var out=[]; if(!md) return out; var inSec=false, map=null;
+    md.split('\\n').forEach(function(l){
+      if(/^##\\s/.test(l)){ inSec=/vulnérabilit|vulnerabilit/i.test(l); map=null; return; }
+      if(!inSec || l.trim().charAt(0)!=='|') { if(l.trim().charAt(0)!=='|') map=null; return; }
+      var cs=cells(l), lo=cs.map(function(c){ return c.toLowerCase(); });
+      if(lo.indexOf('id')>=0 && lo.some(function(c){ return /sévérité|severit/.test(c); })){
+        map={ id:lo.indexOf('id'), sev:lo.findIndex(function(c){return /sévérité|severit/.test(c);}), comp:lo.findIndex(function(c){return /composant|component/.test(c);}), risk:lo.findIndex(function(c){return /risque|risk/.test(c);}), stat:lo.findIndex(function(c){return /statut|status/.test(c);}) };
+        return;
+      }
+      if(isSep(l)||!map) return;
+      var status=(map.stat>=0?cs[map.stat]:'').toLowerCase().trim();
+      if(!status || /corrig|résolu|resolved|fixed|clos|closed|accept|^n\\.?a|^—$/.test(status)) return;
+      out.push({ id:map.id>=0?cs[map.id]:'', sev:map.sev>=0?cs[map.sev]:'', comp:map.comp>=0?cs[map.comp]:'', risk:map.risk>=0?cs[map.risk]:'', status:map.stat>=0?cs[map.stat]:'' });
+    });
+    return out;
+  }
+  function sevBadge(s){ var u=(s||'').toUpperCase(); var col=/CRITICAL|HIGH/.test(u)?'var(--danger)':/MEDIUM/.test(u)?'var(--warn)':'var(--muted)'; return '<span class="badge-st" style="color:'+col+';border:1px solid '+col+'">'+esc(s||'—')+'</span>'; }
+  // backlog veille → sujets candidats [{id,topic,hyp,impact,effort}]
+  function listCandidates(md){
+    var out=[]; if(!md) return out; var inSec=false, map=null;
+    md.split('\\n').forEach(function(l){
+      if(/^##\\s/.test(l)){ inSec=/sujets candidats|candidate topics/i.test(l); map=null; return; }
+      if(!inSec || l.trim().charAt(0)!=='|'){ if(l.trim().charAt(0)!=='|') map=null; return; }
+      var cs=cells(l), lo=cs.map(function(c){ return c.toLowerCase(); });
+      if(lo.indexOf('id')>=0 && lo.some(function(c){ return /statut|status/.test(c); })){
+        map={ id:lo.indexOf('id'), topic:lo.findIndex(function(c){return /sujet|topic/.test(c);}), hyp:lo.findIndex(function(c){return /hypoth/.test(c);}), impact:lo.findIndex(function(c){return /impact/.test(c);}), effort:lo.findIndex(function(c){return /effort/.test(c);}), stat:lo.findIndex(function(c){return /statut|status/.test(c);}) };
+        return;
+      }
+      if(isSep(l)||!map) return;
+      if(!/^candidat/.test((map.stat>=0?cs[map.stat]:'').toLowerCase().trim())) return;
+      out.push({ id:map.id>=0?cs[map.id]:'', topic:map.topic>=0?cs[map.topic]:'', hyp:map.hyp>=0?cs[map.hyp]:'', impact:map.impact>=0?cs[map.impact]:'', effort:map.effort>=0?cs[map.effort]:'' });
+    });
+    return out;
+  }
+  // render every "## heading + markdown table" of a file as grouped HTML tables (offline-safe)
+  function sectionsWithTables(md){
+    if(!md) return '';
+    var html='', cur=null, head=null, rows=[];
+    function flush(){
+      if(cur && head && rows.length){
+        html+='<h4 class="mgrp">'+esc(cur)+'</h4><table class="modal-table"><thead><tr>'
+          + head.map(function(h){ return '<th>'+esc(h)+'</th>'; }).join('')+'</tr></thead><tbody>'
+          + rows.map(function(r){ return '<tr>'+r.map(function(c,i){ return '<td'+(i===0?' class="mono"':'')+'>'+esc(c)+'</td>'; }).join('')+'</tr>'; }).join('')
+          + '</tbody></table>';
+      }
+      head=null; rows=[];
+    }
+    md.split('\\n').forEach(function(l){
+      var h=l.match(/^##\\s+(.*)$/);
+      if(h){ flush(); cur=h[1].trim(); return; }
+      if(/^#\\s/.test(l)) return;
+      if(l.trim().charAt(0)==='|'){ if(isSep(l)) return; var cs=cells(l); if(!head) head=cs; else rows.push(cs); }
+    });
+    flush();
+    return html;
+  }
+  // popup openers
+  function openStatus(st){ var l=tickets.filter(function(t){ return t.status===st; }); openModal(LABEL[st]+' — tasks', l.length+' ticket'+(l.length===1?'':'s'), taskTable(l,true)); }
+  function openEpic(id){
+    var up=(id||'').toUpperCase(); var l=tickets.filter(function(t){ return t.epic===up; });
+    var ep=epics.filter(function(e){ return e.id.toUpperCase()===up; })[0];
+    openModal((ep&&ep.title? id+' — '+ep.title : id), l.length+' task'+(l.length===1?'':'s'), taskTable(l,false));
+  }
+  function openIncidents(){
+    var l=listIncidents((get('incidents')||{}).content);
+    var b=l.length? l.map(function(i){ return '<div class="inc"><div class="inc-h"><span class="mono">'+esc(i.id)+'</span>'+esc(i.title)+'</div>'
+      +(i.fields.length?'<ul>'+i.fields.map(function(f){ return '<li>'+esc(f)+'</li>'; }).join('')+'</ul>':'')+'</div>'; }).join('')
+      : '<p class="modal-empty">No open incident.</p>';
+    openModal('Bugs to handle', l.length+' incident'+(l.length===1?'':'s'), b);
+  }
+  function openVulns(){
+    var l=listVulns((get('security')||{}).content);
+    var b=l.length? '<table class="modal-table"><thead><tr><th>ID</th><th>Severity</th><th>Component</th><th>Real risk</th><th>Status</th></tr></thead><tbody>'
+      + l.map(function(v){ return '<tr><td class="mono">'+esc(v.id)+'</td><td>'+sevBadge(v.sev)+'</td><td>'+esc(v.comp||'—')+'</td><td>'+esc(v.risk||'—')+'</td><td>'+esc(v.status||'—')+'</td></tr>'; }).join('')
+      + '</tbody></table>' : '<p class="modal-empty">No open vulnerability.</p>';
+    openModal('Open vulnerabilities', l.length+' item'+(l.length===1?'':'s'), b);
+  }
+  function openCandidates(){
+    var l=listCandidates((get('market-watch')||{}).content);
+    var b=l.length? '<table class="modal-table"><thead><tr><th>ID</th><th>Topic</th><th>Value hypothesis</th><th>Impact</th><th>Effort</th></tr></thead><tbody>'
+      + l.map(function(x){ return '<tr><td class="mono">'+esc(x.id)+'</td><td>'+esc(x.topic||'—')+'</td><td>'+esc(x.hyp||'—')+'</td><td>'+esc(x.impact||'—')+'</td><td>'+esc(x.effort||'—')+'</td></tr>'; }).join('')
+      + '</tbody></table>' : '<p class="modal-empty">No pending arbitration.</p>';
+    openModal('Product arbitrations', l.length+' topic'+(l.length===1?'':'s'), b);
+  }
+  function openFeatures(){
+    openModal('Feature inventory', 'delivery / release info in the Notes column',
+      sectionsWithTables((get('features')||{}).content) || '<p class="modal-empty">No feature recorded yet.</p>');
+  }
+
   // ── En-tête / badges ──────────────────────────────────────
   var cfg=get('config'); var integ=parseIntegrations(cfg&&cfg.content);
   var badges = integ.map(function(it){
@@ -1293,12 +1505,12 @@ const HTML_TEMPLATE = `<!doctype html>
   // ── Camemberts : avancement global + jalon en cours ───────
   var globalSegs = STATUSES.slice().reverse().map(function(s){ return { value:board[s].length, color:SCOL[s], label:LABEL[s], st:s }; });
   var globalLegend = STATUSES.slice().reverse().filter(function(s){ return board[s].length; })
-    .map(function(s){ return '<li><span class="ldot" style="background:'+SCOL[s]+'"></span>'+LABEL[s]+'<b>'+board[s].length+'</b></li>'; }).join('');
+    .map(function(s){ return '<li class="clickable" data-st="'+s+'" title="Click to list these tasks"><span class="ldot" style="background:'+SCOL[s]+'"></span>'+LABEL[s]+'<b>'+board[s].length+'</b></li>'; }).join('');
   var globalCard =
     '<div class="card pie-card">'
-    + '<div class="piefig">'+pieSvg(globalSegs)+'</div>'
-    + '<div class="pieinfo"><div class="pie-pct">'+pct+'%</div><div class="pie-sub">'+done+' / '+total+' tickets terminés</div>'
-    +   '<ul class="legend">'+(globalLegend||'<li class="empty">Aucun ticket</li>')+'</ul></div>'
+    + '<div class="piefig">'+pieSvg(globalSegs,{big:pct+'%'})+'</div>'
+    + '<div class="pieinfo"><h3>Overall progress</h3><div class="pie-sub">'+done+' / '+total+' tickets done</div>'
+    +   '<ul class="legend">'+(globalLegend||'<li class="empty">No ticket</li>')+'</ul></div>'
     + '</div>';
 
   var ms = milestoneProgress((get('roadmap')||{}).content, epics, tickets);
@@ -1307,31 +1519,30 @@ const HTML_TEMPLATE = `<!doctype html>
     var msSegs=[{ value:ms.done, color:SCOL.DONE },{ value:Math.max(0,ms.total-ms.done), color:'var(--border)' }];
     msCard =
       '<div class="card pie-card">'
-      + '<div class="piefig">'+pieSvg(msSegs)+'</div>'
-      + '<div class="pieinfo"><div class="pie-pct">'+ms.pct+'%<span class="approx">~ approx.</span></div>'
-      +   '<div class="pie-sub">'+esc(ms.name)+'</div>'
-      +   '<ul class="legend"><li><span class="ldot" style="background:'+SCOL.DONE+'"></span>Couvert<b>'+ms.done+'</b></li>'
-      +     '<li><span class="ldot" style="background:var(--border)"></span>Restant<b>'+Math.max(0,ms.total-ms.done)+'</b></li>'
-      +     (ms.target?'<li><span class="ldot" style="background:transparent"></span>Cible<b>'+esc(ms.target)+'</b></li>':'')+'</ul></div>'
+      + '<div class="piefig">'+pieSvg(msSegs,{big:ms.pct+'%',small:'≈ est.'})+'</div>'
+      + '<div class="pieinfo"><h3>Current milestone</h3>'
+      +   '<div class="pie-sub"><b style="color:var(--text)">'+esc(ms.name)+'</b>'+(ms.target?' · target '+esc(ms.target):'')+'</div>'
+      +   '<ul class="legend"><li><span class="ldot" style="background:'+SCOL.DONE+'"></span>Covered<b>'+ms.done+'</b></li>'
+      +     '<li><span class="ldot" style="background:var(--border)"></span>Remaining<b>'+Math.max(0,ms.total-ms.done)+'</b></li></ul></div>'
       + '</div>';
   } else {
-    msCard = '<div class="card pie-card"><div class="pieinfo"><div class="pie-sub">Aucun jalon défini (roadmap.md)</div></div></div>';
+    msCard = '<div class="card pie-card"><div class="pieinfo"><h3>Current milestone</h3><div class="pie-sub">No milestone defined (roadmap.md)</div></div></div>';
   }
 
   // ── Chiffres d'action : bugs / vulnérabilités / arbitrages ─
   var inc = countIncidents((get('incidents')||{}).content);
   var vul = countVulns((get('security')||{}).content);
   var arb = countCandidates((get('market-watch')||{}).content);
-  function statTile(cls,target,num,label,sub){
-    return '<a class="stat '+cls+(num?'':' zero')+'" href="#f-'+target+'" data-rev="f-'+target+'">'
+  function statTile(cls,kind,num,label,sub){
+    return '<div class="stat '+cls+(num?'':' zero')+'" data-kind="'+kind+'" role="button" tabindex="0" title="Click for details">'
       + '<span class="num">'+num+'</span>'
-      + '<span class="lab">'+label+'<small>'+sub+'</small></span></a>';
+      + '<span class="lab">'+label+'<small>'+sub+'</small></span></div>';
   }
   var statsCard =
     '<div class="card stats">'
-    + statTile('bug','incidents',inc,'Bugs à traiter','workflow incident')
-    + statTile('vuln','security',vul.open,'Vulnérabilités',(vul.crit?vul.crit+' critiques/élevées · ':'')+'workflow sécurité')
-    + statTile('arb','market-watch',arb,'Arbitrages produit','discovery → roadmap')
+    + statTile('bug','bugs',inc,'Bugs to handle','incident workflow')
+    + statTile('vuln','vulns',vul.open,'Vulnerabilities',(vul.crit?vul.crit+' critical/high · ':'')+'security workflow')
+    + statTile('arb','arb',arb,'Product arbitrations','discovery → roadmap')
     + '</div>';
 
   // ── Timeline des EPICs ────────────────────────────────────
@@ -1341,8 +1552,8 @@ const HTML_TEMPLATE = `<!doctype html>
   var epEff = epList.map(function(e){ var o={ id:e.id, title:e.title, eff:epicEff(e,tickets) }; return o; });
   var timelineHtml = epEff.length ? epEff.map(function(e){
     var g=e.eff==='done'?'✓':(e.eff==='current'?'▶':'·');
-    return '<li class="'+e.eff+'"><span class="node">'+g+'</span><span class="ep-id">'+esc(e.id)+'</span><span class="ep-title">'+esc(e.title||'')+'</span></li>';
-  }).join('') : '<li class="todo"><span class="node">·</span><span class="ep-title">Aucune EPIC définie</span></li>';
+    return '<li class="'+e.eff+' clickable" data-epic="'+esc(e.id)+'" title="Click to list this EPIC\\'s tasks"><span class="node">'+g+'</span><span class="ep-id">'+esc(e.id)+'</span><span class="ep-title">'+esc(e.title||'')+'</span></li>';
+  }).join('') : '<li class="todo"><span class="node">·</span><span class="ep-title">No EPIC defined</span></li>';
 
   // ── EPIC en cours : tâches faites / en cours / à venir ────
   var ci=epEff.findIndex(function(e){ return e.eff==='current'; });
@@ -1358,39 +1569,39 @@ const HTML_TEMPLATE = `<!doctype html>
     var nextT=pool.filter(function(t){ return t.status!=='DONE' && t.status!=='IN_PROGRESS'; });
     function tcol(cls,label,arr,col){
       var items=arr.length?arr.map(function(t){
-        return '<li style="--cc:'+col+'">'+(t.id?'<span class="tid">'+esc(t.id)+'</span>':'')+esc(t.title||'(sans titre)')+'</li>';
+        return '<li style="--cc:'+col+'">'+(t.id?'<span class="tid">'+esc(t.id)+'</span>':'')+esc(t.title||'(untitled)')+'</li>';
       }).join(''):'<div class="empty">—</div>';
       return '<div class="taskcol '+cls+'"><h4><span>'+label+'</span><span>'+arr.length+'</span></h4><ul>'+items+'</ul></div>';
     }
     curEpicHtml =
       '<div class="card"><div class="cur-epic-h"><strong><span class="eid">'+esc(curEpic.id)+'</span> '+esc(curEpic.title||'')+'</strong>'
-      + '<span class="pill">'+doneT.length+'/'+pool.length+' tâches terminées</span></div>'
+      + '<span class="pill">'+doneT.length+'/'+pool.length+' tasks done</span></div>'
       + '<div class="taskcols">'
-      +   tcol('done','Terminées',doneT,SCOL.DONE)
-      +   tcol('cur','En cours',curT,SCOL.IN_PROGRESS)
-      +   tcol('next','À venir',nextT,SCOL.TODO)
+      +   tcol('done','Done',doneT,SCOL.DONE)
+      +   tcol('cur','In progress',curT,SCOL.IN_PROGRESS)
+      +   tcol('next','Upcoming',nextT,SCOL.TODO)
       + '</div></div>';
   } else {
-    curEpicHtml = '<div class="card"><div class="empty">Aucune EPIC en cours.</div></div>';
+    curEpicHtml = '<div class="card"><div class="empty">No EPIC in progress.</div></div>';
   }
 
-  // ── À surveiller ──────────────────────────────────────────
+  // ── Watch-out list ────────────────────────────────────────
   var watch=[];
-  DATA.forEach(function(e){ if(e.age!==null && e.age>staleLimit(e.name)) watch.push(esc(e.file)+' — '+e.age+' j sans mise à jour'); });
+  DATA.forEach(function(e){ if(e.age!==null && e.age>staleLimit(e.name)) watch.push(esc(e.file)+' — '+e.age+' days without update'); });
   var off = integ.filter(function(it){ return !it.on; }).map(function(it){ return esc(it.area); });
-  if(off.length) watch.push('Intégrations désactivées : '+off.join(', '));
-  if(board.TO_CHECK.length) watch.push(board.TO_CHECK.length+' clarification(s) TO_CHECK en attente');
-  var watchHtml = watch.length ? watch.map(function(w){ return '<li>'+w+'</li>'; }).join('') : '<li class="empty">Rien à signaler</li>';
+  if(off.length) watch.push('Disabled integrations: '+off.join(', '));
+  if(board.TO_CHECK.length) watch.push(board.TO_CHECK.length+' pending TO_CHECK clarification(s)');
+  var watchHtml = watch.length ? watch.map(function(w){ return '<li>'+w+'</li>'; }).join('') : '<li class="empty">Nothing to report</li>';
 
   document.getElementById('synth').innerHTML =
-    '<h2 class="sec">Vue d\\'ensemble</h2>'
+    '<h2 class="sec">Overview</h2>'
     + (summary?'<p class="lede">'+esc(summary)+'</p>':'')
     + '<div class="kpis">'+globalCard+msCard+statsCard+'</div>'
-    + '<h2 class="sec">Timeline des EPICs</h2>'
+    + '<h2 class="sec">EPIC timeline</h2>'
     + '<div class="card"><ol class="epic-timeline">'+timelineHtml+'</ol></div>'
-    + '<h2 class="sec">EPIC en cours</h2>'
+    + '<h2 class="sec">Current EPIC</h2>'
     + curEpicHtml
-    + '<h2 class="sec">À surveiller</h2>'
+    + '<h2 class="sec">Watch out</h2>'
     + '<div class="card"><ul class="watch">'+watchHtml+'</ul></div>';
 
   // ── Détail (replié) ───────────────────────────────────────
@@ -1399,7 +1610,7 @@ const HTML_TEMPLATE = `<!doctype html>
   DATA.forEach(function(e){
     var stale=(e.age!==null && e.age>staleLimit(e.name));
     toc += '<a href="#f-'+e.name+'" data-t="f-'+e.name+'">'+esc(e.title)+(stale?' <span class="dot">●</span>':'')+'</a>';
-    var stamp = e.date ? ('maj '+e.date+(e.age!==null?(' · '+e.age+' j'+(stale?' — périmé':'')):'')) : 'date inconnue';
+    var stamp = e.date ? ('upd '+e.date+(e.age!==null?(' · '+e.age+' d'+(stale?' — stale':'')):'')) : 'date unknown';
     det += '<details class="file" id="f-'+e.name+'"'+open+'><summary><span class="sf">'+esc(e.file)+'</span> '+esc(e.title)+'<span class="st">'+stamp+'</span></summary><div class="md">'+marked.parse(e.content)+'</div></details>';
   });
   document.getElementById('toc').innerHTML = toc;
@@ -1411,7 +1622,7 @@ const HTML_TEMPLATE = `<!doctype html>
   function setDetail(show){
     detailWrap.hidden=!show;
     toggleBtn.setAttribute('aria-expanded', show?'true':'false');
-    toggleBtn.textContent=(show?'▾':'▸')+' Détail de la mémoire (lecture des fichiers bruts)';
+    toggleBtn.textContent=(show?'▾':'▸')+' Memory detail (raw files)';
   }
   setDetail(STYLE==='detailed');
   toggleBtn.addEventListener('click', function(){ setDetail(detailWrap.hidden); });
@@ -1422,12 +1633,20 @@ const HTML_TEMPLATE = `<!doctype html>
     var el = document.getElementById(a.getAttribute('data-t')); if(el) el.open = true;
   });
 
-  // clic sur un chiffre d'action → déplie le détail et ouvre le fichier concerné
-  document.querySelector('.stats').addEventListener('click', function(ev){
-    var a=ev.target.closest('.stat'); if(!a) return;
-    setDetail(true);
-    var el=document.getElementById(a.getAttribute('data-rev')); if(el) el.open=true;
+  // ── clics de la synthèse → popups (délégation sur #synth, qui persiste) ──
+  document.getElementById('synth').addEventListener('click', function(ev){
+    var st=ev.target.closest('li[data-st]'); if(st){ openStatus(st.getAttribute('data-st')); return; }
+    var ep=ev.target.closest('li[data-epic]'); if(ep){ openEpic(ep.getAttribute('data-epic')); return; }
+    var k=ev.target.closest('.stat[data-kind]');
+    if(k){ var kind=k.getAttribute('data-kind'); if(kind==='bugs') openIncidents(); else if(kind==='vulns') openVulns(); else openCandidates(); }
   });
+  // bouton Feature list (en-tête)
+  document.getElementById('featBtn').addEventListener('click', openFeatures);
+  // fermeture du modal : croix, fond, Échap
+  document.getElementById('modal').addEventListener('click', function(ev){
+    if(ev.target.getAttribute('data-close') || ev.target.closest('#modalClose')) closeModal();
+  });
+  document.addEventListener('keydown', function(ev){ if(ev.key==='Escape') closeModal(); });
 
   document.querySelectorAll('code.language-mermaid').forEach(function(code){
     var div = document.createElement('div'); div.className='mermaid'; div.textContent = code.textContent;
@@ -1478,7 +1697,7 @@ function parseEpics(content) {
       continue;
     }
     if (isSeparatorRow(line) || !map) continue;
-    const id = (cs[map.epic] || "").replace(/`/g, "").trim();
+    const id = (cs[map.epic] || "").replace(/`/g, "").trim().toUpperCase();
     if (!id || /^—$/.test(id)) continue;
     out.push({
       id,
@@ -1508,13 +1727,13 @@ function parseKanbanFull(content) {
       continue;
     }
     if (isSeparatorRow(line) || !map) continue;
-    const st = cs[map.status];
-    if (STATUSES.indexOf(st) < 0) continue;
+    const st = normStatus(cs[map.status]);
+    if (!st) continue;
     out.push({
       id: map.id >= 0 ? cs[map.id] : "",
       title: map.title >= 0 ? cs[map.title] : "",
       status: st,
-      epic: map.epic >= 0 ? (cs[map.epic] || "").replace(/`/g, "").trim() : "",
+      epic: map.epic >= 0 ? (cs[map.epic] || "").replace(/`/g, "").trim().toUpperCase() : "",
     });
   }
   return out;
@@ -1556,7 +1775,7 @@ function fmtElapsed(sinceISO) {
 function buildSidebar(epics, tickets, rt, width) {
   const L = [];
   const w = Math.max(16, width);
-  const cur = (s) => `\x1b[1;33m${s}\x1b[0m`; // bold yellow = active
+  const cur = (s) => `\x1b[1;94m${s}\x1b[0m`; // bold bright-blue = active (matches the HTML dashboard accent)
   const short = (a) => "@" + String(a || "").replace(/^ailed-/, "");
   const clip = (s) => (s.length > w ? s.slice(0, Math.max(1, w - 1)) + "…" : s);
   const row = (indent, glyph, text, paint) => {
