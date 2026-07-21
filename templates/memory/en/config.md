@@ -109,7 +109,7 @@ by `ai-led status`). When **External ticketing** (e.g. `Jira`) or **External doc
 | Confluence | Root page (URL of the parent page)           | `to set`           |
 | Confluence | Container sub-page (created if absent)        | `AI LED FRAMEWORK` |
 
-> Example **root page**: `https://skeepers.atlassian.net/wiki/spaces/RDP/pages/2883387645/Feedback+Management`.
+> Example **root page**: `https://your-company.atlassian.net/wiki/spaces/SPACE/pages/PAGE_ID/Page+Title`.
 > The MCP derives the space and parent page from it; the `AI LED FRAMEWORK` sub-page is created if
 > absent, then populated with one page per `memory/*.md` file.
 >
