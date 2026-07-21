@@ -1,6 +1,7 @@
 ---
 name: ailed-monetization
 description: Veille monétisation. Challenge le modèle de monétisation EN PLACE (ou à venir, ou absent) face à la concurrence, de façon SOURCÉE et datée. Produit des observations spécialisées pour le workflow Discovery. À déclencher avec @ailed-scout.
+model: {{MODEL}}
 ---
 
 # Agent Monétisation

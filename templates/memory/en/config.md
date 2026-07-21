@@ -11,12 +11,47 @@ behaviour (in particular when an integration is set to `{{DISABLED}}`).
 - Project trigram (ticket prefix): `{{TICKET_PREFIX}}`
   → dev tickets are named `{{TICKET_PREFIX}}-000001`, `{{TICKET_PREFIX}}-000002`, …
 
+## Output style
+
+- Agent & report communication style: `{{OUTPUT_STYLE}}`
+  → values: `concise` · `standard` · `detailed` (default: `standard`).
+
+**Read by every agent and by `ai-led status`.** This setting drives *presentation only* — never
+the content of `memory/`, which stays the **complete, git-versioned source of truth**. It applies
+to: the Claude Code display, syntheses (`/ailed-status`) and the text pushed to external tools
+(Jira / Confluence).
+
+| Value      | Expected behaviour |
+| ---------- | ------------------ |
+| `concise`  | "Get to the point" mode. No preamble or wrap-up, no restating the request, no transition sentences. Short bullets (one idea per line), tables over prose. On Jira: title + acceptance criteria as bullets, no narration. |
+| `standard` | Clear, structured summary with useful context but no filler. Default behaviour. |
+| `detailed` | Full explanations: reasoning, discarded alternatives, extended context. For onboarding, audits or deep reviews. |
+
+> `concise` never means dropping critical information (risk, decision, blocker): cut the fluff,
+> not the substance. `memory/` is always filled in full regardless of this setting.
+
 ## Technical conventions (optional)
 
 The coding conventions and technical organization **already in place** are described in
 `memory/conventions.md`. Can be set at install time (`--conventions=<path>`, verbatim import)
 or filled by hand / via `@ailed-init-memory`. **Read by `@ailed-architect`, `@ailed-dev`
 and `@ailed-ux`** before acting. The file may stay partially empty.
+
+## LLM model per agent
+
+Each agent runs on a **model chosen for its function**, to cut token usage without degrading
+quality where it matters:
+
+- `opus` — reasoning, judgment, critical review (a bad output causes downstream rework);
+- `sonnet` — standard execution, high volume (dev, tests, writing);
+- `haiku` — mechanical collection / extraction, little reasoning.
+
+**This table is the source of truth.** The harness reads the model from each agent's *frontmatter*
+(`.claude/agents/*.md`): after editing a row below, apply it with
+`npx @s2bp/ai-led-framework models sync`. `models` (no argument) prints the effective table.
+Allowed values: `opus` · `sonnet` · `haiku` · `inherit` (inherit the session model).
+
+{{MODELS_TABLE}}
 
 ## Integrations
 

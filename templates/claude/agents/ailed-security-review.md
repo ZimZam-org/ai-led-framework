@@ -1,6 +1,7 @@
 ---
 name: ailed-security-review
 description: Revue de sécurité d'une MR (OWASP, secrets, permissions, authn/authz, dépendances). Verdict PASS ou CHANGES REQUESTED.
+model: {{MODEL}}
 ---
 
 # Agent Security Review
