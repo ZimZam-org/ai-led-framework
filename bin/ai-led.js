@@ -741,22 +741,28 @@ const MEMORY_ORDER = [
 ];
 const STATUSES = ["TO_CHECK", "TODO", "IN_PROGRESS", "TO_TEST", "DONE"];
 
-// Normalise a raw kanban status cell into a canonical STATUSES value, tolerant to
-// the way statuses are actually written in the wild: backticks (the template styles
-// them as `IN_PROGRESS`), lower/mixed case, accents, spaces/hyphens, FR/EN wording.
-// Returns null when nothing plausible matches (row is then skipped, as before).
+// Normalise a raw kanban status cell into a canonical status, tolerant to the way
+// statuses are actually written in the wild: backticks (the template styles them as
+// `IN_PROGRESS`), lower/mixed case, accents, spaces/hyphens, FR/EN wording, and a
+// trailing comment (`DONE (PR #118, merged develop)` → `DONE`).
+// Also recognises SUPERSEDED (voided work): returned as a status but deliberately
+// absent from STATUSES, so it never inflates the progress counters.
+// Returns null when nothing plausible matches.
 function normStatus(raw) {
-  const v = String(raw || "")
+  let v = String(raw || "")
     .replace(/`/g, "")
     .normalize("NFD").replace(/[̀-ͯ]/g, "") // strip accents
-    .trim().toUpperCase().replace(/[\s-]+/g, "_");
+    .trim().toUpperCase().replace(/[\s\-–—]+/g, "_");
+  v = v.split("(")[0].replace(/^_+|_+$/g, "");
   if (!v) return null;
   if (STATUSES.indexOf(v) >= 0) return v;
-  if (/^(IN_?PROGRESS|EN_?COURS|WIP|DOING|ONGOING)$/.test(v)) return "IN_PROGRESS";
-  if (/^(DONE|TERMINE|LIVRE|CLOS|CLOSED|FERME|MERGED?)$/.test(v)) return "DONE";
-  if (/^(TO_?TEST|A_?TESTER|TESTING|TEST|IN_?TEST)$/.test(v)) return "TO_TEST";
-  if (/^(TO_?CHECK|A_?VERIFIER|CK|TO_?CLARIFY)$/.test(v)) return "TO_CHECK";
-  if (/^(TODO|A_?FAIRE|BACKLOG|OPEN|NEW)$/.test(v)) return "TODO";
+  // prefix-anchored: tolerates any trailing qualifier after the status token
+  if (/^(IN_?PROGRESS|EN_?COURS|WIP|DOING|ONGOING)(_|$)/.test(v)) return "IN_PROGRESS";
+  if (/^(TO_?TEST|A_?TESTER|TESTING|TEST|IN_?TEST)(_|$)/.test(v)) return "TO_TEST";
+  if (/^(TO_?CHECK|A_?VERIFIER|CK|TO_?CLARIFY)(_|$)/.test(v)) return "TO_CHECK";
+  if (/^(DONE|TERMINE|LIVRE|CLOS|CLOSED|FERME|MERGED?)(_|$)/.test(v)) return "DONE";
+  if (/^(TODO|A_?FAIRE|BACKLOG|OPEN|NEW)(_|$)/.test(v)) return "TODO";
+  if (/^(SUPERSEDED|SUPERSEDE|REMPLACE|OBSOLETE|CANCELLED|CANCELED|ANNULE|ABANDONNE|WONTFIX|WON_T_FIX|DUPLICATE)(_|$)/.test(v)) return "SUPERSEDED";
   return null;
 }
 
@@ -783,6 +789,15 @@ function readMemory(memDir) {
   return entries;
 }
 
+// Archived kanban rows (memory/archive/kanban.md). `@ailed-release` moves shipped DONE
+// tickets there, so ignoring the file makes EPICs look ticket-less and understates the
+// overall progress. Read as plain content, kept out of `entries` on purpose: it must not
+// show up in the raw-file accordion nor in the staleness checks.
+function readKanbanArchive(memDir) {
+  const p = path.join(memDir, "archive", "kanban.md");
+  return fs.existsSync(p) ? fs.readFileSync(p, "utf8") : "";
+}
+
 // normalize a localized style word to one of: concise | standard | detailed
 function canonStyle(s) {
   const v = (s || "").toLowerCase().trim();
@@ -801,19 +816,34 @@ function readStyle(entries) {
   return canonStyle(m ? m[1] : "standard");
 }
 
+// split a markdown table row into cells, honouring escaped pipes (`\|`) — memory tables
+// routinely contain them inside code spans, and a naive split truncates those cells.
 function tableCells(line) {
-  return line.trim().split("|").slice(1, -1).map((s) => s.trim());
+  const t = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+  const out = [];
+  let cur = "";
+  for (let i = 0; i < t.length; i++) {
+    const ch = t.charAt(i);
+    if (ch === "\\" && t.charAt(i + 1) === "|") { cur += "|"; i++; continue; }
+    if (ch === "|") { out.push(cur.trim()); cur = ""; continue; }
+    cur += ch;
+  }
+  out.push(cur.trim());
+  return out;
 }
 function isSeparatorRow(line) {
   return /^[-\s|]+$/.test(line.trim());
 }
 
-// parse the kanban markdown into { STATUS: [{id,title}] }, robust to extra tables/columns
+// parse the kanban markdown into { STATUS: [{id,title}] }, robust to extra tables/columns.
+// `content` may concatenate memory/kanban.md and memory/archive/kanban.md: rows are
+// de-duplicated by ticket ID (first occurrence wins) so archiving never double-counts.
 function parseBoard(content) {
   const cols = {};
   for (const s of STATUSES) cols[s] = [];
   if (!content) return cols;
   let map = null;
+  const seen = new Set();
   for (const line of content.split("\n")) {
     if (line.trim().charAt(0) !== "|") { map = null; continue; }
     const cs = tableCells(line);
@@ -828,8 +858,13 @@ function parseBoard(content) {
     }
     if (isSeparatorRow(line) || !map) continue;
     const st = normStatus(cs[map.status]);
-    if (!st) continue;
-    cols[st].push({ id: map.id >= 0 ? cs[map.id] : "", title: map.title >= 0 ? cs[map.title] : "" });
+    if (!st || !cols[st]) continue; // unknown status, or SUPERSEDED: out of the progress counters
+    const id = (map.id >= 0 ? cs[map.id] : "").replace(/`/g, "").trim();
+    if (id) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+    }
+    cols[st].push({ id, title: map.title >= 0 ? cs[map.title] : "" });
   }
   return cols;
 }
@@ -877,9 +912,9 @@ function disabledIntegrations(cfgContent) {
   return out;
 }
 
-function statusTerminal(entries, memDirRel, style) {
+function statusTerminal(entries, memDirRel, style, archiveMd) {
   const kb = entries.find((e) => e.name === "kanban");
-  const board = kb ? parseBoard(kb.content) : null;
+  const board = kb ? parseBoard(kb.content + "\n\n" + (archiveMd || "")) : null;
   const tag = style !== "standard" ? c.dim(` · ${style}`) : "";
   console.log(`\n${c.bold("AI-Led")} ${c.dim("— état du projet")} · ${c.cyan(memDirRel)}${tag}\n`);
 
@@ -945,16 +980,18 @@ function statusTerminal(entries, memDirRel, style) {
   console.log(`${c.dim("Synthèse enrichie dans Claude Code :")} /ailed-status\n`);
 }
 
-function statusHtml(entries, outPath, style) {
+function statusHtml(entries, outPath, style, archiveMd) {
   const data = entries.map((e) => ({
     name: e.name, file: e.file, title: e.title, date: e.date, age: e.age, content: e.content,
   }));
   // Embed as JSON inside an inline <script>. Guard the three sequences that are
   // valid in JSON but break an inline script: `</…` (closes the tag early) and the
   // U+2028/U+2029 line separators (illegal in older JS string literals).
-  const json = JSON.stringify(data)
+  const safeJson = (v) => JSON.stringify(v)
     .replace(/<\//g, "<\\/")
     .replace(/[\u2028\u2029]/g, (m) => "\\u" + m.charCodeAt(0).toString(16));
+  const json = safeJson(data);
+  const archive = safeJson({ kanban: archiveMd || "" });
   const generated = new Date().toISOString().slice(0, 16).replace("T", " ");
   // IMPORTANT: pass function replacements so `$`-sequences in the injected values
   // (`$&`, `$\``, `$'`, `$1`… — common in code/prices/apostrophes inside memory
@@ -963,6 +1000,7 @@ function statusHtml(entries, outPath, style) {
     outPath,
     HTML_TEMPLATE
       .replace("/*__DATA__*/", () => json)
+      .replace("/*__ARCHIVE__*/", () => archive)
       .replace(/__GENERATED__/g, () => generated)
       .replace(/__STYLE__/g, () => style || "standard")
   );
@@ -982,17 +1020,18 @@ function status() {
   }
   // --style flag overrides the config value for this run; otherwise read memory/config.md
   const style = flag("style") ? canonStyle(flag("style")) : readStyle(entries);
+  const archiveMd = readKanbanArchive(memDir);
   if (argv.includes("--html")) {
     // default filename is prefixed with a local YYYYMMDDHHmmss stamp so each run
     // produces a distinct, chronologically-sortable report (overridable via --out).
     const d = new Date(), p = (n) => String(n).padStart(2, "0");
     const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
     const out = path.resolve(cwd, flag("out") || `${stamp}_ailed-status.html`);
-    statusHtml(entries, out, style);
+    statusHtml(entries, out, style, archiveMd);
     console.log(`\n${c.green("✓")} Tableau de bord généré : ${c.cyan(path.relative(cwd, out) || out)}`);
     console.log(`  Ouvre-le dans un navigateur : ${c.dim("file://" + out)}\n`);
   } else {
-    statusTerminal(entries, path.relative(cwd, memDir) || memDir, style);
+    statusTerminal(entries, path.relative(cwd, memDir) || memDir, style, archiveMd);
   }
 }
 
@@ -1071,18 +1110,39 @@ const HTML_TEMPLATE = `<!doctype html>
   .epic-timeline .ep-title { font-size:12.5px; text-align:center; display:block; line-height:1.35; }
   .epic-timeline li.current .ep-title { color:var(--accent); font-weight:600; }
   .epic-timeline li.todo { opacity:.65; }
-  /* EPIC en cours : tâches faites / en cours / à venir */
-  .cur-epic-h { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
-  .cur-epic-h .eid { font-family:ui-monospace,monospace; color:var(--accent); }
-  .cur-epic-h .pill { font-size:12px; color:var(--muted); background:var(--panel2); border:1px solid var(--border); border-radius:999px; padding:2px 9px; margin-left:auto; }
-  .taskcols { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
-  @media (max-width:680px){ .taskcols{ grid-template-columns:1fr; } }
-  .taskcol h4 { margin:0 0 8px; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); display:flex; justify-content:space-between; }
-  .taskcol.done h4 { color:var(--ok); } .taskcol.cur h4 { color:var(--accent); }
-  .taskcol ul { list-style:none; margin:0; padding:0; }
-  .taskcol li { background:var(--panel2); border:1px solid var(--border); border-left:3px solid var(--cc); border-radius:6px; padding:6px 8px; margin-bottom:6px; font-size:13px; }
-  .taskcol li .tid { display:block; color:var(--muted); font-size:11px; font-family:ui-monospace,monospace; }
-  .taskcol .empty { color:var(--muted); font-style:italic; font-size:12.5px; }
+  /* Kanban : une colonne par statut non-DONE + les DONE les plus récentes à droite */
+  /* toutes les colonnes tiennent dans la largeur (minmax 0) ; défilement seulement en étroit */
+  .kanban { display:grid; grid-auto-flow:column; grid-auto-columns:minmax(0,1fr); gap:12px; align-items:start; padding:2px 2px 6px; }
+  @media (max-width:900px){ .kanban { grid-auto-columns:minmax(178px,1fr); overflow-x:auto; } }
+  .kcol { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:12px 12px 4px; min-width:0; }
+  .kcol > h4 { margin:0 0 10px; font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); display:flex; align-items:center; gap:7px; }
+  .kcol > h4 .kdot { width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
+  .kcol > h4 .kn { margin-left:auto; color:var(--text); background:var(--panel2); border:1px solid var(--border); border-radius:999px; padding:1px 8px; font-size:11px; font-variant-numeric:tabular-nums; }
+  .kcol > h4 .kn.clickable { cursor:pointer; } .kcol > h4 .kn.clickable:hover { border-color:var(--accent); color:var(--accent); }
+  .kcard { background:var(--panel2); border:1px solid var(--border); border-left:3px solid var(--cc); border-radius:8px; padding:8px 10px; margin-bottom:8px; cursor:pointer; }
+  .kcard:hover { border-color:var(--accent); }
+  .kcard span { display:block; overflow-wrap:anywhere; }
+  .kcard .kms { font-size:10.5px; font-weight:700; letter-spacing:.04em; color:var(--warn); text-transform:uppercase; }
+  .kcard .kep { font-size:10.5px; font-family:ui-monospace,monospace; color:var(--muted); }
+  .kcard .kid { font-size:11px; font-family:ui-monospace,monospace; color:var(--accent); margin-top:2px; }
+  /* titres bornés à 4 lignes : les libellés de tickets peuvent faire un paragraphe entier,
+     le détail complet est dans la popup de la carte */
+  .kcard .ktt { font-size:13px; line-height:1.35; margin-top:2px; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:4; line-clamp:4; overflow:hidden; }
+  .kcard .kraw { font-size:10.5px; color:var(--muted); font-style:italic; margin-top:3px; }
+  .kcard.sup .ktt { text-decoration:line-through; color:var(--muted); }
+  .kcol .kempty { color:var(--muted); font-style:italic; font-size:12.5px; padding:0 2px 10px; }
+  .kmore { display:block; width:100%; background:none; border:1px dashed var(--border); color:var(--muted); border-radius:8px; padding:6px; font-size:12px; cursor:pointer; margin-bottom:8px; }
+  .kmore:hover { border-color:var(--accent); color:var(--accent); }
+  /* markdown allégé (leds, popups) — rendu hors ligne, sans dépendance */
+  .mdlite p { margin:0 0 10px; } .mdlite ul, .mdlite ol { margin:0 0 10px; padding-left:20px; }
+  .mdlite li { margin:2px 0; } .mdlite > :last-child { margin-bottom:0; }
+  .mdlite h5 { margin:16px 0 7px; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--accent); }
+  .mdlite code, .lede code, .modal-table code, .inc code { background:var(--panel2); padding:1px 5px; border-radius:4px; font-size:12.5px; }
+  .kcard code { background:rgba(255,255,255,.06); border-radius:3px; padding:0 3px; font-size:12px; }
+  .kcard strong, .modal-table strong { color:var(--text); font-weight:600; }
+  .mdlite .strike, .lede .strike { text-decoration:line-through; color:var(--muted); }
+  .lede strong, .mdlite strong { color:var(--text); }
+  .lede .more { background:none; border:none; color:var(--accent); cursor:pointer; font-size:13px; padding:0; text-decoration:underline; white-space:nowrap; }
   .md table { border-collapse:collapse; width:100%; margin:12px 0; font-size:14px; display:block; overflow-x:auto; }
   .md th, .md td { border:1px solid var(--border); padding:6px 10px; text-align:left; vertical-align:top; }
   .md th { background:var(--panel2); }
@@ -1149,31 +1209,86 @@ const HTML_TEMPLATE = `<!doctype html>
 </div>
 <script>
   var DATA = /*__DATA__*/;
+  var ARCHIVE = /*__ARCHIVE__*/;
   var STYLE = "__STYLE__";
+  // statuts comptés dans l'avancement (ordre de workflow)
   var STATUSES = ['TO_CHECK','TODO','IN_PROGRESS','TO_TEST','DONE'];
-  var LABEL = {TO_CHECK:'To check',TODO:'To do',IN_PROGRESS:'In progress',TO_TEST:'To test',DONE:'Done'};
+  // statuts hors avancement, affichés sur le board seulement s'ils existent :
+  // SUPERSEDED = travail annulé/remplacé, OTHER = statut hors référentiel (affiché tel quel)
+  var OFF_BOARD = ['SUPERSEDED','OTHER'];
+  var LABEL = {TO_CHECK:'To check',TODO:'To do',IN_PROGRESS:'In progress',TO_TEST:'To test',DONE:'Done',SUPERSEDED:'Superseded',OTHER:'Other'};
   function staleLimit(name){ return name === 'market-watch' ? 30 : 60; }
   function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
   function get(name){ return DATA.filter(function(e){ return e.name===name; })[0]; }
-  function cells(line){ return line.trim().split('|').slice(1,-1).map(function(s){ return s.trim(); }); }
+  // découpe une ligne de table markdown en cellules, en respectant les pipes échappés
+  // (fréquents dans les code spans de la mémoire : un split naïf tronque la cellule)
+  function cells(line){
+    var t=String(line).trim().replace(/^\\|/,'').replace(/\\|$/,''), out=[], cur='', BS=String.fromCharCode(92);
+    for(var i=0;i<t.length;i++){
+      var ch=t.charAt(i);
+      if(ch===BS && t.charAt(i+1)==='|'){ cur+='|'; i++; continue; }
+      if(ch==='|'){ out.push(cur.trim()); cur=''; continue; }
+      cur+=ch;
+    }
+    out.push(cur.trim());
+    return out;
+  }
   function isSep(line){ return /^[-\\s|]+$/.test(line.trim()); }
 
-  function parseBoard(md){
-    var cols={}; STATUSES.forEach(function(s){ cols[s]=[]; });
-    if(!md) return cols; var map=null;
-    md.split('\\n').forEach(function(line){
-      if(line.trim().charAt(0)!=='|'){ map=null; return; }
-      var cs=cells(line), lo=cs.map(function(c){ return c.toLowerCase(); });
-      if(lo.indexOf('status')>=0 && (lo.indexOf('titre')>=0||lo.indexOf('title')>=0)){
-        map={ status:lo.indexOf('status'), title:lo.indexOf('titre')>=0?lo.indexOf('titre'):lo.indexOf('title'), id:lo.indexOf('id') };
-        return;
-      }
-      if(isSep(line)||!map) return;
-      var st=normStatus(cs[map.status]);
-      if(!st) return;
-      cols[st].push({ id:map.id>=0?cs[map.id]:'', title:map.title>=0?cs[map.title]:'' });
+  // ── markdown minimal → HTML sûr (hors ligne, sans dépendance CDN) ──────────
+  // Le rapport doit rester présentable même quand la mémoire contient du markdown
+  // dense (gras, backticks, listes, tables) : on rend, on n'affiche jamais la source.
+  function mdInline(s){
+    var t=esc(String(s||''));
+    t=t.replace(/\`([^\`]+)\`/g, function(_,c){ return '<code>'+c+'</code>'; });
+    t=t.replace(/\\*\\*([^*]+)\\*\\*/g, function(_,c){ return '<strong>'+c+'</strong>'; });
+    t=t.replace(/~~([^~]+)~~/g, function(_,c){ return '<span class="strike">'+c+'</span>'; });
+    t=t.replace(/\\[([^\\]]+)\\]\\(([^)\\s]+)\\)/g, function(_,txt,href){
+      return /^https?:/.test(href) ? '<a href="'+href.replace(/"/g,'%22')+'" rel="noopener">'+txt+'</a>' : txt; });
+    // marqueurs orphelins (paire coupée par une troncature ou une cellule mal fermée) :
+    // on les retire — le rapport ne doit jamais afficher de balisage brut.
+    return t.replace(/\`/g,'').replace(/\\*\\*/g,'');
+  }
+  // markdown → blocs (paragraphes, listes, titres, tables). Utilisé dans les popups.
+  function mdBlocks(md){
+    var out='', para=[], list=null, tbl=null;
+    function flushP(){ if(para.length){ out+='<p>'+mdInline(para.join(' '))+'</p>'; para=[]; } }
+    function flushL(){ if(list){ out+='<'+list.tag+'>'+list.items.map(function(x){ return '<li>'+mdInline(x)+'</li>'; }).join('')+'</'+list.tag+'>'; list=null; } }
+    function flushT(){ if(tbl){ out+='<table class="modal-table"><thead><tr>'+tbl.head.map(function(h){ return '<th>'+mdInline(h)+'</th>'; }).join('')+'</tr></thead><tbody>'
+      + tbl.rows.map(function(r){ return '<tr>'+r.map(function(x){ return '<td>'+mdInline(x)+'</td>'; }).join('')+'</tr>'; }).join('')+'</tbody></table>'; tbl=null; } }
+    function flush(){ flushP(); flushL(); flushT(); }
+    String(md||'').split('\\n').forEach(function(l){
+      var t=l.trim();
+      if(!t){ flush(); return; }
+      if(t.charAt(0)==='|'){ flushP(); flushL(); if(isSep(l)) return; var cs=cells(l); if(!tbl) tbl={head:cs,rows:[]}; else tbl.rows.push(cs); return; }
+      flushT();
+      var h=t.match(/^#{1,6}\\s+(.*)$/);
+      if(h){ flush(); out+='<h5>'+mdInline(h[1])+'</h5>'; return; }
+      var li=t.match(/^([-*•]|\\d+[.)])\\s+(.*)$/);
+      if(li){ flushP(); var tag=/^\\d/.test(li[1])?'ol':'ul';
+        if(!list||list.tag!==tag){ flushL(); list={tag:tag,items:[]}; }
+        list.items.push(li[2]); return; }
+      if(list){ list.items[list.items.length-1]+=' '+t; return; }
+      para.push(t);
     });
-    return cols;
+    flush();
+    return out;
+  }
+  // markdown → texte brut (pour le chapô : jamais de balisage résiduel à l'écran)
+  function mdPlain(s){
+    return String(s||'')
+      .replace(/\`([^\`]+)\`/g, function(_,c){ return c; })
+      .replace(/\\[([^\\]]+)\\]\\([^)]*\\)/g, function(_,c){ return c; })
+      .replace(/~~/g,'').replace(/\\*+/g,'')
+      .replace(/^#{1,6}\\s+/,'').replace(/^>\\s*/,'')
+      .replace(/\\s+/g,' ').trim();
+  }
+  // coupe proprement sur un mot, sans jamais laisser de balisage ouvert
+  function clampText(s, n){
+    if(s.length<=n) return s;
+    var cut=s.slice(0,n), sp=cut.lastIndexOf(' ');
+    if(sp > n*0.6) cut=cut.slice(0,sp);
+    return cut.replace(/[\\s,;:.\\-–—(]+$/,'')+'…';
   }
   function parseIntegrations(md){
     var out=[]; if(!md) return out; var inSec=false;
@@ -1188,17 +1303,26 @@ const HTML_TEMPLATE = `<!doctype html>
     });
     return out;
   }
-  function stateSummary(md){
-    if(!md) return ''; var lines=md.split('\\n'), grab=false, buf=[];
+  // « ## État actuel » de project-state.md → { first: 1er paragraphe, full: section entière }.
+  // Cette section grossit avec le projet (listes, tables, gras) : le chapô n'en garde que le
+  // 1er paragraphe, en texte brut et borné ; l'intégralité part dans une popup rendue.
+  function stateSection(md){
+    if(!md) return null; var lines=md.split('\\n'), grab=false, buf=[];
     for(var i=0;i<lines.length;i++){
       var l=lines[i];
-      if(/^##\\s/.test(l)){ grab=/^##\\s+(État actuel|Current state)/i.test(l); continue; }
-      if(grab){ var t=l.trim(); if(t) buf.push(t); }
+      if(/^##\\s/.test(l)){ if(grab) break; grab=/^##\\s+(État actuel|Etat actuel|Current state)/i.test(l); continue; }
+      if(grab) buf.push(l);
     }
-    var s=buf.join(' ').trim();
-    if(!s || /^TO IDENTIFY/i.test(s)) return ''; return s;
+    while(buf.length && !buf[0].trim()) buf.shift();
+    while(buf.length && !buf[buf.length-1].trim()) buf.pop();
+    if(!buf.length) return null;
+    var first=[];
+    for(var j=0;j<buf.length;j++){ if(!buf[j].trim()) break; first.push(buf[j].trim()); }
+    var f=mdPlain(first.join(' '));
+    if(!f || /^TO IDENTIFY/i.test(f)) return null;
+    return { first:f, full:buf.join('\\n'), more:buf.length>first.length };
   }
-  var SCOL={TO_CHECK:'#c08be8',TODO:'#8b929e',IN_PROGRESS:'#6ea8fe',TO_TEST:'#f0c674',DONE:'#6cc070'};
+  var SCOL={TO_CHECK:'#c08be8',TODO:'#8b929e',IN_PROGRESS:'#6ea8fe',TO_TEST:'#f0c674',DONE:'#6cc070',SUPERSEDED:'#6b7280',OTHER:'#6b7280'};
   // donut à partir de segments [{value,color}] ; center = {big,small} affiché dans le trou
   function pieSvg(segs, center){
     center = center || {};
@@ -1224,17 +1348,45 @@ const HTML_TEMPLATE = `<!doctype html>
     if(/IN[_ ]?PROGRESS|EN COURS|WIP|DOING/.test(v)) return 'current';
     return 'todo';
   }
-  // canonical status, tolerant to backticks / case / accents / FR-EN wording
+  // canonical status, tolerant to backticks / case / accents / FR-EN wording, and to a
+  // trailing qualifier ('DONE (PR #118, mergé develop)' → DONE). null = hors référentiel.
   function normStatus(raw){
-    var v=String(raw||'').replace(/\`/g,'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').trim().toUpperCase().replace(/[\\s-]+/g,'_');
+    var v=String(raw||'').replace(/\`/g,'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').trim().toUpperCase().replace(/[\\s\\-–—]+/g,'_');
+    v=v.split('(')[0].replace(/^_+|_+$/g,'');
     if(!v) return null;
     if(STATUSES.indexOf(v)>=0) return v;
-    if(/^(IN_?PROGRESS|EN_?COURS|WIP|DOING|ONGOING)$/.test(v)) return 'IN_PROGRESS';
-    if(/^(DONE|TERMINE|LIVRE|CLOS|CLOSED|FERME|MERGED?)$/.test(v)) return 'DONE';
-    if(/^(TO_?TEST|A_?TESTER|TESTING|TEST|IN_?TEST)$/.test(v)) return 'TO_TEST';
-    if(/^(TO_?CHECK|A_?VERIFIER|CK|TO_?CLARIFY)$/.test(v)) return 'TO_CHECK';
-    if(/^(TODO|A_?FAIRE|BACKLOG|OPEN|NEW)$/.test(v)) return 'TODO';
+    if(/^(IN_?PROGRESS|EN_?COURS|WIP|DOING|ONGOING)(_|$)/.test(v)) return 'IN_PROGRESS';
+    if(/^(TO_?TEST|A_?TESTER|TESTING|TEST|IN_?TEST)(_|$)/.test(v)) return 'TO_TEST';
+    if(/^(TO_?CHECK|A_?VERIFIER|CK|TO_?CLARIFY)(_|$)/.test(v)) return 'TO_CHECK';
+    if(/^(DONE|TERMINE|LIVRE|CLOS|CLOSED|FERME|MERGED?)(_|$)/.test(v)) return 'DONE';
+    if(/^(TODO|A_?FAIRE|BACKLOG|OPEN|NEW)(_|$)/.test(v)) return 'TODO';
+    if(/^(SUPERSEDED|SUPERSEDE|REMPLACE|OBSOLETE|CANCELLED|CANCELED|ANNULE|ABANDONNE|WONTFIX|WON_T_FIX|DUPLICATE)(_|$)/.test(v)) return 'SUPERSEDED';
     return null;
+  }
+  // mot entier présent dans une chaîne (sans regex : évite tout échappement)
+  function hasToken(hay, tok){
+    var H=String(hay||'').toUpperCase(), T=String(tok||'').toUpperCase(); if(!T) return false;
+    for(var i=H.indexOf(T); i>=0; i=H.indexOf(T,i+1)){
+      var b=i>0?H.charAt(i-1):'', a=H.charAt(i+T.length);
+      if(!/[A-Z0-9]/.test(b) && !/[A-Z0-9]/.test(a)) return true;
+    }
+    return false;
+  }
+  // cellule EPIC d'un ticket → identifiants d'EPIC. Tolère les backticks, le texte libre,
+  // les rattachements multiples ('EPIC-1/2/3') et les cellules décalées (rien de reconnu → []).
+  function extractEpics(cell, ids){
+    var s=String(cell||'').replace(/\`/g,'').trim();
+    if(!s || s==='—' || s==='-') return [];
+    var m=s.match(/^([A-Za-z]+)[-_\\s]?(\\d+(?:\\s*\\/\\s*\\d+)+)$/);
+    if(m) return m[2].split('/').map(function(x){ return (m[1]+'-'+x.trim()).toUpperCase(); });
+    var out=[];
+    (ids||[]).forEach(function(id){ if(hasToken(s,id) && out.indexOf(id.toUpperCase())<0) out.push(id.toUpperCase()); });
+    if(!out.length){
+      (s.match(/EPIC-?\\d+/gi)||[]).forEach(function(x){
+        var v=x.toUpperCase().replace(/^EPIC-?/,'EPIC-'); if(out.indexOf(v)<0) out.push(v);
+      });
+    }
+    return out;
   }
   // epics.md → [{id,title,status}] dans l'ordre de déclaration
   function parseEpics(md){
@@ -1254,26 +1406,38 @@ const HTML_TEMPLATE = `<!doctype html>
     });
     return out;
   }
-  // kanban.md → [{id,title,status,epic}]
-  function parseKanbanFull(md){
-    var out=[]; if(!md) return out; var map=null;
+  // kanban.md → [{id,title,status,raw,epics,epic,desc,date,num,seq,archived}]
+  // ids = EPICs déclarées dans epics.md (résolution de la colonne EPIC).
+  // seqBase ordonne les lignes entre fichiers (archive avant kanban vivant).
+  function parseKanbanFull(md, ids, seqBase, archived){
+    var out=[]; if(!md) return out; var map=null, n=0;
     md.split('\\n').forEach(function(line){
       if(line.trim().charAt(0)!=='|'){ map=null; return; }
       var cs=cells(line), lo=cs.map(function(c){ return c.toLowerCase(); });
       if(lo.indexOf('status')>=0 && (lo.indexOf('titre')>=0||lo.indexOf('title')>=0)){
-        map={ status:lo.indexOf('status'), title:lo.indexOf('titre')>=0?lo.indexOf('titre'):lo.indexOf('title'), id:lo.indexOf('id'), epic:lo.indexOf('epic') };
+        map={ status:lo.indexOf('status'), title:lo.indexOf('titre')>=0?lo.indexOf('titre'):lo.indexOf('title'), id:lo.indexOf('id'), epic:lo.indexOf('epic'),
+              desc:lo.findIndex(function(c){ return /description/.test(c); }), date:lo.findIndex(function(c){ return /date/.test(c); }) };
         return;
       }
       if(isSep(line)||!map) return;
-      var st=normStatus(cs[map.status]);
-      if(!st) return;
-      out.push({ id:map.id>=0?cs[map.id]:'', title:map.title>=0?cs[map.title]:'', status:st, epic:map.epic>=0?(cs[map.epic]||'').replace(/\`/g,'').trim().toUpperCase():'' });
+      var rawSt=String(map.status>=0?cs[map.status]:'').replace(/\`/g,'').trim();
+      var id=String(map.id>=0?cs[map.id]:'').replace(/\`/g,'').trim();
+      var title=map.title>=0?cs[map.title]:'';
+      if(!rawSt || rawSt==='—' || (!id && !title)) return; // ligne de gabarit / cellule vide
+      var digits=id.match(/\\d+/g);
+      var eps=extractEpics(map.epic>=0?cs[map.epic]:'', ids);
+      out.push({ id:id, title:title, status:normStatus(rawSt)||'OTHER', raw:rawSt,
+        epics:eps, epic:eps[0]||'', desc:map.desc>=0?cs[map.desc]:'', date:map.date>=0?cs[map.date]:'',
+        num:digits?parseInt(digits[digits.length-1],10):0, seq:(seqBase||0)+(n++), archived:!!archived });
     });
     return out;
   }
-  // statut effectif d'une epic : dérivé de ses tickets, sinon valeur du fichier
+  // statut effectif d'une epic : dérivé de ses tickets, sinon valeur du fichier.
+  // Les tickets hors avancement (SUPERSEDED / statut inconnu) sont neutres : une EPIC
+  // dont tout le travail vivant est DONE reste 'done' même si elle traîne des remplacés.
   function epicEff(epic, tickets){
-    var ts=tickets.filter(function(t){ return t.epic && t.epic===epic.id.toUpperCase(); });
+    var up=String(epic.id||'').toUpperCase();
+    var ts=tickets.filter(function(t){ return t.epics.indexOf(up)>=0 && STATUSES.indexOf(t.status)>=0; });
     if(ts.length){
       if(ts.some(function(t){ return t.status==='IN_PROGRESS'; })) return 'current';
       if(ts.every(function(t){ return t.status==='DONE'; })) return 'done';
@@ -1300,13 +1464,12 @@ const HTML_TEMPLATE = `<!doctype html>
     });
     return out;
   }
-  function milestoneProgress(roadmapMd, epics, tickets){
-    var miles=parseMilestonesFull(roadmapMd);
+  function milestoneProgress(miles, epics, tickets){
     var cur=miles.filter(function(m){ return !m.delivered; })[0] || miles[miles.length-1];
     if(!cur) return null;
     var done=0, total=0;
     if(cur.epics.length){
-      var tk=tickets.filter(function(t){ return t.epic && cur.epics.indexOf(t.epic)>=0; });
+      var tk=tickets.filter(function(t){ return STATUSES.indexOf(t.status)>=0 && t.epics.some(function(e){ return cur.epics.indexOf(e)>=0; }); });
       if(tk.length){ total=tk.length; done=tk.filter(function(t){ return t.status==='DONE'; }).length; }
       else {
         var eps=epics.filter(function(e){ return cur.epics.indexOf(e.id.toUpperCase())>=0; });
@@ -1366,7 +1529,7 @@ const HTML_TEMPLATE = `<!doctype html>
   var modalEl=null;
   function openModal(title, count, html){
     if(!modalEl) modalEl=document.getElementById('modal');
-    document.getElementById('modalTitle').textContent=title;
+    document.getElementById('modalTitle').textContent=mdPlain(title);
     document.getElementById('modalCount').textContent=count||'';
     document.getElementById('modalBody').innerHTML=html||'';
     modalEl.hidden=false;
@@ -1374,12 +1537,14 @@ const HTML_TEMPLATE = `<!doctype html>
   function closeModal(){ if(modalEl) modalEl.hidden=true; }
   // colored status pill
   function badge(st){ var col=SCOL[st]||'#8b929e'; return '<span class="badge-st" style="background:'+col+'22;color:'+col+';border:1px solid '+col+'66">'+(LABEL[st]||st)+'</span>'; }
+  // statut affiché : pastille pour les statuts du référentiel, libellé brut sinon
+  function stCell(t){ return t.status==='OTHER' ? '<span class="badge-st" style="color:var(--muted);border:1px solid var(--border)">'+esc(t.raw||'—')+'</span>' : badge(t.status); }
   // table of tickets (id / title / [epic] / status)
   function taskTable(list, withEpic){
     if(!list.length) return '<p class="modal-empty">No matching task.</p>';
     return '<table class="modal-table"><thead><tr><th>ID</th><th>Title</th>'+(withEpic?'<th>EPIC</th>':'')+'<th>Status</th></tr></thead><tbody>'
-      + list.map(function(t){ return '<tr><td class="mono">'+esc(t.id||'—')+'</td><td>'+esc(t.title||'(untitled)')+'</td>'
-          +(withEpic?'<td class="mono">'+esc(t.epic||'—')+'</td>':'')+'<td>'+badge(t.status)+'</td></tr>'; }).join('')
+      + list.map(function(t){ return '<tr><td class="mono">'+esc(t.id||'—')+'</td><td>'+mdInline(t.title||'(untitled)')+'</td>'
+          +(withEpic?'<td class="mono">'+esc((t.epics||[]).join(' ')||'—')+'</td>':'')+'<td>'+stCell(t)+'</td></tr>'; }).join('')
       + '</tbody></table>';
   }
   // registre incidents → [{id,title,fields[]}]
@@ -1437,9 +1602,9 @@ const HTML_TEMPLATE = `<!doctype html>
     var html='', cur=null, head=null, rows=[];
     function flush(){
       if(cur && head && rows.length){
-        html+='<h4 class="mgrp">'+esc(cur)+'</h4><table class="modal-table"><thead><tr>'
-          + head.map(function(h){ return '<th>'+esc(h)+'</th>'; }).join('')+'</tr></thead><tbody>'
-          + rows.map(function(r){ return '<tr>'+r.map(function(c,i){ return '<td'+(i===0?' class="mono"':'')+'>'+esc(c)+'</td>'; }).join('')+'</tr>'; }).join('')
+        html+='<h4 class="mgrp">'+mdInline(cur)+'</h4><table class="modal-table"><thead><tr>'
+          + head.map(function(h){ return '<th>'+mdInline(h)+'</th>'; }).join('')+'</tr></thead><tbody>'
+          + rows.map(function(r){ return '<tr>'+r.map(function(c,i){ return '<td'+(i===0?' class="mono"':'')+'>'+(i===0?esc(mdPlain(c)):mdInline(c))+'</td>'; }).join('')+'</tr>'; }).join('')
           + '</tbody></table>';
       }
       head=null; rows=[];
@@ -1453,31 +1618,76 @@ const HTML_TEMPLATE = `<!doctype html>
     flush();
     return html;
   }
+  // tickets rattachés à une EPIC (rattachements multiples inclus)
+  function ticketsOf(id){ var up=String(id||'').toUpperCase(); return tickets.filter(function(t){ return t.epics.indexOf(up)>=0; }); }
+  // bloc '### EPIC-n — …' de epics.md : sert de repli quand aucun ticket n'est rattaché
+  function epicBrief(id){
+    var md=(get('epics')||{}).content; if(!md) return '';
+    var lines=md.split('\\n'), grab=false, buf=[], up=String(id||'').toUpperCase();
+    for(var i=0;i<lines.length;i++){
+      var h=lines[i].match(/^#{2,4}\\s+(.*)$/);
+      if(h){ if(grab) break; grab=h[1].replace(/\`/g,'').trim().toUpperCase().indexOf(up)===0; continue; }
+      if(grab) buf.push(lines[i]);
+    }
+    while(buf.length && !buf[buf.length-1].trim()) buf.pop();
+    return buf.length? mdBlocks(buf.join('\\n')) : '';
+  }
   // popup openers
-  function openStatus(st){ var l=tickets.filter(function(t){ return t.status===st; }); openModal(LABEL[st]+' — tasks', l.length+' ticket'+(l.length===1?'':'s'), taskTable(l,true)); }
+  function openStatus(st){
+    var l=tickets.filter(function(t){ return t.status===st; }).sort(recent);
+    openModal((LABEL[st]||st)+' — tasks', l.length+' ticket'+(l.length===1?'':'s'), taskTable(l,true));
+  }
   function openEpic(id){
-    var up=(id||'').toUpperCase(); var l=tickets.filter(function(t){ return t.epic===up; });
-    var ep=epics.filter(function(e){ return e.id.toUpperCase()===up; })[0];
-    openModal((ep&&ep.title? id+' — '+ep.title : id), l.length+' task'+(l.length===1?'':'s'), taskTable(l,false));
+    var l=ticketsOf(id).sort(recent);
+    var ep=epics.filter(function(e){ return e.id.toUpperCase()===String(id||'').toUpperCase(); })[0];
+    var brief=epicBrief(id), body;
+    if(l.length){
+      body=taskTable(l,false)+(brief? '<h4 class="mgrp">EPIC definition</h4><div class="mdlite">'+brief+'</div>':'');
+    } else {
+      // aucun ticket rattaché (EPIC portée par une SPEC, tickets non découpés, ou colonne
+      // EPIC non renseignée) : on montre sa définition plutôt qu'une popup vide.
+      body=(brief? '<p class="modal-empty">No ticket linked to this EPIC in <code>memory/kanban.md</code> (nor in the archive) — showing its definition from <code>memory/epics.md</code>.</p><div class="mdlite">'+brief+'</div>'
+                 : '<p class="modal-empty">No ticket linked to this EPIC, and no definition found in <code>memory/epics.md</code>.</p>');
+    }
+    openModal((ep&&ep.title? id+' — '+ep.title : id), l.length+' task'+(l.length===1?'':'s'), body);
+  }
+  // détail d'un ticket (carte du kanban)
+  function openTicket(id){
+    var t=tickets.filter(function(x){ return x.id===id; })[0]; if(!t) return;
+    var m=ticketMilestone(t);
+    var rows=[['Milestone', m? esc(mdPlain(m.name)):'—'],
+              ['EPIC', esc((t.epics||[]).join(', ')||'—')],
+              ['Status', stCell(t)],
+              ['Created', esc(t.date||'—')],
+              ['Source', t.archived? '<code>memory/archive/kanban.md</code>':'<code>memory/kanban.md</code>']];
+    openModal((t.id||'Task')+(t.title? ' — '+t.title:''), '',
+      '<table class="modal-table"><tbody>'+rows.map(function(r){ return '<tr><th style="width:120px">'+r[0]+'</th><td>'+r[1]+'</td></tr>'; }).join('')+'</tbody></table>'
+      + (t.desc? '<h4 class="mgrp">Description</h4><div class="mdlite">'+mdBlocks(t.desc)+'</div>':''));
+  }
+  // « État actuel » complet, rendu (le chapô n'en affiche qu'un extrait borné)
+  function openState(){
+    var s=stateSection((get('project-state')||{}).content);
+    openModal('Project state', 'memory/project-state.md — current state',
+      s? '<div class="mdlite">'+mdBlocks(s.full)+'</div>' : '<p class="modal-empty">Nothing recorded yet.</p>');
   }
   function openIncidents(){
     var l=listIncidents((get('incidents')||{}).content);
-    var b=l.length? l.map(function(i){ return '<div class="inc"><div class="inc-h"><span class="mono">'+esc(i.id)+'</span>'+esc(i.title)+'</div>'
-      +(i.fields.length?'<ul>'+i.fields.map(function(f){ return '<li>'+esc(f)+'</li>'; }).join('')+'</ul>':'')+'</div>'; }).join('')
+    var b=l.length? l.map(function(i){ return '<div class="inc"><div class="inc-h"><span class="mono">'+esc(i.id)+'</span>'+mdInline(i.title)+'</div>'
+      +(i.fields.length?'<ul>'+i.fields.map(function(f){ return '<li>'+mdInline(f)+'</li>'; }).join('')+'</ul>':'')+'</div>'; }).join('')
       : '<p class="modal-empty">No open incident.</p>';
     openModal('Bugs to handle', l.length+' incident'+(l.length===1?'':'s'), b);
   }
   function openVulns(){
     var l=listVulns((get('security')||{}).content);
     var b=l.length? '<table class="modal-table"><thead><tr><th>ID</th><th>Severity</th><th>Component</th><th>Real risk</th><th>Status</th></tr></thead><tbody>'
-      + l.map(function(v){ return '<tr><td class="mono">'+esc(v.id)+'</td><td>'+sevBadge(v.sev)+'</td><td>'+esc(v.comp||'—')+'</td><td>'+esc(v.risk||'—')+'</td><td>'+esc(v.status||'—')+'</td></tr>'; }).join('')
+      + l.map(function(v){ return '<tr><td class="mono">'+esc(v.id)+'</td><td>'+sevBadge(v.sev)+'</td><td>'+mdInline(v.comp||'—')+'</td><td>'+mdInline(v.risk||'—')+'</td><td>'+mdInline(v.status||'—')+'</td></tr>'; }).join('')
       + '</tbody></table>' : '<p class="modal-empty">No open vulnerability.</p>';
     openModal('Open vulnerabilities', l.length+' item'+(l.length===1?'':'s'), b);
   }
   function openCandidates(){
     var l=listCandidates((get('market-watch')||{}).content);
     var b=l.length? '<table class="modal-table"><thead><tr><th>ID</th><th>Topic</th><th>Value hypothesis</th><th>Impact</th><th>Effort</th></tr></thead><tbody>'
-      + l.map(function(x){ return '<tr><td class="mono">'+esc(x.id)+'</td><td>'+esc(x.topic||'—')+'</td><td>'+esc(x.hyp||'—')+'</td><td>'+esc(x.impact||'—')+'</td><td>'+esc(x.effort||'—')+'</td></tr>'; }).join('')
+      + l.map(function(x){ return '<tr><td class="mono">'+esc(x.id)+'</td><td>'+mdInline(x.topic||'—')+'</td><td>'+mdInline(x.hyp||'—')+'</td><td>'+mdInline(x.impact||'—')+'</td><td>'+mdInline(x.effort||'—')+'</td></tr>'; }).join('')
       + '</tbody></table>' : '<p class="modal-empty">No pending arbitration.</p>';
     openModal('Product arbitrations', l.length+' topic'+(l.length===1?'':'s'), b);
   }
@@ -1494,13 +1704,40 @@ const HTML_TEMPLATE = `<!doctype html>
   }).join('') + '<span class="badge style">style&nbsp;<b>'+esc(STYLE)+'</b></span>';
   document.getElementById('badges').innerHTML = badges;
 
-  var board = parseBoard((get('kanban')||{}).content);
-  var tickets = parseKanbanFull((get('kanban')||{}).content);
   var epics = parseEpics((get('epics')||{}).content);
+  var epicIds = epics.map(function(e){ return e.id; });
+  // tickets vivants + tickets archivés par @ailed-release (memory/archive/kanban.md) :
+  // sans l'archive, les EPICs livrées paraissent vides et l'avancement est sous-estimé.
+  // Dédoublonnage par ID, le kanban vivant faisant foi.
+  var tickets = (function(){
+    var live=parseKanbanFull((get('kanban')||{}).content, epicIds, 1000000, false);
+    var old=parseKanbanFull(ARCHIVE.kanban, epicIds, 0, true);
+    var seen={}, out=[];
+    live.concat(old).forEach(function(t){
+      if(t.id){ if(seen[t.id]) return; seen[t.id]=1; }
+      out.push(t);
+    });
+    return out;
+  })();
+  // ordre « plus récent d'abord » : numéro de ticket, puis ordre d'apparition
+  function recent(a,b){ return (b.num-a.num)||(b.seq-a.seq); }
+  var board={}; STATUSES.forEach(function(s){ board[s]=[]; });
+  tickets.forEach(function(t){ if(board[t.status]) board[t.status].push(t); });
   var total = STATUSES.reduce(function(n,s){ return n+board[s].length; },0);
   var done = board.DONE.length;
   var pct = total ? Math.round(done/total*100) : 0;
-  var summary = stateSummary((get('project-state')||{}).content);
+  var state = stateSection((get('project-state')||{}).content);
+  // jalon de rattachement d'un ticket, via la colonne EPICs de roadmap.md
+  var miles = parseMilestonesFull((get('roadmap')||{}).content);
+  var msByEpic = {};
+  miles.forEach(function(m){ m.epics.forEach(function(e){ if(!msByEpic[e]) msByEpic[e]=m; }); });
+  function ticketMilestone(t){
+    var found=null;
+    (t.epics||[]).some(function(e){ if(msByEpic[e]){ found=msByEpic[e]; return true; } return false; });
+    return found;
+  }
+  // « M3+++ — Galerie navigable » → « M3+++ »
+  function msKey(m){ return m ? mdPlain(m.name.split(/\\s+[—–-]\\s+/)[0]||m.name) : ''; }
 
   // ── Camemberts : avancement global + jalon en cours ───────
   var globalSegs = STATUSES.slice().reverse().map(function(s){ return { value:board[s].length, color:SCOL[s], label:LABEL[s], st:s }; });
@@ -1513,7 +1750,7 @@ const HTML_TEMPLATE = `<!doctype html>
     +   '<ul class="legend">'+(globalLegend||'<li class="empty">No ticket</li>')+'</ul></div>'
     + '</div>';
 
-  var ms = milestoneProgress((get('roadmap')||{}).content, epics, tickets);
+  var ms = milestoneProgress(miles, epics, tickets);
   var msCard;
   if(ms){
     var msSegs=[{ value:ms.done, color:SCOL.DONE },{ value:Math.max(0,ms.total-ms.done), color:'var(--border)' }];
@@ -1521,7 +1758,7 @@ const HTML_TEMPLATE = `<!doctype html>
       '<div class="card pie-card">'
       + '<div class="piefig">'+pieSvg(msSegs,{big:ms.pct+'%',small:'≈ est.'})+'</div>'
       + '<div class="pieinfo"><h3>Current milestone</h3>'
-      +   '<div class="pie-sub"><b style="color:var(--text)">'+esc(ms.name)+'</b>'+(ms.target?' · target '+esc(ms.target):'')+'</div>'
+      +   '<div class="pie-sub"><b style="color:var(--text)">'+esc(mdPlain(ms.name))+'</b>'+(ms.target?' · target '+esc(ms.target):'')+'</div>'
       +   '<ul class="legend"><li><span class="ldot" style="background:'+SCOL.DONE+'"></span>Covered<b>'+ms.done+'</b></li>'
       +     '<li><span class="ldot" style="background:var(--border)"></span>Remaining<b>'+Math.max(0,ms.total-ms.done)+'</b></li></ul></div>'
       + '</div>';
@@ -1552,38 +1789,38 @@ const HTML_TEMPLATE = `<!doctype html>
   var epEff = epList.map(function(e){ var o={ id:e.id, title:e.title, eff:epicEff(e,tickets) }; return o; });
   var timelineHtml = epEff.length ? epEff.map(function(e){
     var g=e.eff==='done'?'✓':(e.eff==='current'?'▶':'·');
-    return '<li class="'+e.eff+' clickable" data-epic="'+esc(e.id)+'" title="Click to list this EPIC\\'s tasks"><span class="node">'+g+'</span><span class="ep-id">'+esc(e.id)+'</span><span class="ep-title">'+esc(e.title||'')+'</span></li>';
+    return '<li class="'+e.eff+' clickable" data-epic="'+esc(e.id)+'" title="Click to list this EPIC\\'s tasks"><span class="node">'+g+'</span><span class="ep-id">'+esc(e.id)+'</span><span class="ep-title">'+esc(mdPlain(e.title||''))+'</span></li>';
   }).join('') : '<li class="todo"><span class="node">·</span><span class="ep-title">No EPIC defined</span></li>';
 
-  // ── EPIC en cours : tâches faites / en cours / à venir ────
-  var ci=epEff.findIndex(function(e){ return e.eff==='current'; });
-  if(ci<0) ci=epEff.findIndex(function(e){ return e.eff!=='done'; });
-  if(ci<0) ci=epEff.length-1;
-  var curEpic=epEff[ci];
-  var curEpicHtml='';
-  if(curEpic){
-    var linked=tickets.filter(function(t){ return curEpic.id && t.epic===curEpic.id.toUpperCase(); });
-    var pool=linked.length?linked:(epics.length?[]:tickets);
-    var doneT=pool.filter(function(t){ return t.status==='DONE'; });
-    var curT=pool.filter(function(t){ return t.status==='IN_PROGRESS'; });
-    var nextT=pool.filter(function(t){ return t.status!=='DONE' && t.status!=='IN_PROGRESS'; });
-    function tcol(cls,label,arr,col){
-      var items=arr.length?arr.map(function(t){
-        return '<li style="--cc:'+col+'">'+(t.id?'<span class="tid">'+esc(t.id)+'</span>':'')+esc(t.title||'(untitled)')+'</li>';
-      }).join(''):'<div class="empty">—</div>';
-      return '<div class="taskcol '+cls+'"><h4><span>'+label+'</span><span>'+arr.length+'</span></h4><ul>'+items+'</ul></div>';
-    }
-    curEpicHtml =
-      '<div class="card"><div class="cur-epic-h"><strong><span class="eid">'+esc(curEpic.id)+'</span> '+esc(curEpic.title||'')+'</strong>'
-      + '<span class="pill">'+doneT.length+'/'+pool.length+' tasks done</span></div>'
-      + '<div class="taskcols">'
-      +   tcol('done','Done',doneT,SCOL.DONE)
-      +   tcol('cur','In progress',curT,SCOL.IN_PROGRESS)
-      +   tcol('next','Upcoming',nextT,SCOL.TODO)
-      + '</div></div>';
-  } else {
-    curEpicHtml = '<div class="card"><div class="empty">No EPIC in progress.</div></div>';
+  // ── Kanban : une colonne par statut non-DONE, + les DONE récentes à droite ─
+  var DONE_SHOWN = 5;
+  function kcard(t){
+    var m=ticketMilestone(t);
+    return '<div class="kcard'+(t.status==='SUPERSEDED'?' sup':'')+'" data-tid="'+esc(t.id)+'" style="--cc:'+(SCOL[t.status]||'#8b929e')
+      + '" title="'+esc(clampText(mdPlain(t.title),300)).replace(/"/g,'&quot;')+' — click for details">'
+      + '<span class="kms">'+esc(m? msKey(m):'—')+'</span>'
+      + '<span class="kep">'+esc((t.epics||[]).join(' ')||'no EPIC')+'</span>'
+      + '<span class="kid">'+esc(t.id||'—')+'</span>'
+      + '<span class="ktt">'+mdInline(t.title||'(untitled)')+'</span>'
+      + (t.status==='OTHER'? '<span class="kraw">'+esc(t.raw)+'</span>':'')
+      + '</div>';
   }
+  function kcol(st, list, shown){
+    var extra=shown && list.length>shown ? list.length-shown : 0;
+    var body=list.length
+      ? list.slice(0, shown||list.length).map(kcard).join('')
+        + (extra? '<button class="kmore" type="button" data-st="'+st+'">+ '+extra+' more…</button>':'')
+      : '<div class="kempty">—</div>';
+    return '<div class="kcol"><h4><span class="kdot" style="background:'+(SCOL[st]||'#8b929e')+'"></span>'+(LABEL[st]||st)
+      + '<span class="kn'+(list.length?' clickable" data-st="'+st+'" title="Click to list them all':'')+'">'+list.length+'</span></h4>'
+      + body+'</div>';
+  }
+  // statuts non-DONE du référentiel, puis SUPERSEDED / OTHER seulement s'ils existent
+  var boardCols = STATUSES.filter(function(s){ return s!=='DONE'; })
+    .concat(OFF_BOARD.filter(function(s){ return tickets.some(function(t){ return t.status===s; }); }))
+    .map(function(st){ return kcol(st, tickets.filter(function(t){ return t.status===st; }).sort(recent)); }).join('');
+  // dernière colonne : les DONE, bornées aux plus récentes (numéro de ticket décroissant)
+  var boardHtml = '<div class="kanban">'+boardCols+kcol('DONE', board.DONE.slice().sort(recent), DONE_SHOWN)+'</div>';
 
   // ── Watch-out list ────────────────────────────────────────
   var watch=[];
@@ -1593,14 +1830,19 @@ const HTML_TEMPLATE = `<!doctype html>
   if(board.TO_CHECK.length) watch.push(board.TO_CHECK.length+' pending TO_CHECK clarification(s)');
   var watchHtml = watch.length ? watch.map(function(w){ return '<li>'+w+'</li>'; }).join('') : '<li class="empty">Nothing to report</li>';
 
+  // Chapô : extrait borné en texte brut (jamais de markdown à l'écran) + lien vers la popup
+  var ledeHtml = state
+    ? '<p class="lede">'+esc(clampText(state.first,300))+' <button class="more" type="button" id="stateMore">Read the full state</button></p>'
+    : '';
+
   document.getElementById('synth').innerHTML =
     '<h2 class="sec">Overview</h2>'
-    + (summary?'<p class="lede">'+esc(summary)+'</p>':'')
+    + ledeHtml
     + '<div class="kpis">'+globalCard+msCard+statsCard+'</div>'
     + '<h2 class="sec">EPIC timeline</h2>'
     + '<div class="card"><ol class="epic-timeline">'+timelineHtml+'</ol></div>'
-    + '<h2 class="sec">Current EPIC</h2>'
-    + curEpicHtml
+    + '<h2 class="sec">Kanban — open tasks · '+DONE_SHOWN+' latest done</h2>'
+    + boardHtml
     + '<h2 class="sec">Watch out</h2>'
     + '<div class="card"><ul class="watch">'+watchHtml+'</ul></div>';
 
@@ -1635,7 +1877,10 @@ const HTML_TEMPLATE = `<!doctype html>
 
   // ── clics de la synthèse → popups (délégation sur #synth, qui persiste) ──
   document.getElementById('synth').addEventListener('click', function(ev){
-    var st=ev.target.closest('li[data-st]'); if(st){ openStatus(st.getAttribute('data-st')); return; }
+    if(ev.target.closest('#stateMore')){ openState(); return; }
+    var st=ev.target.closest('li[data-st], .kn[data-st], .kmore[data-st]');
+    if(st){ openStatus(st.getAttribute('data-st')); return; }
+    var tk=ev.target.closest('.kcard[data-tid]'); if(tk){ openTicket(tk.getAttribute('data-tid')); return; }
     var ep=ev.target.closest('li[data-epic]'); if(ep){ openEpic(ep.getAttribute('data-epic')); return; }
     var k=ev.target.closest('.stat[data-kind]');
     if(k){ var kind=k.getAttribute('data-kind'); if(kind==='bugs') openIncidents(); else if(kind==='vulns') openVulns(); else openCandidates(); }
@@ -1708,11 +1953,13 @@ function parseEpics(content) {
   return out;
 }
 
-// parse memory/kanban.md → [{id,title,status,epic}] keeping the EPIC link
+// parse memory/kanban.md → [{id,title,status,epic}] keeping the EPIC link.
+// `content` may concatenate the live kanban and its archive: rows are de-duplicated by ID.
 function parseKanbanFull(content) {
   const out = [];
   if (!content) return out;
   let map = null;
+  const seen = new Set();
   for (const line of content.split("\n")) {
     if (line.trim().charAt(0) !== "|") { map = null; continue; }
     const cs = tableCells(line);
@@ -1729,8 +1976,13 @@ function parseKanbanFull(content) {
     if (isSeparatorRow(line) || !map) continue;
     const st = normStatus(cs[map.status]);
     if (!st) continue;
+    const tid = (map.id >= 0 ? cs[map.id] : "").replace(/`/g, "").trim();
+    if (tid) {
+      if (seen.has(tid)) continue;
+      seen.add(tid);
+    }
     out.push({
-      id: map.id >= 0 ? cs[map.id] : "",
+      id: tid,
       title: map.title >= 0 ? cs[map.title] : "",
       status: st,
       epic: map.epic >= 0 ? (cs[map.epic] || "").replace(/`/g, "").trim().toUpperCase() : "",
@@ -1747,9 +1999,11 @@ function readRuntime(projectDir) {
   } catch (_) { return null; }
 }
 
-// effective epic status: derived from its tickets, falling back to the file value
+// effective epic status: derived from its tickets, falling back to the file value.
+// Tickets outside the progress statuses (SUPERSEDED) are neutral: an EPIC whose live
+// work is all DONE stays "done" even when it trails superseded tickets.
 function epicEffStatus(epic, tickets) {
-  const ts = tickets.filter((t) => t.epic && t.epic === epic.id);
+  const ts = tickets.filter((t) => t.epic && t.epic === epic.id && STATUSES.indexOf(t.status) >= 0);
   if (ts.length) {
     if (ts.some((t) => t.status === "IN_PROGRESS")) return "current";
     if (ts.every((t) => t.status === "DONE")) return "done";
@@ -1784,8 +2038,10 @@ function buildSidebar(epics, tickets, rt, width) {
   };
   const G = { done: "✓", current: "▶", todo: "·" };
   const paintOf = { done: c.green, current: cur, todo: c.dim };
-  const epLabel = (e) => `${e.id}${e.title ? "  " + e.title : ""}`;
-  const tkLabel = (t) => `${t.id ? t.id + " " : ""}${t.title || ""}`.trim() || "(sans titre)";
+  // les libellés de la mémoire sont du markdown : on n'affiche jamais les marqueurs
+  const plainMd = (s) => String(s || "").replace(/`/g, "").replace(/\*\*/g, "").replace(/~~/g, "").trim();
+  const epLabel = (e) => `${e.id}${e.title ? "  " + plainMd(e.title) : ""}`;
+  const tkLabel = (t) => `${t.id ? t.id + " " : ""}${plainMd(t.title)}`.trim() || "(sans titre)";
   // compact filled/empty bar of a given length
   const bar = (pct, len) => {
     const f = Math.round((Math.max(0, Math.min(100, pct)) / 100) * len);
@@ -1840,7 +2096,7 @@ function buildSidebar(epics, tickets, rt, width) {
   // one (▶, yellow) expands to show its last-done / in-progress / next tasks.
   withStatus.forEach((e, i) => {
     const isCur = i === ci;
-    const linked = tickets.filter((t) => e.id && t.epic === e.id);
+    const linked = tickets.filter((t) => e.id && t.epic === e.id && STATUSES.indexOf(t.status) >= 0);
     const etx = isCur ? (linked.length ? linked : (anyLinked ? [] : tickets)) : linked;
     epicRow(G[e.eff], epLabel(e), pctOf(etx, e.eff), paintOf[e.eff]);
     if (!isCur) return;
@@ -1864,9 +2120,10 @@ function buildSidebar(epics, tickets, rt, width) {
     if (nextTk.length > 4) row(2, "", c.dim(`+${nextTk.length - 4} autres tâches`));
   });
 
-  // footer
-  const total = tickets.length;
-  const done = tickets.filter((t) => t.status === "DONE").length;
+  // footer — mêmes compteurs que `ai-led status` : hors statuts d'avancement exclus
+  const counted = tickets.filter((t) => STATUSES.indexOf(t.status) >= 0);
+  const total = counted.length;
+  const done = counted.filter((t) => t.status === "DONE").length;
   const pctAll = total ? Math.round((100 * done) / total) : 0;
   const wf = rt && rt.workflow ? rt.workflow : null;
   const running0 = rt && rt.running && rt.running[0];
@@ -1927,7 +2184,10 @@ function watch() {
 
   const frame = () => {
     const epics = parseEpics(safeRead(path.join(memDir, "epics.md")));
-    const tickets = parseKanbanFull(safeRead(path.join(memDir, "kanban.md")));
+    // archive incluse : sans elle, une EPIC dont tous les tickets sont archivés paraît vide
+    const tickets = parseKanbanFull(
+      safeRead(path.join(memDir, "kanban.md")) + "\n\n" + readKanbanArchive(memDir)
+    );
     const rt = readRuntime(projectDir);
     const w = widthFlag > 0 ? widthFlag : Math.max(20, process.stdout.columns || 34);
     return buildSidebar(epics, tickets, rt, w).join("\n");
