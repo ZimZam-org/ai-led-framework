@@ -268,9 +268,11 @@ roadmap, kanban, fonctionnalités, veille, process) :
   `ailed-status.html`, un tableau de bord **statique** qui ouvre sur une **synthèse visuelle** :
   deux **camemberts** (avancement global + jalon en cours, approximatif), trois compteurs d'action
   (**bugs** à traiter, **vulnérabilités** ouvertes, **arbitrages produit** discovery → roadmap),
-  une **timeline chronologique des EPICs** et le **détail de l'EPIC en cours** (tâches terminées /
-  en cours / à venir) ; le détail brut de chaque fichier `memory/` reste accessible, **replié** en
-  bas de page — **aucun serveur, aucune donnée projet envoyée** :
+  une **timeline chronologique des EPICs** et un **board kanban** — une colonne par statut
+  non-`DONE` et, à droite, les **5 dernières tâches `DONE`**, chaque carte affichant
+  **jalon → EPIC → ID → titre** et s'ouvrant en popup. Les tickets archivés
+  (`memory/archive/kanban.md`) sont comptés eux aussi ; le détail brut de chaque fichier `memory/`
+  reste accessible, **replié** en bas de page — **aucun serveur, aucune donnée projet envoyée** :
 
 ```bash
 npx @s2bp/ai-led-framework status          # snapshot terminal
