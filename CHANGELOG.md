@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0]
+
+### Added
+- `status --html`: the **Current EPIC** panel is replaced by a real **kanban board** —
+  one column per non-`DONE` status (`TO_CHECK` · `TODO` · `IN_PROGRESS` · `TO_TEST`,
+  plus `Superseded`/`Other` when the memory holds such statuses) and, as the
+  rightmost column, the **5 latest `DONE`** tasks. Each card shows **milestone →
+  EPIC → ID → title** (title clamped to 4 lines) and opens a popup with its
+  milestone, EPIC, status, creation date and description.
+- Archived tickets (`memory/archive/kanban.md`) now feed the report, the terminal
+  snapshot and the `watch` sidebar: without them, shipped EPICs looked ticket-less
+  and the overall progress was understated.
+- `SUPERSEDED` (and `OBSOLETE`/`CANCELLED`/`WONTFIX`/…) is recognised as a status:
+  visible on the board and in the EPIC popups, but **excluded from the progress
+  counters** so voided work never distorts them.
+
+### Fixed
+- `status --html`: the **Overview** lede no longer dumps the raw markdown of
+  `project-state.md` § *État actuel* between the title and the charts. It now shows a
+  bounded plain-text excerpt of the first paragraph, with the whole section rendered
+  (bold, code, lists, tables) in a **Read the full state** popup. All report labels go
+  through a small offline markdown renderer — no more `**`, backticks or link syntax
+  anywhere in the page, nor in the `watch` sidebar.
+- `status --html`: an EPIC popup could come up **empty** — its tickets were archived,
+  carried an unrecognised status (`SUPERSEDED`), a status with a trailing comment
+  (`DONE (PR #118, merged develop)`), or a multi-EPIC cell (`EPIC-1/2/3`). All four
+  now resolve, and an EPIC with genuinely no ticket falls back to its definition from
+  `memory/epics.md`.
+- Markdown table rows are split on unescaped pipes only: cells containing `\|`
+  (common inside code spans) are no longer truncated mid-content.
+- Ticket IDs are de-duplicated when the live kanban and its archive are read together.
+
 ## [0.13.1]
 
 ### Changed

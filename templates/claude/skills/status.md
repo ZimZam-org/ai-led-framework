@@ -57,13 +57,21 @@ npx @s2bp/ai-led-framework status --html
 
 Elle génère `ailed-status.html` (fichier statique ouvrable dans le navigateur, aucun serveur,
 aucune donnée envoyée) avec, en une page :
+- un **chapô** : extrait borné (texte brut) de « État actuel » de `project-state.md`, l'intégralité
+  étant rendue dans une popup (« Read the full state ») ;
 - deux **camemberts** : avancement global (tickets DONE / total) et avancement **approximatif**
   du **jalon en cours** (tickets des EPICs rattachées au jalon) ;
 - trois compteurs d'action : **bugs à traiter** (registre `incidents.md`), **vulnérabilités ouvertes**
   (`security.md`) et **sujets en attente d'arbitrage produit** (candidats `market-watch.md`, discovery → roadmap) ;
-- une **timeline chronologique des EPICs** (traitées · en cours · à venir) ;
-- le **détail de l'EPIC en cours** : tâches terminées · en cours · à venir.
+- une **timeline chronologique des EPICs** (traitées · en cours · à venir) ; au clic, la liste de
+  ses tickets, complétée par sa définition (`epics.md`) ;
+- un **board kanban** : une colonne par statut non-`DONE` (`TO_CHECK` · `TODO` · `IN_PROGRESS` ·
+  `TO_TEST`, plus `Superseded`/`Other` si la mémoire en contient), et en dernière colonne les
+  **5 dernières tâches `DONE`**. Chaque carte affiche **jalon → EPIC → ID → titre** et s'ouvre
+  en popup (jalon, EPIC, statut, date, description).
 
+Les tickets archivés (`memory/archive/kanban.md`) sont **inclus** dans les compteurs et les
+popups — sinon les EPICs livrées paraissent vides et l'avancement est sous-estimé.
 Le détail brut de la mémoire reste accessible, replié, en bas de page. La variante `status` sans
 option imprime un snapshot en terminal, sans consommer de tokens.
 
