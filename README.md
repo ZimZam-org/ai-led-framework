@@ -260,9 +260,11 @@ features, market watch, process):
   kanban counts and a "watch" list. Add `--html` to generate `ailed-status.html`, a **static**
   dashboard that opens on a **visual synthesis**: two **pie charts** (global progress + current
   milestone, approximate), three action counters (**bugs** to handle, open **vulnerabilities**,
-  product **arbitrations** discovery → roadmap), a **chronological EPIC timeline**, and the
-  **current EPIC's breakdown** (tasks done / in progress / upcoming); each `memory/` file's raw
-  detail stays available, **collapsed** at the bottom — **no server, no project data sent**:
+  product **arbitrations** discovery → roadmap), a **chronological EPIC timeline**, and a
+  **kanban board** — one column per non-`DONE` status plus the **5 latest `DONE`** tasks on the
+  right, each card showing **milestone → EPIC → ID → title** and opening its detail in a popup.
+  Archived tickets (`memory/archive/kanban.md`) count in too. Each `memory/` file's raw detail
+  stays available, **collapsed** at the bottom — **no server, no project data sent**:
 
 ```bash
 npx @s2bp/ai-led-framework status          # terminal snapshot
