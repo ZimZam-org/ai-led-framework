@@ -75,6 +75,23 @@ Valeurs possibles : `opus` · `sonnet` · `haiku` · `inherit` (hérite du modè
 > (pas d'intégration dédiée). `@ailed-seo-aso`, lui, **dégrade** vers la **Veille** en confiance
 > basse si **SEO / ASO** vaut `{{DISABLED}}`, et ne s'arrête que si la **Veille** l'est aussi.
 
+### Application locale (rendu d'écrans)
+
+Coordonnées de l'app en local, **lues par `/ailed-screens`** (planche de rendu de fin de dev) :
+
+| Champ                                   | Valeur         |
+| --------------------------------------- | -------------- |
+| URL de base de l'app                    | `à renseigner` |
+| Commande de démarrage (facultatif)      | `à renseigner` |
+| Compte de test (facultatif)             | `à renseigner` |
+
+> Exemple d'**URL de base** : `http://localhost:3000`. La **commande de démarrage** sert
+> uniquement à la rappeler à l'humain quand l'app ne répond pas (`/ailed-screens` ne démarre
+> jamais l'app lui-même). Le **compte de test** permet d'atteindre les écrans authentifiés :
+> n'y mets **jamais de secret réel** — un identifiant de compte de démo, ou la variable
+> d'environnement qui le porte. Tant que l'URL vaut `à renseigner`, la skill **demande la valeur
+> à l'humain puis la réécrit ici** ; elle ne capture jamais sur une cible devinée.
+
 ### Ticketing & documentation externes (Jira / Confluence via MCP)
 
 Principe **miroir** : la `memory/` reste la **source de vérité locale** (hors-ligne, versionnée
