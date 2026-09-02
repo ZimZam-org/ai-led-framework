@@ -7,7 +7,7 @@ project, with:
 
 - 🧠 a **persistent memory** (`memory/`) kept up to date and used as the source of truth;
 - 🤖 **21 agents** prefixed `ailed-*` covering 4 workflows (Discovery, Feature, Incident, Security);
-- 🛠️ **11 reusable skills** for recurring tasks (status dashboard, ADR, git-flow, quality-gate, design-system, screen contact sheet…).
+- 🛠️ **12 reusable skills** for recurring tasks (status dashboard, memory-change review, ADR, git-flow, quality-gate, design-system, screen contact sheet…).
 
 One-command install:
 
@@ -20,7 +20,7 @@ npx @s2bp/ai-led-framework init
 | Folder              | Contents                                                       |
 | ------------------- | -------------------------------------------------------------- |
 | `.claude/agents/`   | 21 `ailed-*.md` agents (callable via `@ailed-<name>`)          |
-| `.claude/skills/`   | 11 `ailed-*` skills (callable via `/ailed-<name>`)             |
+| `.claude/skills/`   | 12 `ailed-*` skills (callable via `/ailed-<name>`)             |
 | `.claude/commands/` | `/ailed-bootstrap` slash-command (framework bootstrap)         |
 | `.claude/hooks/`    | `ailed-runtime-hook.js` + `Task` hooks in `settings.json` feeding the live progress sidebar (`watch`/`dashboard`) |
 | `memory/`           | 15 project memory files (including `config.md`, `process.md`, `conventions.md` and `market-watch.md`), in the chosen language |
@@ -245,14 +245,51 @@ The config (trigram, integrations, language) is **re-read from `memory/config.md
 
 ## The skills (prefix `/ailed-`)
 
-`ailed-status`, `ailed-adr`, `ailed-architecture-map`, `ailed-git-flow`, `ailed-quality-gate`,
-`ailed-release-flow`, `ailed-promo`, `ailed-design-system`, `ailed-wireframe`,
-`ailed-mockup-preview`, `ailed-screens`.
+`ailed-status`, `ailed-memory-diff`, `ailed-adr`, `ailed-architecture-map`, `ailed-git-flow`,
+`ailed-quality-gate`, `ailed-release-flow`, `ailed-promo`, `ailed-design-system`,
+`ailed-wireframe`, `ailed-mockup-preview`, `ailed-screens`.
 
 `ailed-design-system`, `ailed-wireframe` and `ailed-mockup-preview` enrich `@ailed-ux` (shared
 design baseline, 3 wireframe variants, mockup render + screenshots). They rely on the native
 Claude Code skills `frontend-design` and `chrome-devtools` when present in the target
 environment, and degrade gracefully otherwise.
+
+### `/ailed-memory-diff` — review what the agents changed in `memory/`
+
+The memory is the source of truth, and the agents rewrite it constantly. Before a human validates
+a SPEC, an ADR or a release, the useful question is not "what does the file say" but **"what did
+the agent change, and where"**. `git diff` answers it in raw hunks; **`/ailed-memory-diff`**
+renders the same data **grouped by markdown section**:
+
+```bash
+npx @s2bp/ai-led-framework memory-diff                              # HEAD → working tree
+npx @s2bp/ai-led-framework memory-diff --since=HEAD~1 --until=HEAD  # the last commit
+npx @s2bp/ai-led-framework memory-diff --since=develop              # the whole branch delta
+npx @s2bp/ai-led-framework memory-diff --html                       # self-contained HTML report
+npx @s2bp/ai-led-framework memory-diff --clip                       # rich text on the clipboard
+```
+
+- **Grouped by section, not by hunk**: for each file, file → section (an `H2 › H3` breadcrumb) →
+  added / removed lines, plus the **tickets** it touches (trigram read from `memory/config.md`).
+- **Review flags raised automatically**: **deleted section**, `Last Updated` **not bumped**,
+  `memory/` file **not committed** (invisible to `git diff`, yet a change as far as review goes).
+- **What adds nothing gets summarized, not unfolded**: an **entirely new** file (a fresh SPEC —
+  everything is a `+`, over thousands of lines) is rendered as its **table of contents**; a
+  **non-Markdown** `memory/` file (an `@ailed-ux` HTML mockup) as its size alone. `--full`
+  unfolds both. Without this, a 2,500-line SPEC produces an unreadable report.
+- **Deterministic and zero-token**: the command does the collecting, the skill only adds the
+  interpretation (consistency across `kanban.md` / `features.md` / `decisions.md`, content
+  deleted without archiving, unsourced figures) and a verdict — `RAS` · `à vérifier` ·
+  `à corriger`.
+- **`--html`** writes a **static, self-contained** report (`<timestamp>_ailed-memory-diff.html`):
+  no CDN, no script, no data sent, light/dark following the system theme.
+- **`--clip`** loads the same report as `text/html` onto the clipboard, so it pastes
+  **formatted** into Teams / Slack / Outlook / Confluence, which do not accept Markdown.
+  Backends: `wl-copy` (Wayland), `xclip` (X11), `osascript` (macOS); with no backend it says so
+  instead of pasting raw HTML. No `pandoc` dependency.
+
+The skill is **strictly read-only**: it never fixes a diff. Corrections go through the agent that
+owns the file (`@ailed-pm`, `@ailed-architect`, `@ailed-planner`, `@ailed-release`).
 
 ### `/ailed-screens` — the end-of-dev contact sheet
 
