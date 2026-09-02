@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0]
+
+### Added
+- New skill **`/ailed-memory-diff`** + the deterministic command
+  **`ai-led memory-diff [--since=REF] [--until=REF] [--html] [--out=PATH] [--clip]`** — review
+  what the agents changed in `memory/`. The memory is the source of truth and the agents rewrite
+  it constantly; before a human validates a SPEC, an ADR or a release, the useful question is
+  **what changed and where**, not what the file says. The command renders the git diff of
+  `memory/` **grouped by markdown section** (`file → H2 › H3 breadcrumb → added/removed lines`)
+  with the **tickets** each file touches (trigram read from `memory/config.md`), and raises the
+  review flags a memory diff deserves: **deleted section**, `Last Updated` **not bumped**, and
+  `memory/` files **not committed** (invisible to `git diff`, yet a change as far as review goes).
+  Deterministic and **zero-token**: the skill runs the command first and only adds the
+  interpretation (cross-file consistency, content deleted without archiving, unsourced figures)
+  plus a verdict. **Strictly read-only** — it never fixes a diff.
+- `memory-diff` summarizes rather than unfolds what carries no review value: an **entirely new**
+  file over 60 lines (a fresh SPEC is all `+` over thousands of lines) is rendered as its **table
+  of contents**, and a **non-Markdown** `memory/` file (an `@ailed-ux` HTML mockup) as its size
+  alone. `--full` unfolds both. Measured on a real project: 2,395 lines of terminal output down
+  to 115 for the same four changed files.
+- `memory-diff --html` writes a **static, self-contained** report
+  (`<timestamp>_ailed-memory-diff.html`): no CDN, no script, no data sent, light/dark following
+  the system theme. `--clip` loads the same report as `text/html` onto the clipboard so it pastes
+  **formatted** into Teams / Slack / Outlook / Confluence, which do not accept Markdown — via
+  `wl-copy` (Wayland) / `xclip` (X11) / `osascript` (macOS), with **no `pandoc` dependency**, and
+  a readback check so a success message is never printed for a clipboard that stayed empty.
+- New skill **`/ailed-screens`** — the end-of-dev contact sheet. It gathers the screens a
+  ticket actually touched into **one self-contained HTML page** (`.ailed/screens/`), desktop
+  and mobile side by side, with **one shot per state** taken from the ticket's acceptance
+  criteria, so the wording, styling and actual behavior can be reviewed at a glance instead of
+  opening the app screen by screen. The shot list is **deduced from the branch diff and the
+  acceptance criteria, then confirmed by the human** before any capture (the file → route
+  deduction is fallible). Images are inlined as base64 and **never read back by an agent**: the
+  sheet is for human eyes, costs close to zero tokens, returns no verdict, and stays out of git
+  and `memory/`.
+- `@ailed-dev` calls `/ailed-screens` before opening the MR when the ticket touches the UI, and
+  gains the `chrome-devtools` MCP authorization. **Non-blocking**: no `chrome-devtools`, no
+  reachable app or no UI change means a flagged prerequisite, not a stopped workflow.
+- `memory/config.md` gains a **Local app** section (base URL, optional start command and test
+  account) read by `/ailed-screens`. While the URL is unset, the skill asks the human then
+  rewrites the value there — never captures against a guessed target. On a project installed
+  before that section existed it is simply absent: the skill asks and creates it rather than
+  failing.
+- `/ailed-screens` hardened against three failures found by running it end to end on a real
+  Vite + Supabase back-office:
+  - **`take_screenshot` must be given `filePath`.** Without it the MCP attaches the image to the
+    tool response — it lands in the agent's context (exactly what the skill promises to avoid)
+    and the transfer can stall for minutes. Measured: two 120 s+ hangs without `filePath`,
+    instant with it. The capture sequence is now spelled out (`resize_page` → `navigate_page` →
+    `take_screenshot(filePath)`, grouped per viewport).
+  - **The base branch is resolved, not assumed.** `main` does not exist everywhere: the skill now
+    walks `origin/HEAD` → `main` → `master` → the base declared in memory, and an **empty diff no
+    longer means "no screen touched"** — it falls back to the last commits actually touching the
+    app and names the commit it took as the perimeter. On the test project, the naive `main`
+    lookup returned 0 files and would have stopped the skill dead.
+  - **`.ailed/` being git-ignored is verified, not asserted.** Projects installed before the
+    `.gitignore` wiring lack the entry, so the sheet would leave untracked files in `git status`;
+    the skill now checks and adds it before writing. Its "writes nothing" claim is also corrected
+    to name its two real setting writes (the base URL, the ignore entry).
+
 ## [0.14.0]
 
 ### Added
@@ -135,7 +195,9 @@ installer, the `ailed-*` agents and skills, the persistent `memory/` model, and
 the Jira/Confluence (Atlassian MCP) integration. See the
 [git history](https://github.com/ZimZam-org/ai-led-framework/commits/main) for details.
 
-[Unreleased]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.13.1...HEAD
+[Unreleased]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.14.0...v0.15.0
+[0.14.0]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.13.1...v0.14.0
 [0.13.1]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.11.0...v0.12.0
