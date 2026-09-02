@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- New skill **`/ailed-screens`** — the end-of-dev contact sheet. It gathers the screens a
+  ticket actually touched into **one self-contained HTML page** (`.ailed/screens/`), desktop
+  and mobile side by side, with **one shot per state** taken from the ticket's acceptance
+  criteria, so the wording, styling and actual behavior can be reviewed at a glance instead of
+  opening the app screen by screen. The shot list is **deduced from the branch diff and the
+  acceptance criteria, then confirmed by the human** before any capture (the file → route
+  deduction is fallible). Images are inlined as base64 and **never read back by an agent**: the
+  sheet is for human eyes, costs close to zero tokens, returns no verdict, and stays out of git
+  and `memory/`.
+- `@ailed-dev` calls `/ailed-screens` before opening the MR when the ticket touches the UI, and
+  gains the `chrome-devtools` MCP authorization. **Non-blocking**: no `chrome-devtools`, no
+  reachable app or no UI change means a flagged prerequisite, not a stopped workflow.
+- `memory/config.md` gains a **Local app** section (base URL, optional start command and test
+  account) read by `/ailed-screens`. While the URL is unset, the skill asks the human then
+  rewrites the value there — never captures against a guessed target.
+
 ## [0.14.0]
 
 ### Added
