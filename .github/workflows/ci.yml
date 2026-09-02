@@ -25,3 +25,17 @@ jobs:
           mkdir -p /tmp/ai-led-smoke && cd /tmp/ai-led-smoke
           node "$GITHUB_WORKSPACE/bin/ai-led.js" init --trigram=TST -y
           test -d .claude && test -d memory
+
+      - name: Verify memory-diff against a committed then edited memory/
+        run: |
+          cd /tmp/ai-led-smoke
+          git init -q .
+          git config user.email ci@example.com && git config user.name CI
+          git add -A && git commit -qm "init"
+          printf '\n## Section ajoutee par le test\n- TST-000001\n' >> memory/decisions.md
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" memory-diff | tee /tmp/diff.txt
+          grep -q "memory/decisions.md" /tmp/diff.txt
+          grep -q "TST-000001" /tmp/diff.txt
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" memory-diff --html --out=/tmp/diff.html
+          test -s /tmp/diff.html
+          ! grep -q "<script" /tmp/diff.html

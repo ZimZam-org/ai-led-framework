@@ -1902,6 +1902,546 @@ const HTML_TEMPLATE = `<!doctype html>
 </body>
 </html>`;
 
+// ── memory-diff: ce qui a changé dans memory/, section par section ──────────
+// Les agents réécrivent memory/ en continu. Avant qu'un humain valide ou commite,
+// la question utile n'est pas « que dit le fichier » mais « qu'est-ce que l'agent a
+// changé, et où ». `git diff` y répond en hunks bruts ; on regroupe les mêmes données
+// par section markdown, avec les tickets touchés, pour qu'une relecture coûte un
+// coup d'œil au lieu d'une lecture. Déterministe et zéro token : le skill
+// /ailed-memory-diff lance la commande d'abord et n'interprète que le résultat.
+function gitCapture(args) {
+  const cp = require("child_process");
+  const r = cp.spawnSync("git", args, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  if (r.error || r.status !== 0) return null;
+  return r.stdout;
+}
+
+// index de ligne (0-based) → fil d'Ariane « H2 › H3 › … » de son titre de section.
+// Le H1 est le titre du fichier (bruit dans un rapport par fichier) : il n'apparaît
+// que s'il est le seul titre au-dessus de la ligne.
+function headingBreadcrumbs(lines) {
+  const map = new Array(lines.length).fill("");
+  const stack = [];
+  let cur = "";
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^(#{1,6})\s+(.+?)\s*#*$/);
+    if (m) {
+      const lvl = m[1].length, txt = m[2].trim();
+      while (stack.length && stack[stack.length - 1].lvl >= lvl) stack.pop();
+      stack.push({ lvl, txt });
+      const deep = stack.filter((s) => s.lvl > 1).map((s) => s.txt);
+      cur = (deep.length ? deep : stack.map((s) => s.txt)).join(" › ");
+    }
+    map[i] = cur;
+  }
+  return map;
+}
+
+const DIFF_PREAMBLE = "(en-tête du fichier)";
+const DIFF_MAX_LINES = 40;         // lignes rendues par section, au-delà on résume
+const DIFF_NEWFILE_SUMMARY = 60;   // au-delà, un fichier entièrement nouveau est résumé par son plan
+const DIFF_MAX_OUTLINE = 12;       // sections listées dans ce plan
+const DIFF_MAX_TICKETS = 12;       // tickets listés dans le total (une plage large en touche des dizaines)
+
+// contenu de `<ref>:<rel>` en lignes, ou null si le fichier n'existe pas à cette révision
+function blobLines(ref, rel) {
+  const out = gitCapture(["show", `${ref}:${rel}`]);
+  return out === null ? null : out.split("\n");
+}
+function worktreeLines(rel) {
+  const p = path.join(cwd, rel);
+  return fs.existsSync(p) ? fs.readFileSync(p, "utf8").split("\n") : null;
+}
+
+function newDiffFile(rel, kind) {
+  return { rel, kind, added: [], removed: [], sections: [], index: new Map(), tickets: [], notes: [] };
+}
+// enregistre une ligne (+/-) dans la section où elle tombe, en conservant l'ordre
+// de première apparition des sections (= l'ordre du fichier, `git diff` étant ordonné)
+// lignes affichables d'un groupe : les lignes blanches comptent dans le diff (les
+// compteurs restent ceux de git) mais n'apportent rien à une relecture — on ne les rend pas
+function shownDiffLines(g) {
+  const keep = (l) => l.trim() !== "";
+  return { removed: g.removed.filter(keep), added: g.added.filter(keep) };
+}
+function pushDiffLine(f, section, sign, text) {
+  const key = section || DIFF_PREAMBLE;
+  let g = f.index.get(key);
+  if (!g) { g = { section: key, added: [], removed: [] }; f.index.set(key, g); f.sections.push(g); }
+  (sign === "+" ? g.added : g.removed).push(text);
+  (sign === "+" ? f.added : f.removed).push(text);
+}
+
+// notes de relecture : ce qui, dans un diff de mémoire, mérite un regard humain
+// Deux cas où déplier les lignes noierait le rapport sans rien apprendre :
+//  · un fichier entièrement nouveau (ajouté ou non suivi) — tout y est « + », et une SPEC
+//    fraîche fait des milliers de lignes ; son plan dit l'essentiel ;
+//  · un fichier non markdown de memory/ (une maquette HTML de @ailed-ux, p. ex.) — il n'a
+//    pas de sections et se relit dans un navigateur, pas dans un diff.
+// `--full` déplie les deux quand c'est voulu.
+function summarizeNewFile(f) {
+  if (argv.includes("--full")) return false;
+  if (!/\.md$/i.test(f.rel)) return true;
+  return (f.kind === "added" || f.kind === "untracked") && f.added.length > DIFF_NEWFILE_SUMMARY;
+}
+// Table des matières : les sections de premier niveau, dédupliquées. Les fils d'Ariane
+// complets (`H2 › H3 › H4`) répètent le parent à chaque enfant — illisible sur 129 sections.
+function fileOutline(f) {
+  const seen = new Set();
+  for (const g of f.sections) {
+    const top = String(g.section || "").split(" › ")[0].trim();
+    if (top && top !== DIFF_PREAMBLE) seen.add(top);
+  }
+  return [...seen];
+}
+// libellé du bloc résumé, selon ce qui est résumé et ce qu'on a pu en extraire
+function summaryLabel(f, outline) {
+  const kind = /\.md$/i.test(f.rel) ? "fichier entièrement nouveau" : "fichier non markdown";
+  const plan = outline.length ? `, ${outline.length} section(s)` : "";
+  return { head: `${f.added.length} ligne(s)${plan}`, why: `contenu non déplié (${kind}) — --full pour tout voir` };
+}
+function annotateDiffFile(f, trigram) {
+  const seen = new Set();
+  const ticketRe = trigram ? new RegExp("\\b" + trigram + "-\\d+\\b", "g") : null;
+  if (ticketRe) {
+    for (const l of f.added.concat(f.removed)) {
+      for (const m of l.match(ticketRe) || []) seen.add(m);
+    }
+  }
+  f.tickets = [...seen].sort();
+  for (const l of f.removed) {
+    const h = l.match(/^\s*(#{1,6})\s+(.+?)\s*#*$/);
+    if (h) f.notes.push(`section supprimée : « ${h[2].trim()} »`);
+  }
+  if (f.kind === "modified" && !f.added.some((l) => /Last Updated\s*:/i.test(l))) {
+    f.notes.push("`Last Updated` non mis à jour");
+  }
+}
+
+// Parse `git diff -U0` en { files, totals } regroupés par section markdown.
+// `until` absent = comparaison avec la copie de travail (les fichiers non suivis
+// comptent alors comme entièrement ajoutés — sinon un memory/ jamais commité
+// apparaîtrait vide).
+function collectMemoryDiff(since, until, trigram) {
+  const args = ["diff", "--no-color", "--no-ext-diff", "-U0", "-M", since];
+  if (until) args.push(until);
+  args.push("--", "memory/");
+  const raw = gitCapture(args);
+  if (raw === null) return null;
+
+  const files = [];
+  let f = null, oldMap = [], newMap = [], oldNo = 0, newNo = 0;
+  const close = () => { if (f && (f.added.length || f.removed.length)) { annotateDiffFile(f, trigram); files.push(f); } };
+
+  for (const line of raw.split("\n")) {
+    let m;
+    if ((m = line.match(/^diff --git a\/(.+?) b\/(.+)$/))) {
+      close();
+      const oldRel = m[1], rel = m[2];
+      const oldL = blobLines(since, oldRel);
+      const newL = until ? blobLines(until, rel) : worktreeLines(rel);
+      oldMap = headingBreadcrumbs(oldL || []);
+      newMap = headingBreadcrumbs(newL || []);
+      const kind = !oldL ? "added" : !newL ? "deleted" : oldRel !== rel ? "renamed" : "modified";
+      f = newDiffFile(rel, kind);
+      if (kind === "renamed") f.notes.push(`renommé depuis \`${oldRel}\``);
+      oldNo = newNo = 0;
+      continue;
+    }
+    if (!f) continue;
+    if ((m = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/))) {
+      oldNo = parseInt(m[1], 10); newNo = parseInt(m[2], 10);
+      continue;
+    }
+    if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("\\")) continue;
+    if (line.startsWith("+")) { pushDiffLine(f, newMap[newNo - 1], "+", line.slice(1)); newNo++; continue; }
+    if (line.startsWith("-")) { pushDiffLine(f, oldMap[oldNo - 1], "-", line.slice(1)); oldNo++; continue; }
+  }
+  close();
+
+  // fichiers memory/ non suivis par git : invisibles pour `git diff`, mais bien
+  // des modifications du point de vue de la relecture
+  if (!until) {
+    const untracked = (gitCapture(["ls-files", "--others", "--exclude-standard", "--", "memory/"]) || "")
+      .split("\n").map((s) => s.trim()).filter(Boolean);
+    for (const rel of untracked) {
+      const lines = worktreeLines(rel);
+      if (!lines) continue;
+      const map = headingBreadcrumbs(lines);
+      const nf = newDiffFile(rel, "untracked");
+      lines.forEach((l, i) => { if (l.trim()) pushDiffLine(nf, map[i], "+", l); });
+      if (!nf.added.length) continue;
+      annotateDiffFile(nf, trigram);
+      nf.notes = nf.notes.filter((n) => !/Last Updated/.test(n));
+      nf.notes.unshift("fichier non suivi par git (`git add` manquant)");
+      files.push(nf);
+    }
+  }
+
+  const totals = {
+    files: files.length,
+    added: files.reduce((n, x) => n + x.added.length, 0),
+    removed: files.reduce((n, x) => n + x.removed.length, 0),
+    tickets: [...new Set([].concat(...files.map((x) => x.tickets)))].sort(),
+  };
+  return { files, totals };
+}
+
+const DIFF_KIND_LABEL = {
+  added: "nouveau", deleted: "supprimé", renamed: "renommé", untracked: "non suivi", modified: "",
+};
+
+// ── rendus ───────────────────────────────────────────────────
+function memoryDiffTerminal(model, since, until) {
+  const width = Math.max(60, process.stdout.columns || 100);
+  const clamp = (s, n) => (s.length <= n ? s : s.slice(0, Math.max(1, n - 1)) + "…");
+  const target = until ? `${since} → ${until}` : `${since} → copie de travail`;
+
+  console.log(`\n${c.bold("AI-Led")} ${c.dim("v" + pkg.version)} — modifications ${c.cyan("memory/")} ${c.dim("(" + target + ")")}\n`);
+  if (!model.files.length) return;
+
+  for (const f of model.files) {
+    const kind = DIFF_KIND_LABEL[f.kind];
+    const head = `${c.bold(f.rel)}  ${c.green("+" + f.added.length)} ${c.yellow("-" + f.removed.length)}`;
+    console.log(kind ? `${head} ${c.dim("[" + kind + "]")}` : head);
+    if (f.tickets.length) console.log(`  ${c.dim("tickets : " + f.tickets.join(", "))}`);
+    if (summarizeNewFile(f)) {
+      const outline = fileOutline(f);
+      const lab = summaryLabel(f, outline);
+      console.log(`  ${c.dim(lab.head)}`);
+      for (const h of outline.slice(0, DIFF_MAX_OUTLINE)) console.log(`    ${c.cyan("·")} ${clamp(h, width - 6)}`);
+      if (outline.length > DIFF_MAX_OUTLINE) console.log(`    ${c.dim(`· … ${outline.length - DIFF_MAX_OUTLINE} section(s) de plus`)}`);
+      console.log(`  ${c.dim("↳ " + lab.why)}`);
+      for (const n of f.notes) console.log(`  ${c.yellow("⚠")} ${n.replace(/`/g, "")}`);
+      console.log("");
+      continue;
+    }
+    for (const g of f.sections) {
+      const vis = shownDiffLines(g);
+      const shown = [
+        ...vis.removed.map((l) => ["-", l]),
+        ...vis.added.map((l) => ["+", l]),
+      ];
+      if (!shown.length) continue;
+      console.log(`  ${c.cyan(clamp(g.section, width - 4))}`);
+      for (const [sign, l] of shown.slice(0, DIFF_MAX_LINES)) {
+        const paint = sign === "+" ? c.green : c.yellow;
+        console.log(`    ${paint(sign)} ${clamp(l.trim(), width - 7)}`);
+      }
+      if (shown.length > DIFF_MAX_LINES) {
+        console.log(`    ${c.dim(`… ${shown.length - DIFF_MAX_LINES} ligne(s) de plus (voir --html)`)}`);
+      }
+    }
+    for (const n of f.notes) console.log(`  ${c.yellow("⚠")} ${n.replace(/`/g, "")}`);
+    console.log("");
+  }
+
+  // sur une plage large la liste complète des tickets tient sur une ligne illisible
+  const tk = model.totals.tickets;
+  const tkStr = tk.length > DIFF_MAX_TICKETS
+    ? tk.slice(0, DIFF_MAX_TICKETS).join(", ") + ` … +${tk.length - DIFF_MAX_TICKETS}`
+    : tk.join(", ");
+  console.log(
+    `${c.bold("Total")} : ${model.totals.files} fichier(s), ${c.green("+" + model.totals.added)} ${c.yellow("-" + model.totals.removed)}` +
+    (tk.length ? ` ${c.dim(`· ${tk.length} ticket(s) touché(s) : ` + tkStr)}` : "")
+  );
+  console.log(`${c.dim("Rapport navigateur :")} npx @s2bp/ai-led-framework memory-diff --html`);
+  console.log(`${c.dim("Relecture commentée dans Claude Code :")} /ailed-memory-diff\n`);
+}
+
+function escHtml(s) {
+  return String(s == null ? "" : s).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
+}
+// markdown → HTML inline, minimal et hors ligne (même contrat que le mdInline du
+// dashboard) : on rend, on n'affiche jamais la source ; les marqueurs orphelins
+// (paire coupée par une cellule de table) sont retirés plutôt qu'imprimés.
+function mdInlineNode(s) {
+  let t = escHtml(s);
+  t = t.replace(/`([^`]+)`/g, (_, x) => "<code>" + x + "</code>");
+  t = t.replace(/\*\*([^*]+)\*\*/g, (_, x) => "<strong>" + x + "</strong>");
+  t = t.replace(/~~([^~]+)~~/g, (_, x) => "<s>" + x + "</s>");
+  t = t.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, txt, href) =>
+    /^https?:/.test(href) ? '<a href="' + href.replace(/"/g, "%22") + '" rel="noopener">' + txt + "</a>" : txt);
+  return t.replace(/`/g, "").replace(/\*\*/g, "");
+}
+
+function newFileOutlineHtml(f) {
+  const outline = fileOutline(f);
+  const lab = summaryLabel(f, outline);
+  const items = outline.slice(0, DIFF_MAX_OUTLINE).map((h) => `<li>${mdInlineNode(h)}</li>`).join("")
+    + (outline.length > DIFF_MAX_OUTLINE ? `<li class="more">… ${outline.length - DIFF_MAX_OUTLINE} section(s) de plus</li>` : "");
+  return `<section class="sec">${outline.length ? "<h3>Plan du fichier</h3>" : ""}
+  <p class="more">${escHtml(lab.head)} — ${escHtml(lab.why)}</p>
+  ${outline.length ? `<ul class="outline">${items}</ul>` : ""}</section>`;
+}
+
+// Rapport autonome : aucun CDN, aucun script, aucune donnée envoyée — le fichier
+// s'ouvre (et s'archive) tel quel. Thème clair par défaut, variante sombre suivant
+// les préférences système.
+function memoryDiffHtmlDoc(model, since, until, generated) {
+  const target = until ? `${since} → ${until}` : `${since} → copie de travail`;
+  const body = model.files.map((f) => {
+    const kind = DIFF_KIND_LABEL[f.kind];
+    const secs = summarizeNewFile(f) ? newFileOutlineHtml(f) : f.sections.map((g) => {
+      const vis = shownDiffLines(g);
+      if (!vis.removed.length && !vis.added.length) return "";
+      const cap = (arr) => arr.slice(0, DIFF_MAX_LINES);
+      const over = vis.removed.length + vis.added.length - (cap(vis.removed).length + cap(vis.added).length);
+      const rows = [
+        ...cap(vis.removed).map((l) => `<div class="ln del"><span class="sig">−</span><span>${mdInlineNode(l.trim())}</span></div>`),
+        ...cap(vis.added).map((l) => `<div class="ln add"><span class="sig">+</span><span>${mdInlineNode(l.trim())}</span></div>`),
+        over > 0 ? `<p class="more">… ${over} ligne(s) de plus dans cette section</p>` : "",
+      ].join("");
+      return `<section class="sec"><h3>${mdInlineNode(g.section)}</h3>${rows}</section>`;
+    }).join("");
+    const notes = f.notes.length
+      ? `<ul class="notes">${f.notes.map((n) => `<li>${mdInlineNode(n)}</li>`).join("")}</ul>`
+      : "";
+    const tickets = f.tickets.length ? `<p class="tickets">Tickets : ${f.tickets.map(escHtml).join(", ")}</p>` : "";
+    return `<article class="file">
+  <h2>${escHtml(f.rel)}${kind ? ` <span class="kind">${escHtml(kind)}</span>` : ""}
+    <span class="counts"><span class="plus">+${f.added.length}</span> <span class="minus">−${f.removed.length}</span></span></h2>
+  ${tickets}${notes}${secs}
+</article>`;
+  }).join("\n");
+
+  const empty = `<p class="empty">Aucune modification dans <code>memory/</code> pour ${escHtml(target)}.</p>`;
+  return `<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI-Led — modifications memory/</title>
+<style>
+  :root { --bg:#fff; --panel:#f7f8fa; --border:#e3e6ea; --text:#1c1f23; --muted:#6b7280;
+    --add:#116d3a; --addbg:#e8f6ed; --del:#8a2b2b; --delbg:#fdeceb; --accent:#1a56b8; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0f1117; --panel:#171a21; --border:#252a34; --text:#e6e8eb; --muted:#8b929e;
+      --add:#8fd6a6; --addbg:#14261b; --del:#f0a8a8; --delbg:#2a1618; --accent:#6ea8fe; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:28px 20px 60px; background:var(--bg); color:var(--text);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  .wrap { max-width:1000px; margin:0 auto; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .meta { color:var(--muted); font-size:13px; margin:0 0 22px; }
+  .totals { background:var(--panel); border:1px solid var(--border); border-radius:8px;
+    padding:10px 14px; font-size:14px; margin:0 0 24px; }
+  .file { border:1px solid var(--border); border-radius:8px; margin:0 0 18px; overflow:hidden; }
+  .file > h2 { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0;
+    padding:10px 14px; background:var(--panel); border-bottom:1px solid var(--border);
+    font-size:15px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted);
+    border:1px solid var(--border); border-radius:99px; padding:1px 7px; font-family:inherit; }
+  .counts { margin-left:auto; font-size:13px; }
+  .plus { color:var(--add); } .minus { color:var(--del); }
+  .tickets, .notes { margin:10px 14px 0; font-size:13px; color:var(--muted); }
+  .notes { padding-left:28px; }
+  .notes li { color:var(--del); }
+  .sec { padding:10px 14px 4px; }
+  .sec h3 { font-size:13px; text-transform:uppercase; letter-spacing:.05em;
+    color:var(--accent); margin:8px 0 6px; }
+  .ln { display:flex; gap:8px; align-items:flex-start; padding:2px 6px; border-radius:4px;
+    font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; overflow-wrap:anywhere; }
+  .ln .sig { flex:0 0 auto; font-weight:700; opacity:.7; }
+  .add { background:var(--addbg); color:var(--add); }
+  .del { background:var(--delbg); color:var(--del); }
+  .ln code { background:rgba(127,127,127,.18); border-radius:3px; padding:0 3px; }
+  .more { color:var(--muted); font-size:12px; margin:4px 0 2px; }
+  .outline { margin:2px 0 6px; padding-left:20px; font-size:13px; }
+  .outline li { margin:1px 0; }
+  .empty { color:var(--muted); }
+  footer { color:var(--muted); font-size:12px; margin-top:32px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Modifications de <code>memory/</code></h1>
+  <p class="meta">${escHtml(target)} · généré le ${escHtml(generated)} · AI-Led v${escHtml(pkg.version)}</p>
+  ${model.files.length ? `<p class="totals"><strong>${model.totals.files}</strong> fichier(s) · <span class="plus">+${model.totals.added}</span> <span class="minus">−${model.totals.removed}</span>${model.totals.tickets.length ? " · tickets touchés : " + escHtml(model.totals.tickets.join(", ")) : ""}</p>` : empty}
+  ${body}
+  <footer>Rapport statique — aucun serveur, aucune donnée envoyée.</footer>
+</div>
+</body>
+</html>
+`;
+}
+
+// Variante presse-papiers : fragment à styles inline, car Teams / Slack / Outlook
+// jettent la balise <style>. Pas de pandoc : le rendu markdown est le même que
+// celui du rapport.
+function memoryDiffClipHtml(model, since, until, generated) {
+  const target = until ? `${since} → ${until}` : `${since} → copie de travail`;
+  const S = {
+    h2: "font-size:15px;margin:16px 0 4px;font-family:monospace;",
+    h3: "font-size:13px;margin:10px 0 2px;color:#1a56b8;",
+    add: "color:#116d3a;",
+    del: "color:#8a2b2b;",
+    note: "color:#8a2b2b;font-size:13px;",
+    muted: "color:#6b7280;font-size:13px;",
+    ul: "margin:2px 0 2px 18px;padding:0;",
+  };
+  const files = model.files.map((f) => {
+    const kind = DIFF_KIND_LABEL[f.kind];
+    const secs = summarizeNewFile(f) ? (() => {
+      const outline = fileOutline(f);
+      const lab = summaryLabel(f, outline);
+      return `<p style="${S.muted}">${escHtml(lab.head)} — ${escHtml(lab.why)}</p>`
+        + `<ul style="${S.ul}">${outline.slice(0, DIFF_MAX_OUTLINE).map((h) => `<li>${mdInlineNode(h)}</li>`).join("")}`
+        + (outline.length > DIFF_MAX_OUTLINE ? `<li style="${S.muted}">… ${outline.length - DIFF_MAX_OUTLINE} section(s) de plus</li>` : "") + `</ul>`;
+    })() : f.sections.map((g) => {
+      const vis = shownDiffLines(g);
+      if (!vis.removed.length && !vis.added.length) return "";
+      const items = [
+        ...vis.removed.map((l) => `<li style="${S.del}"><del>${mdInlineNode(l.trim())}</del></li>`),
+        ...vis.added.map((l) => `<li style="${S.add}"><ins>${mdInlineNode(l.trim())}</ins></li>`),
+      ].join("");
+      return `<p style="${S.h3}"><strong>${mdInlineNode(g.section)}</strong></p><ul style="${S.ul}">${items}</ul>`;
+    }).join("");
+
+    const notes = f.notes.length
+      ? `<p style="${S.note}">⚠ ${f.notes.map((n) => mdInlineNode(n)).join(" · ")}</p>`
+      : "";
+    const tickets = f.tickets.length ? `<p style="${S.muted}">Tickets : ${escHtml(f.tickets.join(", "))}</p>` : "";
+    return `<p style="${S.h2}"><strong>${escHtml(f.rel)}</strong>${kind ? ` [${escHtml(kind)}]` : ""} — <span style="${S.add}">+${f.added.length}</span> / <span style="${S.del}">−${f.removed.length}</span></p>${tickets}${notes}${secs}`;
+  }).join("");
+  return `<p><strong>Modifications de memory/</strong><br><span style="${S.muted}">${escHtml(target)} · ${escHtml(generated)} · ${model.totals.files} fichier(s), +${model.totals.added} / −${model.totals.removed}${model.totals.tickets.length ? " · tickets : " + escHtml(model.totals.tickets.join(", ")) : ""}</span></p>${files}`;
+}
+
+// Presse-papiers en text/html, best-effort et sans dépendance lourde : wl-copy
+// (Wayland) · xclip (X11) · osascript (macOS). Échec explicite si aucun backend —
+// jamais de repli silencieux en texte brut, qui collerait du HTML source.
+//
+// IMPORTANT : xclip et wl-copy *forkent* pour garder la sélection. Un spawnSync
+// avec stdout/stderr en pipe attend la fermeture de ces descripteurs, hérités par
+// le fils détaché : la commande se bloque jusqu'à ce qu'un autre programme prenne
+// le presse-papiers. D'où `stdio: ["pipe", "ignore", "ignore"]`, puis une relecture
+// de la sélection pour ne pas annoncer un succès qui n'a pas eu lieu.
+function clipSleep(ms) {
+  const sab = new SharedArrayBuffer(4);
+  Atomics.wait(new Int32Array(sab), 0, 0, ms);
+}
+function copyHtmlToClipboard(html) {
+  const cp = require("child_process");
+  const has = (bin) => {
+    try { return cp.spawnSync("sh", ["-c", "command -v " + bin], { stdio: "ignore" }).status === 0; }
+    catch (_) { return false; }
+  };
+  const write = (bin, args) => {
+    const r = cp.spawnSync(bin, args, { input: html, stdio: ["pipe", "ignore", "ignore"] });
+    return !r.error && r.status === 0;
+  };
+  // la sélection est prise par le fils juste après le fork → quelques essais courts
+  const readBack = (bin, args) => {
+    for (let i = 0; i < 12; i++) {
+      const r = cp.spawnSync(bin, args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+      if (!r.error && r.status === 0 && (r.stdout || "").slice(0, 40) === html.slice(0, 40)) return true;
+      clipSleep(40);
+    }
+    return false;
+  };
+
+  if (process.platform === "darwin") {
+    const tmp = path.join(require("os").tmpdir(), `ailed-memory-diff-${process.pid}.html`);
+    fs.writeFileSync(tmp, html);
+    const ok = cp.spawnSync("osascript", [
+      "-e", "on run argv",
+      "-e", "set the clipboard to (read (POSIX file (item 1 of argv)) as «class HTML»)",
+      "-e", "end run", tmp,
+    ], { stdio: "ignore" }).status === 0;
+    try { fs.unlinkSync(tmp); } catch (_) {}
+    return ok ? "osascript" : null;
+  }
+
+  const backends = [];
+  if (has("wl-copy")) backends.push({
+    name: "wl-copy", args: ["--type", "text/html"],
+    read: ["wl-paste", ["--type", "text/html", "--no-newline"]],
+    preferred: !!process.env.WAYLAND_DISPLAY,
+  });
+  if (has("xclip")) backends.push({
+    name: "xclip", args: ["-selection", "clipboard", "-t", "text/html", "-i"],
+    read: ["xclip", ["-selection", "clipboard", "-o", "-t", "text/html"]],
+    preferred: !process.env.WAYLAND_DISPLAY,
+  });
+  backends.sort((a, b) => Number(b.preferred) - Number(a.preferred));
+
+  for (const b of backends) {
+    if (!write(b.name, b.args)) continue;
+    if (readBack(b.read[0], b.read[1])) return b.name;
+  }
+  return null;
+}
+
+function memoryDiff() {
+  const memDir = path.join(cwd, "memory");
+  if (!fs.existsSync(memDir)) {
+    console.error(`\n${c.yellow("memory/ introuvable")} dans ${cwd}.`);
+    console.error(`Lance d'abord : ${c.cyan("npx @s2bp/ai-led-framework init")}\n`);
+    process.exit(1);
+  }
+  if (gitCapture(["rev-parse", "--git-dir"]) === null) {
+    console.error(`\n${c.yellow("Pas un dépôt git")} : ${cwd}`);
+    console.error(`memory-diff compare des révisions git — initialise le dépôt (${c.cyan("git init")}) puis commite memory/.\n`);
+    process.exit(1);
+  }
+
+  const since = flag("since") || "HEAD";
+  const until = flag("until") || null;
+  for (const ref of [since, until]) {
+    if (ref && gitCapture(["rev-parse", "--verify", "--quiet", ref + "^{commit}"]) === null) {
+      console.error(`\n${c.yellow("Révision inconnue")} : ${ref}`);
+      console.error(`Exemples : ${c.cyan("--since=HEAD~1")} · ${c.cyan("--since=develop")} · ${c.cyan("--since=<sha>")}\n`);
+      process.exit(1);
+    }
+  }
+
+  const installed = parseInstalledConfig(memDir);
+  const model = collectMemoryDiff(since, until, installed && installed.trigram);
+  if (!model) {
+    console.error(`\n${c.yellow("git diff a échoué")} sur memory/ (${since}${until ? " → " + until : ""}).\n`);
+    process.exit(1);
+  }
+
+  const d = new Date(), p2 = (n) => String(n).padStart(2, "0");
+  const generated = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+
+  if (!model.files.length && !argv.includes("--html") && !argv.includes("--clip")) {
+    memoryDiffTerminal(model, since, until);
+    console.log(`${c.dim("Aucune modification dans memory/.")}`);
+    const last = (gitCapture(["log", "-1", "--format=%h %ad %s", "--date=short", "--", "memory/"]) || "").trim();
+    if (last) console.log(`${c.dim("Dernier commit touchant memory/ :")} ${last}`);
+    // ne pas resuggérer la plage que l'utilisateur vient déjà de demander
+    if (!flag("since") && !flag("until")) {
+      console.log(`${c.dim("Pour relire le dernier commit :")} npx @s2bp/ai-led-framework memory-diff --since=HEAD~1 --until=HEAD`);
+    }
+    console.log("");
+    return;
+  }
+
+  if (argv.includes("--clip")) {
+    const backend = copyHtmlToClipboard(memoryDiffClipHtml(model, since, until, generated));
+    if (backend) {
+      console.log(`\n${c.green("✓")} Presse-papiers chargé en texte riche ${c.dim("(" + backend + ")")} — collable dans Teams / Slack / Outlook / Confluence.`);
+    } else {
+      console.error(`\n${c.yellow("Aucun backend presse-papiers")} : installe ${c.cyan("xclip")} (X11) ou ${c.cyan("wl-clipboard")} (Wayland).`);
+      console.error(`Repli : ${c.cyan("memory-diff --html")} puis ouvre le rapport dans le navigateur.`);
+    }
+  }
+
+  if (argv.includes("--html")) {
+    const stamp = `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}`;
+    const out = path.resolve(cwd, flag("out") || `${stamp}_ailed-memory-diff.html`);
+    fs.writeFileSync(out, memoryDiffHtmlDoc(model, since, until, generated));
+    console.log(`\n${c.green("✓")} Rapport généré : ${c.cyan(path.relative(cwd, out) || out)}`);
+    console.log(`  Ouvre-le dans un navigateur : ${c.dim("file://" + out)}\n`);
+    return;
+  }
+
+  if (!argv.includes("--clip")) memoryDiffTerminal(model, since, until);
+  else console.log("");
+}
+
 // ── progress sidebar (watch / dashboard) ─────────────────────
 // Linear agent chains per workflow (see memory/process.md). Used to project the
 // agents that "will work" after the current/last one.
@@ -2367,6 +2907,7 @@ ${c.bold("Commands")}
   init            Installe agents, skills et mémoire dans le projet courant
   update          Met à jour le framework (agents/skills/commands) en préservant memory/ et CLAUDE.md
   status          Affiche l'état du projet (terminal) ; --html pour un tableau de bord navigateur
+  memory-diff     Liste ce qui a changé dans memory/ (par section) ; --html / --clip pour la relecture humaine
   watch           Panneau de progression vertical (epics → tâches → agents), rafraîchi en continu
   dashboard       Ouvre un split (gauche: watch figé · droite: claude) via tmux ou zellij
   models          Affiche le modèle LLM de chaque agent (source : memory/config.md)
@@ -2410,6 +2951,20 @@ ${c.bold("Options de status")}
   Le terminal et le HTML montrent d'abord une synthèse (avancement, board kanban, jalons,
   « à surveiller ») ; le HTML met le détail des fichiers memory/ dans des accordéons repliés.
 
+${c.bold("Options de memory-diff")}
+  --since=REF         Révision de départ : HEAD (défaut), HEAD~1, une branche, un sha
+  --until=REF         Révision d'arrivée (défaut : la copie de travail, fichiers non suivis inclus)
+  --html              Génère un rapport HTML autonome (aucun CDN, aucun script, aucune donnée envoyée)
+  --out=CHEMIN        Chemin du rapport HTML (défaut : <horodatage>_ailed-memory-diff.html)
+  --clip              Charge le rapport en texte riche dans le presse-papiers (Teams / Slack / Outlook)
+  --full              Déplie aussi le contenu des fichiers entièrement nouveaux (résumés par défaut)
+
+  Le diff est regroupé par section markdown, avec les tickets touchés et les points à
+  surveiller (section supprimée, « Last Updated » non mis à jour, fichier non commité).
+  Un fichier entièrement nouveau (une SPEC fraîche, p. ex.) est résumé par son plan : tout y
+  serait « + », et le déplier noierait le rapport. --full le déplie quand c'est voulu.
+  --clip utilise wl-copy / xclip / osascript ; sans backend, il le dit au lieu de coller du HTML brut.
+
 ${c.bold("Options de watch / dashboard")}
   --once              (watch) Affiche le panneau une fois puis quitte (utile pour scripter)
   --width=N           Largeur du panneau de progression (défaut : largeur du terminal / 34)
@@ -2432,6 +2987,9 @@ ${c.dim("Sans flag et en terminal interactif, init pose les questions de configu
       break;
     case "status":
       status();
+      break;
+    case "memory-diff":
+      memoryDiff();
       break;
     case "watch":
       watch();
