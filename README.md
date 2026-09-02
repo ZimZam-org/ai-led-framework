@@ -7,7 +7,7 @@ project, with:
 
 - 🧠 a **persistent memory** (`memory/`) kept up to date and used as the source of truth;
 - 🤖 **21 agents** prefixed `ailed-*` covering 4 workflows (Discovery, Feature, Incident, Security);
-- 🛠️ **10 reusable skills** for recurring tasks (status dashboard, ADR, git-flow, quality-gate, design-system…).
+- 🛠️ **11 reusable skills** for recurring tasks (status dashboard, ADR, git-flow, quality-gate, design-system, screen contact sheet…).
 
 One-command install:
 
@@ -20,7 +20,7 @@ npx @s2bp/ai-led-framework init
 | Folder              | Contents                                                       |
 | ------------------- | -------------------------------------------------------------- |
 | `.claude/agents/`   | 21 `ailed-*.md` agents (callable via `@ailed-<name>`)          |
-| `.claude/skills/`   | 10 `ailed-*` skills (callable via `/ailed-<name>`)             |
+| `.claude/skills/`   | 11 `ailed-*` skills (callable via `/ailed-<name>`)             |
 | `.claude/commands/` | `/ailed-bootstrap` slash-command (framework bootstrap)         |
 | `.claude/hooks/`    | `ailed-runtime-hook.js` + `Task` hooks in `settings.json` feeding the live progress sidebar (`watch`/`dashboard`) |
 | `memory/`           | 15 project memory files (including `config.md`, `process.md`, `conventions.md` and `market-watch.md`), in the chosen language |
@@ -150,6 +150,11 @@ copied verbatim into `memory/conventions.md` (with a `Source:` header). `@ailed-
 and `@ailed-ux` read it before acting. Omit the flag and a `TODO` stub is installed instead — the file
 may stay partially empty and be filled later by hand or via `@ailed-init-memory`.
 
+**Local app (optional).** `config.md` also carries the **local app base URL** (plus, optionally,
+its start command and a test account). That is the only coordinate `/ailed-screens` needs to
+capture the screens a dev touched. While it reads `to set`, the skill asks for the value then
+rewrites it into `config.md`.
+
 ### `init` options
 
 ```
@@ -242,11 +247,34 @@ The config (trigram, integrations, language) is **re-read from `memory/config.md
 
 `ailed-status`, `ailed-adr`, `ailed-architecture-map`, `ailed-git-flow`, `ailed-quality-gate`,
 `ailed-release-flow`, `ailed-promo`, `ailed-design-system`, `ailed-wireframe`,
-`ailed-mockup-preview`.
+`ailed-mockup-preview`, `ailed-screens`.
 
-The last three enrich `@ailed-ux` (shared design baseline, 3 wireframe variants, mockup render
-+ screenshots). They rely on the native Claude Code skills `frontend-design` and
-`chrome-devtools` when present in the target environment, and degrade gracefully otherwise.
+`ailed-design-system`, `ailed-wireframe` and `ailed-mockup-preview` enrich `@ailed-ux` (shared
+design baseline, 3 wireframe variants, mockup render + screenshots). They rely on the native
+Claude Code skills `frontend-design` and `chrome-devtools` when present in the target
+environment, and degrade gracefully otherwise.
+
+### `/ailed-screens` — the end-of-dev contact sheet
+
+Where `ailed-mockup-preview` renders the **mockup** *before* the dev, **`/ailed-screens`** renders
+the **real app** *after*: a **single HTML page** gathering the screens the ticket touched,
+**desktop and mobile side by side**, with **one shot per state** (empty list, validation error,
+confirmed action…). Enough to review the **wording, styling and actual behavior** at a glance,
+without opening the app screen by screen.
+
+- **Shot list deduced, then confirmed**: screens come from the branch diff, states from the
+  ticket's acceptance criteria; the list is **shown to the human before any capture**, because
+  the file → route deduction does get it wrong (shared component, dynamic routing, modal with no
+  URL of its own).
+- **For human eyes, not for the agent**: the images are **never read back** by an agent — the
+  skill costs close to zero tokens and returns no verdict.
+- **Ephemeral**: the sheet lands in `.ailed/screens/` (git-ignored), images inlined as base64 so
+  it stays openable and shareable on its own. Nothing enters `memory/`.
+- **Non-blocking**: it is not a quality gate. Without the `chrome-devtools` MCP or a reachable
+  app, the skill flags the missing prerequisite and stops cleanly.
+
+**`@ailed-dev`** calls it automatically before opening the MR when the ticket touches the UI, and
+it stays callable by hand. The app base URL is set in `memory/config.md` § *Local app*.
 
 ## Project status & dashboard
 
