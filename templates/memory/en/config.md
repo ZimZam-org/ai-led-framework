@@ -74,6 +74,22 @@ Allowed values: `opus` · `sonnet` · `haiku` · `inherit` (inherit the session 
 > integration). `@ailed-seo-aso` **degrades** to **Watch** at low confidence when **SEO / ASO**
 > is `{{DISABLED}}`, and only stops if **Watch** is disabled too.
 
+### Local app (screen contact sheet)
+
+Where the app runs locally, **read by `/ailed-screens`** (end-of-dev contact sheet):
+
+| Field                            | Value     |
+| -------------------------------- | --------- |
+| App base URL                     | `to set`  |
+| Start command (optional)         | `to set`  |
+| Test account (optional)          | `to set`  |
+
+> Example **base URL**: `http://localhost:3000`. The **start command** is only there to remind
+> the human when the app is not answering (`/ailed-screens` never starts the app itself). The
+> **test account** unlocks authenticated screens: **never put a real secret here** — use a demo
+> account id, or the environment variable holding it. While the URL reads `to set`, the skill
+> **asks the human then rewrites the value here**; it never captures against a guessed target.
+
 ### External ticketing & documentation (Jira / Confluence via MCP)
 
 **Mirror** principle: `memory/` stays the **local source of truth** (offline, git-versioned, read
