@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Popups stack, so a list never loses the reader.** Clicking a task row in an EPIC popup (or in
+  a status list) used to lead nowhere; it now opens the **task detail on top of it** — history,
+  screens and all — with the list still visible underneath. `✕`, `Esc` or a click outside closes
+  **that level only** and returns to the list; the level below keeps its scroll position, and a
+  hot reload replays the popup on screen as before.
+
+### Changed
+- **EPIC timeline nodes now use the same donut as *Overall progress*.** A single-colour pie told
+  you how far an EPIC was, but not what the remaining work was waiting on. Each node is now the
+  overview donut in miniature: one slice per status with the **same colour code** (`Done`,
+  `To test`, `In progress`, `To do`, `To check`) and the share of `DONE` at the centre, so the
+  timeline and the overview read the same way. The `n/total` figure moves under the node, where
+  it no longer repeats the percentage.
+
 ## [0.16.0]
 
 ### Added
