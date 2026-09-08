@@ -52,28 +52,55 @@ un risque : la concision coupe le superflu, pas le fond.
 Pour un tableau de bord **visuel**, proposer la commande déterministe :
 
 ```bash
-npx @s2bp/ai-led-framework status --html
+npx @s2bp/ai-led-framework status --html          # rapport vivant, nom stable
+npx @s2bp/ai-led-framework status --html --live   # + régénération dès que memory/ bouge
 ```
 
-Elle génère `ailed-status.html` (fichier statique ouvrable dans le navigateur, aucun serveur,
-aucune donnée envoyée) avec, en une page :
+Elle génère `ailed-status.html` (ouvrable dans le navigateur, aucun serveur, aucune donnée
+envoyée) avec, en une page :
 - un **chapô** : extrait borné (texte brut) de « État actuel » de `project-state.md`, l'intégralité
   étant rendue dans une popup (« Read the full state ») ;
 - deux **camemberts** : avancement global (tickets DONE / total) et avancement **approximatif**
   du **jalon en cours** (tickets des EPICs rattachées au jalon) ;
 - trois compteurs d'action : **bugs à traiter** (registre `incidents.md`), **vulnérabilités ouvertes**
   (`security.md`) et **sujets en attente d'arbitrage produit** (candidats `market-watch.md`, discovery → roadmap) ;
-- une **timeline chronologique des EPICs** (traitées · en cours · à venir) ; au clic, la liste de
-  ses tickets, complétée par sa définition (`epics.md`) ;
+- une **timeline chronologique des EPICs** dont chaque nœud est un **camembert d'avancement**
+  (part de ses tickets `DONE`, en % et en `n/total`) — un cercle vide ne dit pas où en est une
+  EPIC en cours. Une EPIC sans ticket rattaché affiche « no ticket » plutôt qu'un faux 0 % ;
 - un **board kanban** : une colonne par statut non-`DONE` (`TO_CHECK` · `TODO` · `IN_PROGRESS` ·
   `TO_TEST`, plus `Superseded`/`Other` si la mémoire en contient), et en dernière colonne les
-  **5 dernières tâches `DONE`**. Chaque carte affiche **jalon → EPIC → ID → titre** et s'ouvre
-  en popup (jalon, EPIC, statut, date, description).
+  **5 dernières tâches `DONE`**. Chaque carte affiche **jalon → EPIC → ID → titre** (plus un
+  compteur `▣ n` si des écrans ont été capturés) et s'ouvre en popup.
+
+### Popup d'un ticket : historique + écrans validés
+La popup d'une carte donne, sous sa description :
+- un **historique daté** — création (colonne `Date création` du kanban), passage en
+  développement, passage en test, finalisation — avec le **temps écoulé** entre étapes et le
+  **lead time** total. Les dates viennent de `.ailed/journal.jsonl`, alimenté par le hook
+  runtime **à chaque écriture de `memory/kanban.md`** : rien à renseigner à la main, et une
+  étape non enregistrée est affichée comme telle plutôt que devinée ;
+- les **captures d'écran** produites par `/ailed-screens` à l'étape de test
+  (`.ailed/screens/<ticket>/<horodatage>/`), groupées par écran × état, desktop et mobile côte
+  à côte, avec le critère d'acceptation d'origine ; clic = plein écran. Les prises de vue
+  **non atteintes** et les erreurs console relevées sont listées dessous.
 
 Les tickets archivés (`memory/archive/kanban.md`) sont **inclus** dans les compteurs et les
 popups — sinon les EPICs livrées paraissent vides et l'avancement est sous-estimé.
 Le détail brut de la mémoire reste accessible, replié, en bas de page. La variante `status` sans
 option imprime un snapshot en terminal, sans consommer de tokens.
+
+### Rapport vivant plutôt qu'horodaté
+Le rapport porte un **nom stable** : on le garde ouvert dans un onglet, on le met en marque-page,
+et il **se redessine seul** dès que les données changent — scroll et popup ouverte conservés.
+La coquille HTML (~70 Ko) est séparée de sa charge utile (`.ailed/status/data.js`), rechargée par
+balise `<script>` et non par `fetch()` — seule façon de recharger à chaud en `file://` sans
+serveur. Les captures restent des **PNG sur disque référencés en relatif** : les inliner ferait
+grossir le rapport d'environ 300 Ko par prise de vue.
+
+Pour **partager** une revue, `--snapshot` fait l'inverse à la demande : un fichier horodaté
+100 % autonome, captures inlinées, qui s'envoie tel quel. Et `npx @s2bp/ai-led-framework clean`
+borne ce que le runtime laisse sur disque (planches antérieures, journal compacté) sans toucher
+à quoi que ce soit de versionné.
 
 ## Exemple d'utilisation
 > « /ailed-status » → affiche l'état consolidé du projet + la liste « À surveiller ».
