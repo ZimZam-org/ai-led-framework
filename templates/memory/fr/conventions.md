@@ -2,8 +2,9 @@
 
 Last Updated: {{DATE}}
 
-> **Facultatif.** Décrit les conventions de code et l'organisation technique **en place**
-> dans ce projet — le « comment on code ici », par opposition à `architecture.md` (le « quoi »).
+> **Facultatif.** Ce fichier décrit les conventions de code et l'organisation technique
+> **en place** dans ce projet. Il répond au « comment on code ici ».
+> `architecture.md`, lui, répond au « quoi ».
 > Lu par `@ailed-architect`, `@ailed-dev` et `@ailed-ux` avant d'agir.
 > Peut rester partiellement vide : complète au fil de l'eau ou via `@ailed-init-memory`.
 > Renseignable à l'install : `npx @s2bp/ai-led-framework init --conventions=<chemin>`.

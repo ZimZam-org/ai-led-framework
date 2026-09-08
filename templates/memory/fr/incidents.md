@@ -24,5 +24,6 @@ NONE
 - Prévention :
 ```
 
-Dès qu'un environnement est déployé, configurer {{MONITORING}} (ou équivalent) et brancher `@ailed-check-log` sur l'analyse des dernières 24 h.
+Dès la première mise en production, configurer {{MONITORING}} (ou son équivalent).
+Brancher ensuite `@ailed-check-log` sur les dernières 24 h de logs.
 

@@ -2,8 +2,9 @@
 
 Last Updated: {{DATE}}
 
-> **Optional.** Describes the coding conventions and technical organization **already in place**
-> in this project — the "how we code here", as opposed to `architecture.md` (the "what").
+> **Optional.** This file describes the coding conventions and technical organization
+> **already in place** in this project. It answers "how we code here".
+> `architecture.md` answers "what we build".
 > Read by `@ailed-architect`, `@ailed-dev` and `@ailed-ux` before acting.
 > May stay partially empty: fill it over time or via `@ailed-init-memory`.
 > Can be set at install time: `npx @s2bp/ai-led-framework init --conventions=<path>`.

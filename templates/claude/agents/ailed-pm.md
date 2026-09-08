@@ -47,3 +47,5 @@ Si un outil est configuré (ex. **Jira**) et son MCP connecté : après mise à 
 par les *Coordonnées des outils* de `memory/config.md`** (défaut = trigramme `{{TICKET_PREFIX}}`).
 Les tickets atomiques restent du ressort de `@ailed-planner`.
 Si le MCP est absent : signaler le pré-requis manquant et rester en mode fichier-local.
+
+{{WRITING_RULES}}

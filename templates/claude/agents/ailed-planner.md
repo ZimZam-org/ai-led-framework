@@ -48,3 +48,5 @@ solution(s) cible(s). **L'ID du ticket devient la clé renvoyée par l'outil**
 (ex. `{{TICKET_PREFIX}}-123`) et est reflété dans `memory/kanban.md` (la `memory/` reste la
 source de vérité locale). Si le MCP est absent : signaler le pré-requis manquant et rester en
 mode fichier-local (ID zéro-padded `{{TICKET_PREFIX}}-000001`).
+
+{{WRITING_RULES}}

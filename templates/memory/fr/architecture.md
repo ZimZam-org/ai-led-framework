@@ -16,8 +16,8 @@ Last Updated: {{DATE}}
 
 > Renseigné par `@ailed-architect` **après la première SPEC** (`@ailed-brainstorm`) lorsque
 > `conventions.md` n'impose aucun cadre technique. **Confiance basse, validation humaine requise.**
-> Un domaine peut être partagé par plusieurs cibles ou propre à l'une d'elles. On enrichit
-> l'existant à chaque itération ; toute refonte structurante est tracée par un ADR.
+> Une cible partage un domaine avec d'autres cibles, ou le garde pour elle seule.
+> Chaque itération enrichit l'existant. Un ADR trace toute refonte structurante.
 
 TODO
 

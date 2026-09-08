@@ -43,3 +43,5 @@ manquant et rester en mode fichier-local.
 > Pré-requis : un environnement déployé et **{{MONITORING}}** configuré. Si la valeur
 > vaut `{{DISABLED}}` dans `memory/config.md`, signale le pré-requis manquant et arrête-toi
 > proprement (n'invente pas de source de logs).
+
+{{WRITING_RULES}}
