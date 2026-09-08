@@ -342,11 +342,14 @@ features, market watch, process):
   kanban counts and a "watch" list. Add `--html` to generate `ailed-status.html`, a dashboard
   that opens on a **visual synthesis**: two **pie charts** (global progress + current
   milestone, approximate), three action counters (**bugs** to handle, open **vulnerabilities**,
-  product **arbitrations** discovery → roadmap), an **EPIC timeline whose every node is a
-  progress pie** (share of its `DONE` tickets, as a % and as `n/total` — an EPIC with no linked
-  ticket reads "no ticket" instead of a fake 0%), and a **kanban board** — one column per
+  product **arbitrations** discovery → roadmap), an **EPIC timeline whose every node is the same
+  status donut as *Overall progress*** (its tickets split by status, same colours, with the
+  share of `DONE` at the centre and `n/total` underneath — an EPIC with no linked ticket reads
+  "no ticket" instead of a fake 0%), and a **kanban board** — one column per
   non-`DONE` status plus the **5 latest `DONE`** tasks on the right, each card showing
-  **milestone → EPIC → ID → title** and opening its detail in a popup.
+  **milestone → EPIC → ID → title** and opening its detail in a popup. Popups **stack**: from
+  an EPIC (or a status list), clicking a task row opens its detail **on top**, the list staying
+  visible underneath — `✕` / `Esc` / a click outside closes that level and returns to it.
   Archived tickets (`memory/archive/kanban.md`) count in too. Each `memory/` file's raw detail
   stays available, **collapsed** at the bottom — **no server, no project data sent**:
 
