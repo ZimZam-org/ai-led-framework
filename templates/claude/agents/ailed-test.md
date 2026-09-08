@@ -42,3 +42,5 @@ ressemble. Sur un ticket qui **touche l'IHM**, après un `PASS` et avant de rend
 
 ## Artefacts mis à jour
 Tests, rapports de test. Aucun artefact versionné pour la planche d'écrans (`.ailed/`).
+
+{{WRITING_RULES}}

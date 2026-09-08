@@ -34,3 +34,5 @@ model: {{MODEL}}
 
 ## Artefacts mis à jour
 Tous les fichiers `memory/*`.
+
+{{WRITING_RULES}}

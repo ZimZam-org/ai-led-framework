@@ -23,7 +23,7 @@ npx @s2bp/ai-led-framework init
 | `.claude/skills/`   | 12 skills `ailed-*` (invocables via `/ailed-<nom>`)            |
 | `.claude/commands/` | slash-command `/ailed-bootstrap` (amorçage du framework)       |
 | `.claude/hooks/`    | `ailed-runtime-hook.js` + hooks `PreToolUse`/`PostToolUse` dans `settings.json`, qui alimentent le panneau de progression (`watch`/`dashboard`) et le **journal des transitions de tickets** (`.ailed/journal.jsonl`) |
-| `memory/`           | 15 fichiers de mémoire projet (dont `config.md`, `process.md`, `conventions.md` et `market-watch.md`), dans la langue choisie |
+| `memory/`           | 16 fichiers de mémoire projet (dont `config.md`, `process.md`, `conventions.md`, `writing-rules.md` et `market-watch.md`), dans la langue choisie |
 | `CLAUDE.md`         | pointeur framework (créé seulement s'il n'existe pas)          |
 
 Les fichiers existants ne sont **jamais écrasés** sauf avec `--force` (les hooks de `settings.json`
@@ -75,6 +75,56 @@ npx @s2bp/ai-led-framework init --style=concis
 
 Modifiable à tout moment dans `memory/config.md`, ou forcé le temps d'un run :
 `ai-led status --style=détaillé`.
+
+### Norme de rédaction (profil dérivé d'ASD-STE100)
+
+Tous les textes produits par le framework suivent une **norme de rédaction** : mémoire, tickets,
+SPEC, ADR, rapports, changelog, et texte poussé vers Jira / Confluence. Objectif : un texte
+compris immédiatement, et encore compris dans six mois.
+
+Le profil dérive d'**ASD-STE100** (*Simplified Technical English*), la norme de l'anglais
+technique simplifié de l'aéronautique. Il en reprend les **principes, pas le dictionnaire** — la
+spécification ASD reste la propriété de son éditeur. Le profil français applique les mêmes règles
+structurelles avec sa propre liste de tournures interdites.
+
+Les 12 règles vivent dans `memory/writing-rules.md`. Les cinq premières suffisent à changer le
+résultat :
+
+1. une idée par phrase, 20 mots au maximum (25 pour une instruction) ;
+2. voix active, présent, sujet explicite ; impératif pour une instruction ;
+3. un terme = un sens : `memory/glossary.md` fait autorité, les synonymes sont interdits ;
+4. aucun sigle absent du glossaire ; trois mots au maximum par groupe nominal ;
+5. des faits chiffrés (nombre, ID, nom de fichier) plutôt que des qualificatifs.
+
+**Langue.** Le texte reprend la langue des fichiers `memory/`. Les profils `fr` et `en` partagent
+les 12 règles ; seules les listes de tournures interdites diffèrent.
+
+**Deux réglages distincts.** Le *Style de sortie* fixe le **volume** du texte
+(`concis` / `standard` / `détaillé`). La norme fixe la **forme des phrases**, quel que soit ce
+volume : un rapport `détaillé` reste composé de phrases courtes et actives.
+
+**Trois niveaux d'application.** L'installation injecte le bloc de règles dans les 21 agents et
+les 11 skills concernés (une seule source, rendue à l'install). `memory/writing-rules.md` porte
+le détail et les alternatives. Enfin un contrôle automatique vérifie les règles mesurables :
+
+```bash
+npx @s2bp/ai-led-framework lint            # tous les fichiers memory/
+npx @s2bp/ai-led-framework lint --strict   # les avertissements deviennent bloquants
+npx @s2bp/ai-led-framework lint <chemin>   # un fichier ou un dossier précis
+```
+
+Le rapport donne `fichier:ligne`, la règle et l'extrait fautif. Le code de sortie vaut `1` dès la
+première erreur : le contrôle tient donc en CI. `/ailed-quality-gate` l'inclut dans sa checklist
+de clôture de ticket. Le contrôle porte sur la prose : code, tableaux, titres et diagrammes
+Mermaid sont ignorés.
+
+**Hors périmètre.** Le contenu promotionnel (`/ailed-promo`, sorties promo de
+`@ailed-communication`) suit la voix de marque. Le code et les messages de commit suivent
+`memory/conventions.md`.
+
+Désactivation à l'install (`--writing=aucun`) ou plus tard dans la section *Rédaction* de
+`memory/config.md` : les agents reviennent alors au seul *Style de sortie*, et `lint` ne
+vérifie plus rien.
 
 ### Modèle LLM par agent (économie de tokens)
 
@@ -172,6 +222,7 @@ fichier peut rester partiellement vide et être complété plus tard à la main 
 --ticketing=NOM     Ticketing externe (ex. Jira, via MCP) ou désactivé (défaut)
 --docs=NOM          Documentation externe (ex. Confluence, via MCP) ou désactivé (défaut)
 --style=NIVEAU      Style de sortie agents/rapports : concis | standard | détaillé (défaut : standard)
+--writing=NORME     Norme de rédaction des textes produits : ste | aucun (défaut : ste)
 --conventions=CHEMIN  Importe un fichier de conventions/organisation technique dans memory/conventions.md (facultatif)
 -y, --yes           Mode non interactif (sinon, questions posées en terminal)
 -f, --force         Écrase les fichiers existants

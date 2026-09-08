@@ -32,3 +32,5 @@ Créer une décision d'architecture (ADR) normalisée dans `memory/decisions.md`
 
 ## Artefacts mis à jour
 `memory/decisions.md`.
+
+{{WRITING_RULES}}

@@ -5,9 +5,33 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.17.0]
 
 ### Added
+- **A writing standard for everything the framework writes.** Agent output was clear at the moment
+  it was produced and vague three months later: long sentences, passive voice, a concept named
+  three different ways across three files. Every agent and skill now carries a **rule block
+  derived from ASD-STE100** (*Simplified Technical English*) — one idea per sentence, 20 words at
+  most, active voice and present tense, one term = one meaning, measured facts over adjectives.
+  The 12 rules and their alternatives live in the new **`memory/writing-rules.md`**, and
+  `memory/glossary.md` gains an **approved-terms dictionary** (term · single meaning · forbidden
+  synonyms) so rule 5 has an authority instead of a good intention. The standard reuses ASD's
+  principles, not its dictionary, which stays the property of its publisher.
+  **Language-aware**: the text follows the language of `memory/`, and the `fr` and `en` profiles
+  share the 12 rules with their own lists of forbidden phrases. **Orthogonal to `Output style`**,
+  which keeps setting the volume: a `detailed` report is now made of short, active sentences.
+  Out of scope on purpose: promo content keeps the brand voice, code keeps `conventions.md`.
+  `init --writing=none` (or the *Writing* section of `config.md`) turns it off, and the rule
+  block then disappears from the agents entirely.
+- **`ai-led lint`** checks the measurable rules on `memory/` and reports `file:line`, the rule and
+  the offending extract: sentence length, passive voice, forbidden phrases, vague verbs and
+  amounts, hedging, noun clusters, over-long paragraphs, and acronyms the glossary does not
+  define. Prose only — code fences, tables, headings and Mermaid blocks are terse on purpose and
+  stay untouched. The exit code is `1` from the first error, so the check fits in CI;
+  `--strict` promotes warnings to errors. `/ailed-quality-gate` now carries a
+  **`✓ rédaction conforme`** criterion backed by that command, which is what makes the standard
+  enforced rather than merely stated. The framework's own 32 memory templates pass it, and CI
+  keeps them passing.
 - **Popups stack, so a list never loses the reader.** Clicking a task row in an EPIC popup (or in
   a status list) used to lead nowhere; it now opens the **task detail on top of it** — history,
   screens and all — with the list still visible underneath. `✕`, `Esc` or a click outside closes
@@ -276,7 +300,8 @@ installer, the `ailed-*` agents and skills, the persistent `memory/` model, and
 the Jira/Confluence (Atlassian MCP) integration. See the
 [git history](https://github.com/ZimZam-org/ai-led-framework/commits/main) for details.
 
-[Unreleased]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.13.1...v0.14.0

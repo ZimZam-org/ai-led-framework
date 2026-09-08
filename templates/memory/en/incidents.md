@@ -24,4 +24,5 @@ NONE
 - Prevention:
 ```
 
-As soon as an environment is deployed, configure {{MONITORING}} (or equivalent) and wire `@ailed-check-log` onto the analysis of the last 24 h.
+From the first production deployment, configure {{MONITORING}} (or its equivalent).
+Then wire `@ailed-check-log` onto the last 24 h of logs.

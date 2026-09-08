@@ -103,3 +103,5 @@ fichiers ou un chiffre non sourcé.
 
 ## Artefacts mis à jour
 Aucun dans `memory/` (lecture seule). Produit éventuellement un rapport HTML à la racine du projet.
+
+{{WRITING_RULES}}

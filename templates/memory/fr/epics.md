@@ -2,7 +2,9 @@
 
 Last Updated: {{DATE}}
 
-Artefact produit/maintenu par `@ailed-pm`. Les EPICs regroupent les lots fonctionnels ; leur découpage en tickets `{{TICKET_PREFIX}}-*` (trigramme du projet, voir `memory/config.md`) est réalisé par `@ailed-planner`.
+`@ailed-pm` produit et maintient ce fichier. Un EPIC regroupe un lot fonctionnel.
+`@ailed-planner` le découpe en tickets `{{TICKET_PREFIX}}-*` (trigramme du projet, voir
+`memory/config.md`).
 
 ## Vue d'ensemble
 

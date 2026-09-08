@@ -155,3 +155,5 @@ l'œil humain, pas au jugement de l'agent — c'est ce qui rend la skill quasi g
 ## Artefacts mis à jour
 Aucun artefact versionné. Une planche éphémère sous `.ailed/screens/<ticket>/<horodatage>/`
 (PNG + `meta.json` + `sheet.html`), ignorée par git et purgeable à tout moment.
+
+{{WRITING_RULES}}
