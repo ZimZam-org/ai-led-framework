@@ -107,3 +107,5 @@ borne ce que le runtime laisse sur disque (planches antérieures, journal compac
 
 ## Artefacts mis à jour
 Aucun (lecture seule).
+
+{{WRITING_RULES}}

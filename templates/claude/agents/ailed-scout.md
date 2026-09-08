@@ -40,3 +40,5 @@ de leur valeur pour le produit (rôle de `@ailed-analyst`).
 
 ## Artefacts mis à jour
 `memory/market-watch.md` (section « Observations brutes »).
+
+{{WRITING_RULES}}

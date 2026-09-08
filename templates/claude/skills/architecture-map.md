@@ -26,3 +26,5 @@ graph TD
 
 ## Artefacts mis à jour
 `memory/architecture.md`.
+
+{{WRITING_RULES}}

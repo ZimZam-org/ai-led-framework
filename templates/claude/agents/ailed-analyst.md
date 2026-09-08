@@ -47,3 +47,5 @@ différenciation, jamais la simple parité de features.
 
 ## Artefacts mis à jour
 `memory/market-watch.md` (section « Backlog de sujets candidats »).
+
+{{WRITING_RULES}}

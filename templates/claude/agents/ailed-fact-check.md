@@ -38,3 +38,5 @@ C'est le **gate sceptique** du workflow Discovery : par défaut, on doute.
 
 ## Artefacts mis à jour
 `memory/market-watch.md` (section « Observations brutes »).
+
+{{WRITING_RULES}}

@@ -27,3 +27,5 @@ gh pr create --base develop --fill
 
 ## Artefacts mis à jour
 Branches, commits, MR.
+
+{{WRITING_RULES}}
