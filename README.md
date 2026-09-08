@@ -22,12 +22,12 @@ npx @s2bp/ai-led-framework init
 | `.claude/agents/`   | 21 `ailed-*.md` agents (callable via `@ailed-<name>`)          |
 | `.claude/skills/`   | 12 `ailed-*` skills (callable via `/ailed-<name>`)             |
 | `.claude/commands/` | `/ailed-bootstrap` slash-command (framework bootstrap)         |
-| `.claude/hooks/`    | `ailed-runtime-hook.js` + `Task` hooks in `settings.json` feeding the live progress sidebar (`watch`/`dashboard`) |
+| `.claude/hooks/`    | `ailed-runtime-hook.js` + `PreToolUse`/`PostToolUse` hooks in `settings.json`, feeding the live progress sidebar (`watch`/`dashboard`) and the **ticket transition journal** (`.ailed/journal.jsonl`) |
 | `memory/`           | 15 project memory files (including `config.md`, `process.md`, `conventions.md` and `market-watch.md`), in the chosen language |
 | `CLAUDE.md`         | framework pointer (created only if absent)                     |
 
 Existing files are **never overwritten** unless you pass `--force` (the `settings.json` hooks are
-merged in non-destructively, and `.ailed/` is added to `.gitignore`).
+merged in non-destructively, and `.ailed/` plus the generated reports are added to `.gitignore`).
 
 ## Configuration (`memory/config.md`)
 
@@ -186,6 +186,8 @@ npx @s2bp/ai-led-framework@latest update
 | Target                                          | `update` behaviour                          |
 | ----------------------------------------------- | ------------------------------------------- |
 | `.claude/agents/`, `.claude/skills/`, `.claude/commands/` | **always rewritten** to the new version     |
+| `.claude/hooks/ailed-runtime-hook.js`           | **always rewritten**; the framework's `settings.json` entries are **re-wired** (an older matcher is upgraded in place, with no duplicate) and **your own hooks, permissions and env vars are preserved** |
+| `.gitignore`                                    | missing entries are appended **inside the existing AI-Led block** (no stacked headers) |
 | `memory/config.md`, `memory/process.md` (scaffold files) | **additive section merge**: sections the template gained are appended; your existing sections are **never** touched |
 | `memory/*.md` (project data) **never edited**   | **cleanly rewritten** to the new version (detected via `.ailed/manifest.json`) |
 | `memory/*.md` (project data) **edited**         | **preserved** as-is                          |
@@ -202,6 +204,18 @@ The config (trigram, integrations, language) is **re-read from `memory/config.md
 > section-by-section (scaffold files `config.md`/`process.md`). Sections present on both sides but
 > **diverging** are reported, never overwritten. A `conventions.md` imported via `--conventions=` is
 > excluded from the manifest, so it's never treated as pristine and never overwritten.
+
+> **Generated reports already committed.** Up to 0.15.0, `status --html` wrote a **timestamped**
+> file at the project root that git did not ignore, so plenty of projects committed a few of them
+> over time. `update` now adds the right patterns to `.gitignore`, but **a `.gitignore` does not
+> untrack an already-indexed file**: `update` therefore **lists** the reports still tracked and
+> hands you the command to take them out of the repo (`git rm --cached …`). It never touches them
+> itself — deleting versioned files is not an update's job.
+
+> **Ticket history starts at install time.** The journal (`.ailed/journal.jsonl`) fills up as agents
+> move tickets around. On an updated project, tickets already shipped therefore have **no** history:
+> the popup shows "not recorded" for the earlier steps instead of inventing dates. The hook's first
+> run records a baseline **without** fabricating any transition.
 
 > **Why `@latest`?** `npx` reuses a cached copy of the package; the `@latest` tag forces a fetch of
 > the newest published version instead of re-running the one already cached.
@@ -305,12 +319,15 @@ without opening the app screen by screen.
   URL of its own).
 - **For human eyes, not for the agent**: the images are **never read back** by an agent — the
   skill costs close to zero tokens and returns no verdict.
-- **Ephemeral**: the sheet lands in `.ailed/screens/` (git-ignored), images inlined as base64 so
-  it stays openable and shareable on its own. Nothing enters `memory/`.
+- **Ephemeral and ticket-scoped**: everything lands in `.ailed/screens/<ticket>/<timestamp>/`
+  (git-ignored) — one PNG per shot, a `meta.json` captioning them (screen, route, state,
+  acceptance criterion, viewport) and a `sheet.html` to open. Nothing enters `memory/`. Those
+  shots **surface on their own in the ticket popup** of `ailed-status.html`, next to its history.
 - **Non-blocking**: it is not a quality gate. Without the `chrome-devtools` MCP or a reachable
   app, the skill flags the missing prerequisite and stops cleanly.
 
-**`@ailed-dev`** calls it automatically before opening the MR when the ticket touches the UI, and
+**`@ailed-dev`** calls it automatically before opening the MR when the ticket touches the UI,
+**`@ailed-test`** *offers* it after a `PASS` on a UI ticket (an offer, never a quality gate), and
 it stays callable by hand. The app base URL is set in `memory/config.md` § *Local app*.
 
 ## Project status & dashboard
@@ -322,24 +339,71 @@ features, market watch, process):
   highlights **what needs a decision** (pending human validations, candidate topics to
   promote, stale watch, disabled integrations).
 - **`ai-led status`** (CLI) — a **deterministic, zero-token** terminal snapshot: progress bar,
-  kanban counts and a "watch" list. Add `--html` to generate `ailed-status.html`, a **static**
-  dashboard that opens on a **visual synthesis**: two **pie charts** (global progress + current
+  kanban counts and a "watch" list. Add `--html` to generate `ailed-status.html`, a dashboard
+  that opens on a **visual synthesis**: two **pie charts** (global progress + current
   milestone, approximate), three action counters (**bugs** to handle, open **vulnerabilities**,
-  product **arbitrations** discovery → roadmap), a **chronological EPIC timeline**, and a
-  **kanban board** — one column per non-`DONE` status plus the **5 latest `DONE`** tasks on the
-  right, each card showing **milestone → EPIC → ID → title** and opening its detail in a popup.
+  product **arbitrations** discovery → roadmap), an **EPIC timeline whose every node is a
+  progress pie** (share of its `DONE` tickets, as a % and as `n/total` — an EPIC with no linked
+  ticket reads "no ticket" instead of a fake 0%), and a **kanban board** — one column per
+  non-`DONE` status plus the **5 latest `DONE`** tasks on the right, each card showing
+  **milestone → EPIC → ID → title** and opening its detail in a popup.
   Archived tickets (`memory/archive/kanban.md`) count in too. Each `memory/` file's raw detail
   stays available, **collapsed** at the bottom — **no server, no project data sent**:
 
 ```bash
-npx @s2bp/ai-led-framework status          # terminal snapshot
-npx @s2bp/ai-led-framework status --html   # → ailed-status.html (open in a browser)
+npx @s2bp/ai-led-framework status                     # terminal snapshot
+npx @s2bp/ai-led-framework status --html              # → ailed-status.html, the live report
+npx @s2bp/ai-led-framework status --html --live       # + regenerate whenever memory/ changes
+npx @s2bp/ai-led-framework status --html --snapshot   # → timestamped self-contained file, to share
 ```
 
 Both honor the **Output style** from `config.md` (`concise` tightens the output, `detailed` adds
 milestones and in-progress tickets and expands the HTML accordions); `--style=…` forces it for a
 run. The HTML loads `marked` + `mermaid` from a CDN to render the accordions' markdown and diagrams
 (internet needed at view time).
+
+### A ticket's history and screens
+
+A kanban card's popup gives, under its description:
+
+- a **dated history** — created, development started, handed to test, finalised — with the
+  **elapsed time** between steps and the total **lead time**. Those dates are not typed in by
+  hand: the runtime hook **re-diffs the statuses on every write to `memory/kanban.md`** and
+  appends the transitions to `.ailed/journal.jsonl`. Deterministic, zero tokens, and no agent
+  discipline required — a `sed` run through Bash is seen just like an `Edit`, because it is the
+  file's state that gets compared. A step that predates the journal reads **not recorded**
+  rather than being guessed;
+- the **screenshots** `/ailed-screens` produced at test time, grouped by screen × state,
+  desktop and mobile side by side, with the acceptance criterion they came from; click for full
+  screen. Shots that could **not be reached** (a missing test account, say) and the console
+  errors picked up are listed below rather than quietly dropped.
+
+### A live report rather than a timestamped one
+
+The report carries a **stable name**: keep it open in a tab, bookmark it, and it **redraws
+itself** whenever the data changes — **scroll position and open popup preserved**, the popup even
+being replayed against the fresh data.
+
+The design point that makes this work with no server: the HTML shell (~70 KB, rewritten on every
+run) is **separated from its payload** (`.ailed/status/data.js`), and that payload is reloaded
+through a **`<script>` tag rather than `fetch()`** — over `file://`, `fetch()` is blocked by CORS
+while a script tag is not. A timestamp query acts as a cache-buster, and the page only redraws
+when the **content fingerprint** changes (otherwise it would flicker on every poll).
+
+The corollary on size: **a single file rewritten on every run does not grow over time** — its
+size is a function of the current state, not of how many times it was generated. What used to
+accumulate was the old timestamped name (one file per run, at the project root). The one item
+that really does grow is the screenshots, so they stay **PNG files on disk referenced
+relatively**, never inlined — inlining one shot costs ~300 KB of report.
+
+```bash
+npx @s2bp/ai-led-framework clean             # prune earlier sheets + compact the journal
+npx @s2bp/ai-led-framework clean --screens   # keep only the latest sheet per ticket
+```
+
+`.ailed/` is **derived and git-ignored**: `clean` never touches anything versioned. And to
+**share** a review, `--snapshot` does the opposite on demand — a timestamped, 100%
+self-contained file with the shots inlined as base64, ready to send as-is.
 
 ## Live progress sidebar (`watch` / `dashboard`)
 
@@ -387,15 +451,21 @@ all recognized (the `Status` column of `memory/kanban.md` / `memory/epics.md`).
 - **Epics / tasks**: read from `memory/epics.md` and `memory/kanban.md` (statuses `DONE`,
   `IN_PROGRESS`, `TODO`…). Works even without the hook.
 - **Agents (last / current / upcoming)**: fed by the `.claude/hooks/ailed-runtime-hook.js` hook
-  (installed by `init`/`update`), wired via `.claude/settings.json` (`PostToolUse` on `Task`). On
-  every subagent call it writes the active agent to `.ailed/runtime.json` (gitignored); the running
-  agent shows a **live chrono** (`▶ @dev impl · 2m14s`) so the panel breathes even during a long
-  agent run. **Upcoming agents** are projected from the detected workflow chain (Discovery / Feature
-  / Incident / Security, see `memory/process.md`).
-- **Main-loop heartbeat**: `PreToolUse` (matcher `*`) records the last tool the main loop touched,
+  (installed by `init`/`update`), wired via `.claude/settings.json` (`PreToolUse` and `PostToolUse`,
+  matcher `*`). On every subagent call it writes the active agent to `.ailed/runtime.json`
+  (gitignored); the running agent shows a **live chrono** (`▶ @dev impl · 2m14s`) so the panel
+  breathes even during a long agent run. **Upcoming agents** are projected from the detected
+  workflow chain (Discovery / Feature / Incident / Security, see `memory/process.md`).
+- **Ticket journal**: when a tool finishes, the hook compares `memory/kanban.md`'s **signature**
+  (mtime + size) against its last snapshot; if it moved, it re-diffs the statuses and appends the
+  transitions to `.ailed/journal.jsonl` — the source of the history shown in a ticket's popup on
+  the dashboard. Hence the `*` matcher on `PostToolUse`: a ticket can move through `Edit`, `Write`
+  or a `sed` run in `Bash`. When nothing changed, the hook costs one `stat()`.
+- **Main-loop heartbeat**: `PreToolUse` records the last tool the main loop touched,
   shown as `⋯ Edit · 3s` when no subagent is running — so the panel stays live during direct work,
-  not only at agent boundaries. (This fires the hook on every tool call; remove the `PreToolUse`
-  `*` entry from `.claude/settings.json` to opt out.)
+  not only at agent boundaries. (These fire the hook on every tool call; remove the matcher `*`
+  entries from `.claude/settings.json` to opt out — the panel then loses agents and the dashboard
+  loses ticket history.)
 
 > **Tilix / GNOME Terminal (VTE):** the refresh clears the scrollback (`\x1b[3J`) on each redraw, so
 > the live pane no longer stacks stale frames in your scroll history.
