@@ -14,13 +14,13 @@ Describes the agent-driven workflows. Each step consumes the artefacts of the pr
 
 ## Memory rotation & cleanup
 
-Several files grow unbounded: every agent read gets more expensive **in tokens** over time. To
-keep reads light, only the **active entries stay inline**; the rest is archived (same name under
-`memory/archive/`, created on demand), with a `> Archives: memory/archive/<file>.md` line at the
-top of the active file.
+Four files grow unbounded: `kanban.md`, `incidents.md`, `decisions.md` and `market-watch.md`.
+Every agent read then costs more tokens. To keep reads light, the active file keeps **only the
+active entries**. The rest moves to `memory/archive/<same name>.md`, created on demand. The
+active file then carries a `> Archives: memory/archive/<file>.md` line at the top.
 
-Principle: **nothing is ever deleted, only moved.** Agents read **only the active file**; the
-archive is opened solely for explicit historical investigation.
+Principle: **nothing disappears, everything moves.** Agents read **only the active file**.
+The archive opens for one reason only: an explicit historical investigation.
 
 | File | Stays inline (active) | Moved to archive |
 | ---- | --------------------- | ---------------- |
@@ -33,13 +33,13 @@ archive is opened solely for explicit historical investigation.
 
 - **Incrementally**: the maintaining agent archives as soon as it edits the file and an entry
   flips from "active" to "archivable".
-- **Size threshold**: once a file exceeds **~40 active entries** (table rows / blocks), the agent
-  touching it **must** archive the overflow **before** writing — the threshold makes cleanup
-  deterministic rather than reliant on vigilance.
+- **Size threshold**: once a file exceeds **40 active entries**, the agent touching it archives
+  the overflow **before** writing. One entry = one table row or one block. The threshold makes
+  cleanup deterministic, instead of leaving it to vigilance.
 - **Kanban at release**: `@ailed-release` **archives the shipped `DONE` tickets to
   `memory/archive/kanban.md`**, but **only once it has verified that `features.md` reflects the
-  delivered functionality** (otherwise the ticket stays inline: no information is ever lost before
-  it is captured elsewhere). `features.md` is the **durable record of what shipped**;
+  delivered functionality**. Otherwise the ticket stays inline: the framework never loses an
+  information before another file records it. `features.md` is the **durable record of what shipped**;
   `archive/kanban.md` only keeps the raw ticket→MR→date history.
 
 ---
@@ -52,7 +52,7 @@ Long sessions cost tokens *even when cached* — hence a few rules:
 - **One unit of work = one session.** A dev ticket, an incident, a watch pass each run in a
   clean session; reload the useful context from `memory/` at startup instead of dragging along
   a history that keeps growing.
-- **`/clear` at boundaries.** When a workflow ends (capstone) or an MR is opened, the
+- **`/clear` at boundaries.** When a workflow ends (capstone) or a dev opens an MR, the
   `ailed-runtime-hook.js` hook suggests `/clear`: following it resets the context with no loss
   (state lives in `memory/`).
 - **`/compact` mid-task** if a single session grows long, to condense without starting over.

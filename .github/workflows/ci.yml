@@ -83,6 +83,36 @@ jobs:
           # and the entries live in a single AI-Led block, not one header per version
           test "$(grep -c '^# AI-Led' .gitignore)" = "1"
 
+      - name: Verify the writing standard ships, checks and can be disabled
+        run: |
+          # the framework's own memory templates must pass their own standard
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" lint --strict "$GITHUB_WORKSPACE/templates/memory/fr"
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" lint --strict --lang=en "$GITHUB_WORKSPACE/templates/memory/en"
+          cd /tmp/ai-led-smoke
+          test -s memory/writing-rules.md
+          grep -q 'Norme de rédaction des textes produits : `ste`' memory/config.md
+          grep -q '## Rédaction (norme `ste`)' .claude/agents/ailed-dev.md
+          grep -q '## Rédaction (norme `ste`)' .claude/skills/status/SKILL.md
+          ! grep -rq 'WRITING_RULES' .claude/
+          # the checker runs on the installed memory/ and names its own rules file
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" lint | tee /tmp/lint.txt
+          grep -q "writing-rules.md" /tmp/lint.txt
+          # a project installed before the standard gets it back through update
+          rm memory/writing-rules.md
+          node -e "const fs=require('fs'),f='memory/config.md';
+            fs.writeFileSync(f, fs.readFileSync(f,'utf8')
+              .replace(/## Rédaction[\s\S]*?(?=## Conventions techniques)/, '') + '\n## Section redac maison\n');"
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" update -y
+          test -s memory/writing-rules.md
+          grep -q '^## Rédaction' memory/config.md
+          grep -q 'Section redac maison' memory/config.md
+          # and a fresh project with the norm off carries no rule block at all
+          mkdir -p /tmp/ai-led-nostd && cd /tmp/ai-led-nostd
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" init --trigram=TST -y --writing=aucun
+          grep -q 'Norme de rédaction des textes produits : `aucun`' memory/config.md
+          ! grep -q '## Rédaction (norme' .claude/agents/ailed-dev.md
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" lint | grep -q "désactivée"
+
       - name: Verify memory-diff against a committed then edited memory/
         run: |
           cd /tmp/ai-led-smoke

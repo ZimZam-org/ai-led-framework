@@ -52,6 +52,58 @@ const LANG_DEFAULT = "fr";
 // sentinel "integration disabled" word, per memory language
 const DISABLED_WORD = { fr: "aucun", en: "none" };
 
+// ── writing standard (ASD-STE100-derived profile) ─────────────
+// Two orthogonal dials: `style` sets the VOLUME of a text, this one sets the
+// SHAPE of its sentences. The full rule set lives in memory/writing-rules.md;
+// the block below is what every agent/skill prompt carries inline, so a running
+// agent never has to open a file to know the rules. One source, 30+ consumers.
+const WRITING_NORM_DEFAULT = "ste";
+const WRITING_RULES_BLOCK = {
+  fr: `## Rédaction (norme \`ste\`)
+Tout texte produit — \`memory/\`, ticket, rapport, commentaire, message poussé vers un outil
+externe — respecte \`memory/writing-rules.md\` :
+
+- une idée par phrase ; 20 mots au maximum (25 pour une instruction) ;
+- voix active, présent, sujet explicite ; impératif pour une instruction ;
+- un terme = un sens : \`memory/glossary.md\` fait autorité, les synonymes sont interdits ;
+  un terme nouveau s'ajoute au glossaire au lieu de s'improviser ;
+- aucun sigle absent du glossaire ; trois mots au maximum par groupe nominal ;
+- des faits chiffrés (nombre, ID, nom de fichier) plutôt que des qualificatifs ;
+- interdits : \`etc.\`, \`notamment\`, \`au niveau de\`, \`dans le cadre de\`, \`il convient de\`,
+  \`il est important de noter que\`, \`gérer\`, \`traiter\`, \`permettre de\`, le conditionnel
+  de prudence.
+
+Le texte reprend la **langue des fichiers \`memory/\`** (voir \`memory/config.md\`). Le *Style de
+sortie* fixe le volume, cette norme fixe la forme des phrases : un rapport \`détaillé\` reste
+composé de phrases courtes. \`npx @s2bp/ai-led-framework lint\` vérifie les règles mesurables.
+Hors norme : le contenu promotionnel, qui suit la voix de marque.`,
+  en: `## Writing (\`ste\` standard)
+Every produced text — \`memory/\`, ticket, report, comment, message pushed to an external
+tool — follows \`memory/writing-rules.md\`:
+
+- one idea per sentence; 20 words at most (25 for an instruction);
+- active voice, present tense, explicit subject; imperative for an instruction;
+- one term = one meaning: \`memory/glossary.md\` is the authority, synonyms are forbidden;
+  a new term goes into the glossary instead of being improvised;
+- no acronym the glossary does not define; three words per noun cluster at most;
+- measured facts (number, ID, file name) instead of adjectives;
+- forbidden: \`etc.\`, \`in order to\`, \`it should be noted that\`, \`handle\`, \`manage\`,
+  \`process\`, \`enable\`, \`leverage\`, \`various\`, hedging modals.
+
+The text uses the **language of the \`memory/\` files** (see \`memory/config.md\`). *Output style*
+sets the volume, this standard sets the shape of the sentences: a \`detailed\` report still uses
+short sentences. \`npx @s2bp/ai-led-framework lint\` checks the measurable rules.
+Out of scope: promotional content, which follows the brand voice.`,
+};
+
+// "ste" (on) | "off". Accepts the per-language sentinel word as "off".
+function normWriting(v) {
+  if (v === undefined || v === null || v === "") return WRITING_NORM_DEFAULT;
+  const s = String(v).trim().toLowerCase();
+  if (/^(off|no|none|aucun|aucune|non|0|false|disabled)$/.test(s)) return "off";
+  return WRITING_NORM_DEFAULT;
+}
+
 // ── per-agent LLM model policy ────────────────────────────────
 // Default tiering: which Claude model each agent runs on. The harness reads this
 // from each agent's frontmatter (`model:`), NOT from config.md at runtime — so we
@@ -154,6 +206,8 @@ async function resolveConfig() {
     conventions: flag("conventions") || "",
     // output verbosity for agents + reports (presentation only, never memory/ content)
     style: (flag("style") || "standard").toLowerCase(),
+    // writing standard for produced text ("ste" = ASD-STE100-derived profile, "off")
+    writing: normWriting(flag("writing")),
     // per-agent LLM model map (defaults + --model-<name> overrides)
     models: resolveModels(),
   };
@@ -171,7 +225,8 @@ async function resolveConfig() {
     !flag("ticketing") &&
     !flag("docs") &&
     !flag("conventions") &&
-    !flag("style");
+    !flag("style") &&
+    !flag("writing");
 
   if (interactive) {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -189,6 +244,7 @@ async function resolveConfig() {
     cfg.documentation = await ask(rl, "Documentation externe (ex. Confluence, via MCP) :", disabled);
     cfg.conventions = await ask(rl, "Fichier de conventions / organisation technique à importer (facultatif, Entrée = ignorer) :", "");
     cfg.style = (await ask(rl, "Style de sortie des agents/rapports (concis/standard/détaillé) :", "standard")).toLowerCase();
+    cfg.writing = normWriting(await ask(rl, `Norme de rédaction des textes (ste = profil ASD-STE100 / ${disabled} = désactivée) :`, WRITING_NORM_DEFAULT));
     rl.close();
   }
 
@@ -216,7 +272,17 @@ function substitute(content, cfg, agentName) {
     .replace(/{{DOCUMENTATION}}/g, cfg.documentation)
     .replace(/{{DISABLED}}/g, cfg.disabled)
     .replace(/{{OUTPUT_STYLE}}/g, cfg.style || "standard")
-    .replace(/{{DATE}}/g, now);
+    .replace(/{{WRITING_NORM}}/g, () =>
+      normWriting(cfg.writing) === "off" ? cfg.disabled || "none" : WRITING_NORM_DEFAULT
+    )
+    .replace(/{{WRITING_RULES}}/g, () =>
+      normWriting(cfg.writing) === "off"
+        ? ""
+        : WRITING_RULES_BLOCK[cfg.lang] || WRITING_RULES_BLOCK[LANG_DEFAULT]
+    )
+    .replace(/{{DATE}}/g, now)
+    // a disabled writing block leaves the file with a dangling blank tail
+    .replace(/\n{3,}$/, "\n");
 }
 
 let created = 0;
@@ -392,7 +458,7 @@ async function init() {
 
   const cfg = await resolveConfig();
   console.log(
-    `\n${c.dim("Config")} : langue=${c.bold(cfg.lang)} · trigramme=${c.bold(cfg.trigram)} · monitoring=${cfg.monitoring} · e2e=${cfg.e2e} · promo=${cfg.promo} · veille=${cfg.watch} · seo/aso=${cfg.seo_aso} · ticketing=${cfg.ticketing} · doc=${cfg.documentation} · conventions=${cfg.conventions || cfg.disabled}\n`
+    `\n${c.dim("Config")} : langue=${c.bold(cfg.lang)} · trigramme=${c.bold(cfg.trigram)} · monitoring=${cfg.monitoring} · e2e=${cfg.e2e} · promo=${cfg.promo} · veille=${cfg.watch} · seo/aso=${cfg.seo_aso} · ticketing=${cfg.ticketing} · doc=${cfg.documentation} · conventions=${cfg.conventions || cfg.disabled} · rédaction=${normWriting(cfg.writing) === "off" ? cfg.disabled : WRITING_NORM_DEFAULT}\n`
   );
 
   // 1. Agents  ->  .claude/agents/
@@ -477,6 +543,7 @@ function parseInstalledConfig(memDir) {
     documentation: disabled,
     conventions: "",
     style: "standard",
+    writing: WRITING_NORM_DEFAULT,
     // per-agent models: defaults overlaid with whatever the config.md table declares
     models: { ...AGENT_MODEL_TIERS, ...parseModelsTable(txt) },
   };
@@ -486,6 +553,12 @@ function parseInstalledConfig(memDir) {
     txt.match(/communication style:?\s*`([^`]+)`/i) ||
     txt.match(/style de communication[^\n]*?`([^`]+)`/i);
   if (st) cfg.style = st[1].trim().toLowerCase();
+
+  // writing standard read from its dedicated bullet (fr "Norme de rédaction…" / en "Writing standard…")
+  const wr =
+    txt.match(/writing standard[^\n]*?`([^`]+)`/i) ||
+    txt.match(/norme de r[eé]daction[^\n]*?`([^`]+)`/i);
+  if (wr) cfg.writing = normWriting(wr[1]);
 
   // integration values read from the Integrations table (label → key)
   const labels = [
@@ -533,7 +606,7 @@ function parseInstalledConfig(memDir) {
 // memory/ mixes two natures: framework-owned scaffolding whose *structure*
 // evolves (config.md, process.md) and pure project data (everything else).
 // `update` must bring structural changes in without ever clobbering user data.
-const FRAMEWORK_MEMORY = new Set(["config.md", "process.md"]);
+const FRAMEWORK_MEMORY = new Set(["config.md", "process.md", "writing-rules.md", "glossary.md"]);
 
 function sha256(s) { return crypto.createHash("sha256").update(s, "utf8").digest("hex"); }
 function manifestPath(projectDir) { return path.join(projectDir, ".ailed", "manifest.json"); }
@@ -724,7 +797,7 @@ async function update() {
   }
 
   console.log(
-    `\n${c.dim("Config relue depuis memory/config.md")} : langue=${c.bold(cfg.lang)} · trigramme=${c.bold(cfg.trigram)} · monitoring=${cfg.monitoring} · e2e=${cfg.e2e} · promo=${cfg.promo} · veille=${cfg.watch} · seo/aso=${cfg.seo_aso} · ticketing=${cfg.ticketing} · doc=${cfg.documentation} · style=${cfg.style}\n`
+    `\n${c.dim("Config relue depuis memory/config.md")} : langue=${c.bold(cfg.lang)} · trigramme=${c.bold(cfg.trigram)} · monitoring=${cfg.monitoring} · e2e=${cfg.e2e} · promo=${cfg.promo} · veille=${cfg.watch} · seo/aso=${cfg.seo_aso} · ticketing=${cfg.ticketing} · doc=${cfg.documentation} · style=${cfg.style} · rédaction=${normWriting(cfg.writing) === "off" ? cfg.disabled : WRITING_NORM_DEFAULT}\n`
   );
 
   // 1. Agents — always overwritten (framework-owned)
@@ -3634,6 +3707,286 @@ function modelsSync() {
   console.log(c.dim("  Source : memory/config.md (table « Modèles LLM par agent »).\n"));
 }
 
+// ── lint: writing-standard checker (memory/ prose) ───────────
+// Checks the measurable rules of memory/writing-rules.md. Prose only: code
+// fences, tables, headings, frontmatter and Mermaid blocks are skipped, since
+// a kanban row or a command line is terse on purpose.
+const LINT_LIMIT = { prose: 20, item: 25, hard: 32 };
+const LINT_PARA_LINES = 6;
+
+// build a word-boundary alternation that survives accents and hyphens
+function lintWords(words) {
+  return new RegExp("(?<![\\p{L}\\p{N}-])(?:" + words.join("|") + ")(?![\\p{L}\\p{N}-])", "giu");
+}
+
+// acronyms every project may use without a glossary row (framework + web basics)
+const LINT_ACRONYM_OK = new Set([
+  "AI", "LED", "MR", "PR", "ADR", "SPEC", "EPIC", "EPICS", "RCA", "UX", "UI", "QA",
+  "SEO", "ASO", "E2E", "MCP", "LLM", "CLI", "API", "SDK", "IDE", "URL", "URI", "ID",
+  "IDS", "HTML", "CSS", "JS", "TS", "JSON", "YAML", "CSV", "PNG", "SVG", "PDF", "MD",
+  "CI", "CD", "OS", "DB", "SQL", "HTTP", "HTTPS", "DNS", "TLS", "SSL", "SSO", "JWT",
+  "MFA", "OWASP", "CVE", "CVSS", "RGPD", "GDPR", "KPI", "MVP", "ROI", "ETA", "UTC",
+  "ISO", "ASD", "STE", "STE100", "FAQ", "TODO", "DONE", "PASS", "FAIL", "OK", "KO", "NA",
+  "CRITICAL", "HIGH", "MEDIUM", "LOW", "NONE", "README", "CHANGELOG", "LICENSE",
+  "FPS", "TTI", "RAM", "CPU", "SLA", "SLO",
+]);
+
+const LINT_RULES = {
+  fr: {
+    banned: [
+      { id: "tournure-vide", sev: "error", re: lintWords(["etc", "notamment", "entre autres"]), hint: "la liste complète, ou « 3 exemples : … »" },
+      { id: "tournure-vide", sev: "error", re: /\b(?:au niveau (?:de|du|des)|dans le cadre (?:de|du|des)|il convient de|il est important de noter|il est à noter|en effet|par ailleurs)\b/giu, hint: "supprimer la formule, ou passer à l'impératif" },
+      { id: "verbe-flou", sev: "warn", re: lintWords(["gérer", "gère", "gèrent", "géré", "gérée", "gérés", "gérées", "traiter", "traite", "traitent", "traité", "traitée", "traités", "traitées", "prendre en charge", "permet de", "permettre de", "permettent de", "adresser"]), hint: "le verbe exact : créer, valider, supprimer, envoyer" },
+      { id: "quantité-floue", sev: "warn", re: lintWords(["différent", "différents", "différente", "différentes", "divers", "diverses", "plusieurs"]), hint: "le nombre exact" },
+      { id: "délai-flou", sev: "warn", re: lintWords(["rapidement", "prochainement", "bientôt", "régulièrement"]), hint: "la date ou le délai" },
+      { id: "prudence", sev: "warn", re: /\b(?:pourrai(?:t|ent)|devrai(?:t|ent)|semblerai(?:t|ent)|il est possible que)\b/giu, hint: "le fait, ou « non vérifié : … »" },
+    ],
+    passive: /\b(?:est|sont|était|étaient|a été|ont été|sera|seront|serait|seraient)\s+(?:[a-zà-ÿ]+ment\s+)?([a-zà-ÿ]{3,}(?:ées|ée|és|é|ies|ie|is|i|ues|ue|us|u|ites|ite|its|it))(?![\p{L}])/giu,
+    passiveSkip: new Set([
+      "aussi", "ainsi", "ici", "parmi", "demi", "celui", "lui", "oui", "ceci", "puis",
+      "depuis", "vrai", "vraie", "vrais", "gratuit", "fortuit", "inédit", "petit",
+      "petits", "petite", "petites", "produit", "produits", "circuit", "fini", "prêt",
+      "jamais", "toujours", "parfois", "souvent", "plus", "moins", "sans", "sous",
+      "mais", "très", "alors", "après", "avant", "assez", "trop", "bien", "mieux",
+    ]),
+    chain: /(?:\bde|\bdu|\bdes|\bd['’])\s+\S+\s+(?:\bde|\bdu|\bdes|\bd['’])\s+\S+\s+(?:\bde\b|\bdu\b|\bdes\b|\bd['’])/giu,
+    id: { long: "phrase-longue", passive: "voix-passive", chain: "groupe-nominal", para: "paragraphe", acronym: "sigle" },
+    msg: {
+      long: (n, max) => `${n} mots (max ${max})`,
+      passive: (v) => `voix passive (« ${v} »)`,
+      chain: "groupe nominal trop long (trois « de » enchaînés)",
+      para: (n) => `paragraphe de ${n} lignes (max ${LINT_PARA_LINES})`,
+      acronym: (a) => `sigle « ${a} » absent de memory/glossary.md`,
+    },
+  },
+  en: {
+    banned: [
+      { id: "empty-phrase", sev: "error", re: lintWords(["etc", "and so on"]), hint: "the full list, or \"3 examples: …\"" },
+      { id: "empty-phrase", sev: "error", re: /\b(?:in order to|at the level of|in the context of|it should be noted|it is important to note|indeed|furthermore|moreover)\b/gi, hint: "delete the phrase, or use the imperative" },
+      { id: "vague-verb", sev: "warn", re: lintWords(["handle", "handles", "handled", "manage", "manages", "managed", "process", "processes", "processed", "deal with", "enable", "enables", "allow to", "allows to", "leverage", "leverages", "utilize", "utilizes"]), hint: "the exact verb: create, validate, delete, send" },
+      { id: "vague-amount", sev: "warn", re: lintWords(["various", "several", "multiple", "some"]), hint: "the exact number" },
+      { id: "vague-delay", sev: "warn", re: lintWords(["quickly", "regularly", "shortly"]), hint: "the date or the delay" },
+      // "as soon as" is a conjunction, not a vague delay
+      { id: "vague-delay", sev: "warn", re: /(?<!as\s)\bsoon\b(?!\s+as)/gi, hint: "the date or the delay" },
+      { id: "hedging", sev: "warn", re: /\b(?:might|could|would probably|seems to|it is possible that)\b/gi, hint: "the fact, or \"unverified: …\"" },
+    ],
+    passive: /\b(?:is|are|was|were|be|been|being)\s+(?:\w+ly\s+)?(\w{3,}(?:ed|en))\b/gi,
+    passiveSkip: new Set(["open", "golden", "even", "often", "garden", "children", "screen", "token", "when", "then", "green", "kitchen", "listen", "happen", "oxygen", "seven", "wooden", "red"]),
+    chain: /\bof\s+\S+\s+of\s+\S+\s+of\b/gi,
+    id: { long: "long-sentence", passive: "passive-voice", chain: "noun-cluster", para: "paragraph", acronym: "acronym" },
+    msg: {
+      long: (n, max) => `${n} words (max ${max})`,
+      passive: (v) => `passive voice ("${v}")`,
+      chain: "noun cluster too long (three chained \"of\")",
+      para: (n) => `paragraph of ${n} lines (max ${LINT_PARA_LINES})`,
+      acronym: (a) => `acronym "${a}" missing from memory/glossary.md`,
+    },
+  },
+};
+
+// strip inline markdown so word counts and word rules see plain prose
+function lintClean(s) {
+  return s
+    .replace(/\{\{[A-Z_0-9]+\}\}/g, "[var]")
+    .replace(/`[^`]*`/g, "[code]")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "image")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/(^|\s)[*_]([^*_]+)[*_](?=\s|$|[.,;:!?])/g, "$1$2")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// markdown → prose blocks. A block is a paragraph or a single list item with
+// its continuation lines; `item` raises the sentence limit (procedural text).
+function lintBlocks(md) {
+  const lines = md.split("\n");
+  const blocks = [];
+  let cur = null, inFence = false, inFront = false;
+  const close = () => { if (cur && cur.parts.length) blocks.push(cur); cur = null; };
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i].trim();
+    if (i === 0 && t === "---") { inFront = true; continue; }
+    if (inFront) { if (t === "---") inFront = false; continue; }
+    if (/^(```|~~~)/.test(t)) { inFence = !inFence; close(); continue; }
+    if (inFence) continue;
+    if (t === "" || /^#{1,6}\s/.test(t) || t.startsWith("|") || t.startsWith("<") ||
+        /^(-{3,}|\*{3,}|_{3,})$/.test(t) || /^(Last Updated|Source)\s*:/i.test(t)) { close(); continue; }
+    const body = t.replace(/^>\s?/, "");
+    if (body === "") { close(); continue; } // a bare ">" separates two quoted paragraphs
+    const isItem = /^([-*+]|\d+[.)])\s+/.test(body);
+    const text = body.replace(/^([-*+]|\d+[.)])\s+/, "");
+    if (isItem) { close(); cur = { start: i + 1, item: true, parts: [] }; }
+    else if (!cur) { cur = { start: i + 1, item: false, parts: [] }; }
+    cur.parts.push({ line: i + 1, text });
+  }
+  close();
+  return blocks;
+}
+
+// split a block into sentences, each carrying the source line it starts on
+function lintSentences(block) {
+  let joined = "";
+  const map = [];
+  block.parts.forEach((p, idx) => {
+    const chunk = (idx ? " " : "") + lintClean(p.text);
+    for (const ch of chunk) { joined += ch; map.push(p.line); }
+  });
+  const out = [];
+  const re = /[.!?;:…]+(?=\s|$)/g;
+  let start = 0, m;
+  const push = (from, to) => {
+    const text = joined.slice(from, to).trim();
+    if (text) out.push({ text, line: map[from] || block.start });
+  };
+  while ((m = re.exec(joined))) {
+    const before = joined.slice(Math.max(0, m.index - 5), m.index + 1);
+    if (/(?:^|\s)(?:ex|p|cf|M|vs|no|env|min|art|fig|réf|ref|al)\.$/i.test(before)) continue;
+    const end = m.index + m[0].length;
+    push(start, end);
+    start = end;
+    while (start < joined.length && /\s/.test(joined[start])) start++;
+    re.lastIndex = start;
+  }
+  push(start, joined.length);
+  return out;
+}
+
+function lintWordCount(s) {
+  return s.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
+}
+
+// acronyms already defined by the project glossary (any all-caps token in it)
+function lintGlossary(memDir) {
+  const defined = new Set();
+  try {
+    const txt = fs.readFileSync(path.join(memDir, "glossary.md"), "utf8");
+    for (const m of txt.matchAll(/\b[A-Z][A-Z0-9]{1,7}\b/g)) defined.add(m[0].toUpperCase());
+  } catch (_) { /* no glossary yet → framework whitelist only */ }
+  return defined;
+}
+
+function lintFile(file, rel, lang, defined) {
+  const R = LINT_RULES[lang] || LINT_RULES[LANG_DEFAULT];
+  const md = fs.readFileSync(file, "utf8");
+  const out = [];
+  const seenAcronym = new Set();
+  const add = (line, sev, rule, msg, hint) => out.push({ rel, line, sev, rule, msg, hint });
+
+  for (const block of lintBlocks(md)) {
+    if (!block.item && block.parts.length > LINT_PARA_LINES) {
+      add(block.start, "warn", R.id.para, R.msg.para(block.parts.length));
+    }
+    for (const s of lintSentences(block)) {
+      const n = lintWordCount(s.text);
+      const max = block.item ? LINT_LIMIT.item : LINT_LIMIT.prose;
+      if (n > LINT_LIMIT.hard) add(s.line, "error", R.id.long, R.msg.long(n, max), s.text);
+      else if (n > max) add(s.line, "warn", R.id.long, R.msg.long(n, max), s.text);
+
+      for (const rule of R.banned) {
+        rule.re.lastIndex = 0;
+        const hits = [...s.text.matchAll(rule.re)].map((h) => h[0]);
+        for (const hit of new Set(hits)) add(s.line, rule.sev, rule.id, `« ${hit} »`, rule.hint);
+      }
+
+      R.passive.lastIndex = 0;
+      for (const h of s.text.matchAll(R.passive)) {
+        if (R.passiveSkip.has((h[1] || "").toLowerCase())) continue;
+        add(s.line, "warn", R.id.passive, R.msg.passive(h[0].trim()), null);
+      }
+
+      R.chain.lastIndex = 0;
+      const chain = s.text.match(R.chain);
+      if (chain) add(s.line, "warn", R.id.chain, R.msg.chain, chain[0]);
+
+      const capsStripped = s.text.replace(/(?<![\p{L}\p{N}])[A-ZÀ-Ý][A-ZÀ-Ý0-9]+(?:\s+[A-ZÀ-Ý][A-ZÀ-Ý0-9]+)+(?![\p{L}\p{N}])/gu, " ");
+      for (const h of capsStripped.matchAll(/(?<![\p{L}\p{N}])[A-ZÀ-Ý][A-ZÀ-Ý0-9]{1,4}(?![\p{L}\p{N}])/gu)) {
+        const a = h[0].toUpperCase();
+        if (a.includes("_") || LINT_ACRONYM_OK.has(a) || defined.has(a) || seenAcronym.has(a)) continue;
+        seenAcronym.add(a);
+        add(s.line, "warn", R.id.acronym, R.msg.acronym(a), null);
+      }
+    }
+  }
+  return out;
+}
+
+function lintTargets(paths, memDir) {
+  const files = [];
+  const walk = (p) => {
+    const st = fs.statSync(p);
+    if (st.isDirectory()) {
+      if (path.basename(p) === "archive") return;
+      for (const e of fs.readdirSync(p).sort()) walk(path.join(p, e));
+      return;
+    }
+    if (p.endsWith(".md")) files.push(p);
+  };
+  if (paths.length) {
+    for (const p of paths) {
+      const abs = path.resolve(cwd, p);
+      if (!fs.existsSync(abs)) { console.error(`  ${c.yellow("skip")} ${p} ${c.dim("(introuvable)")}`); continue; }
+      walk(abs);
+    }
+    return files;
+  }
+  if (!fs.existsSync(memDir)) return files;
+  walk(memDir);
+  return files;
+}
+
+function lint() {
+  const memDir = path.join(cwd, "memory");
+  const cfg = parseInstalledConfig(memDir);
+  const paths = argv.slice(1).filter((a) => !a.startsWith("-"));
+  const lang = (flag("lang") || (cfg && cfg.lang) || LANG_DEFAULT).toLowerCase();
+  const strict = argv.includes("--strict");
+
+  if (cfg && normWriting(cfg.writing) === "off" && !paths.length) {
+    console.log(`\n${c.yellow("○")} Norme de rédaction désactivée dans ${c.cyan("memory/config.md")} (section « Rédaction »).`);
+    console.log(c.dim("  Rien à vérifier. Passe un chemin explicite pour forcer le contrôle.\n"));
+    return;
+  }
+
+  const files = lintTargets(paths, memDir);
+  if (!files.length) {
+    console.log(`\n${c.yellow("○")} Aucun fichier markdown à vérifier.`);
+    console.log(c.dim(`  Projet non initialisé ? Lance ${"npx @s2bp/ai-led-framework init"}.\n`));
+    return;
+  }
+
+  const defined = lintGlossary(memDir);
+  console.log(`\n${c.bold("ai-led lint")} ${c.dim("v" + pkg.version)} — norme ${c.bold("ste")} · langue ${c.bold(lang)} · ${files.length} fichier(s)`);
+  console.log(c.dim(`  Règles : memory/writing-rules.md\n`));
+
+  let errors = 0, warns = 0, clean = 0;
+  for (const file of files) {
+    const rel = path.relative(cwd, file) || path.basename(file);
+    const found = lintFile(file, rel, lang, defined).sort((a, b) => a.line - b.line);
+    if (!found.length) { clean++; continue; }
+    console.log(c.bold(rel));
+    for (const f of found) {
+      if (f.sev === "error") errors++; else warns++;
+      const tag = f.sev === "error" ? c.yellow("erreur") : c.dim("avert.");
+      const extra = f.hint ? c.dim(` → ${String(f.hint).slice(0, 70)}`) : "";
+      console.log(`  ${String(f.line).padStart(4)}  ${tag}  ${f.rule.padEnd(15)} ${f.msg}${extra}`);
+    }
+    console.log("");
+  }
+
+  const total = errors + warns;
+  if (!total) {
+    console.log(`${c.green("✓")} ${files.length} fichier(s) conformes.\n`);
+    return;
+  }
+  console.log(
+    `${errors ? c.yellow("✗") : c.green("✓")} ${c.bold(errors)} erreur(s) · ${c.bold(warns)} avertissement(s) · ${clean} fichier(s) conforme(s).`
+  );
+  console.log(c.dim("  Règles et alternatives : memory/writing-rules.md\n"));
+  if (errors || (strict && total)) process.exitCode = 1;
+}
+
 function help() {
   console.log(`
 ${c.bold("ai-led")} ${c.dim("v" + pkg.version)} — framework de workflow AI-led pour Claude Code
@@ -3646,6 +3999,7 @@ ${c.bold("Commands")}
   update          Met à jour le framework (agents/skills/commands) en préservant memory/ et CLAUDE.md
   status          Affiche l'état du projet (terminal) ; --html pour un tableau de bord navigateur
   memory-diff     Liste ce qui a changé dans memory/ (par section) ; --html / --clip pour la relecture humaine
+  lint            Vérifie la norme de rédaction (memory/writing-rules.md) ; --strict bloque aussi sur les avertissements
   clean           Taille .ailed/ (captures antérieures, journal des tickets) sans rien perdre de versionné
   watch           Panneau de progression vertical (epics → tâches → agents), rafraîchi en continu
   dashboard       Ouvre un split (gauche: watch figé · droite: claude) via tmux ou zellij
@@ -3665,6 +4019,7 @@ ${c.bold("Options de init")}
   --ticketing=NOM     Ticketing externe (ex. Jira, via MCP) ou désactivé (défaut)
   --docs=NOM          Documentation externe (ex. Confluence, via MCP) ou désactivé (défaut)
   --style=NIVEAU      Style de sortie agents/rapports : concis | standard | détaillé (défaut : standard)
+  --writing=NORME     Norme de rédaction des textes produits : ste | aucun (défaut : ste)
   --conventions=CHEMIN  Importe un fichier de conventions/organisation technique dans memory/conventions.md (facultatif)
   --model-<agent>=TIER  Modèle d'un agent (ex. --model-dev=opus) ; TIER : opus | sonnet | haiku | inherit
   -y, --yes           Mode non interactif (valeurs par défaut / flags fournis)
@@ -3681,6 +4036,21 @@ ${c.bold("update")}
   ajoute les nouveaux fichiers memory/, et préserve memory/*.md et CLAUDE.md existants.
   La config (trigramme, intégrations, langue) est relue depuis memory/config.md.
   ${c.dim("Astuce : npx @s2bp/ai-led-framework@latest update  pour contourner le cache npx.")}
+
+${c.bold("Rédaction (norme ste)")}
+  Les textes produits par les agents suivent un profil dérivé de ASD-STE100 (Simplified
+  Technical English), transposé au français : une idée par phrase, 20 mots au maximum,
+  voix active, un terme = un sens (memory/glossary.md fait autorité), faits chiffrés.
+  Les règles vivent dans memory/writing-rules.md ; le bloc de règles est injecté dans
+  chaque agent et chaque skill à l'installation. ${c.cyan("lint")} vérifie les règles mesurables.
+  Le contenu promo et le code sortent du périmètre. ${c.dim("--writing=aucun")} désactive la norme.
+
+${c.bold("Options de lint")}
+  --strict            Les avertissements deviennent bloquants (code de sortie 1)
+  --lang=fr|en        Force le profil de langue (sinon lu dans memory/config.md)
+  <chemin>…           Fichier(s) ou dossier(s) à vérifier (défaut : memory/, hors archive/)
+
+  Le contrôle porte sur la prose : code, tableaux, titres et diagrammes sont ignorés.
 
 ${c.bold("Options de status")}
   --html              Génère le tableau de bord (ailed-status.html), sans serveur
@@ -3746,6 +4116,9 @@ ${c.dim("Sans flag et en terminal interactif, init pose les questions de configu
       break;
     case "memory-diff":
       memoryDiff();
+      break;
+    case "lint":
+      lint();
       break;
     case "clean":
       clean();
