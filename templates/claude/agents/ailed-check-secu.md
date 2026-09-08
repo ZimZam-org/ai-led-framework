@@ -38,3 +38,5 @@ sévérité, résumé et lien vers l'entrée `memory/security.md`. **L'ID du tic
 renvoyée par l'outil** (ex. `{{TICKET_PREFIX}}-123`), reflétée dans `memory/kanban.md`. Si la clé
 de projet vaut `à renseigner`, demander à l'humain avant de créer. Si le MCP est absent : signaler
 le pré-requis manquant et rester en mode fichier-local.
+
+{{WRITING_RULES}}

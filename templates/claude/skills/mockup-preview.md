@@ -36,3 +36,5 @@ fichier à la main.
 
 ## Artefacts mis à jour
 Screenshots de prévisualisation (à côté de `memory/ux/`), aucune modification de la maquette.
+
+{{WRITING_RULES}}

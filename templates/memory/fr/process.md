@@ -14,13 +14,14 @@ Décrit les workflows pilotés par agents. Chaque étape consomme les artefacts 
 
 ## Rotation & nettoyage de la mémoire
 
-Plusieurs fichiers grossissent sans limite : chaque lecture par un agent devient plus coûteuse
-**en tokens**. Pour garder les lectures légères, on ne conserve **inline que les entrées
-actives** ; le reste part en archive (même nom sous `memory/archive/`, créé à la demande), avec
-en tête du fichier actif une ligne `> Archives : memory/archive/<fichier>.md`.
+Quatre fichiers grossissent sans limite : `kanban.md`, `incidents.md`, `decisions.md` et
+`market-watch.md`. Chaque lecture par un agent coûte alors plus de tokens. Pour garder les
+lectures légères, le fichier actif ne conserve **que les entrées actives**. Le reste part dans
+`memory/archive/<même nom>.md`, créé à la demande. Le fichier actif porte alors en tête la
+ligne `> Archives : memory/archive/<fichier>.md`.
 
-Principe : **rien n'est jamais supprimé, seulement déplacé.** Les agents lisent **uniquement le
-fichier actif** ; l'archive n'est ouverte que pour une investigation historique explicite.
+Principe : **rien ne disparaît, tout se déplace.** Les agents lisent **uniquement le fichier
+actif**. L'archive s'ouvre pour une seule raison : une investigation historique explicite.
 
 | Fichier | Reste inline (actif) | Part en archive |
 | ------- | -------------------- | --------------- |
@@ -33,9 +34,9 @@ fichier actif** ; l'archive n'est ouverte que pour une investigation historique 
 
 - **Au fil de l'eau** : l'agent mainteneur archive dès qu'il édite le fichier et qu'une entrée
   bascule d'« active » à « archivable ».
-- **Seuil de taille** : dès qu'un fichier dépasse **~40 entrées actives** (lignes de tableau /
-  blocs), l'agent qui le touche **doit** archiver le surplus **avant** d'écrire — le seuil rend
-  le nettoyage déterministe plutôt que dépendant de la vigilance.
+- **Seuil de taille** : dès qu'un fichier dépasse **40 entrées actives**, l'agent qui le touche
+  archive le surplus **avant** d'écrire. Une entrée = une ligne de tableau ou un bloc. Le seuil
+  rend le nettoyage déterministe, au lieu de le laisser dépendre de la vigilance.
 - **Kanban à la release** : `@ailed-release` **archive les tickets `DONE` embarqués vers
   `memory/archive/kanban.md`**, mais **seulement une fois vérifié que `features.md` reflète la
   fonctionnalité livrée** (sinon le ticket reste inline : on ne perd jamais une info pas encore

@@ -32,3 +32,5 @@ Mesurer la complétude de la mémoire projet et combler les manques.
 
 ## Artefacts mis à jour
 `memory/kanban.md` (+ rapport d'audit).
+
+{{WRITING_RULES}}

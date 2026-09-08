@@ -45,3 +45,5 @@ la maquette finale (`ailed-mockup-preview`).
 
 ## Artefacts mis à jour
 Variantes consignées dans le rendu UX (préliminaire à `memory/ux/<feature>_<date>.html`).
+
+{{WRITING_RULES}}

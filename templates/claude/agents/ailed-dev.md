@@ -76,3 +76,5 @@ Si un outil est configuré (ex. **Jira**) et son MCP connecté :
 
 ## Artefacts mis à jour
 Code source, MR. (Doc/changelog gérés par `@ailed-communication`.)
+
+{{WRITING_RULES}}
