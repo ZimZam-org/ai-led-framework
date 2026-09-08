@@ -305,8 +305,11 @@ function mergeHookSettings() {
       (h) => h && typeof h.command === "string" && h.command.includes("ailed-runtime-hook")
     );
   // Desired wiring: PreToolUse on every tool (main-loop heartbeat + Task agents),
-  // PostToolUse on Task only (agent completion + /clear nudge). Self-healing: drop
-  // any prior ailed entries first so older "Task"-only PreToolUse wiring is upgraded.
+  // PostToolUse on every tool too — the agent-completion nudge only needs Task, but the
+  // ticket journal (.ailed/journal.jsonl) must see *any* write that moves a kanban status,
+  // including a `sed` run through Bash. The hook itself compares the file signature, so a
+  // tool that touched nothing costs one stat(). Self-healing: drop any prior ailed entries
+  // first so older "Task"-only wirings are upgraded in place.
   const wire = (event, matcher, phase) => {
     const arr = Array.isArray(s.hooks[event]) ? s.hooks[event] : [];
     const before = JSON.stringify(arr);
@@ -317,24 +320,71 @@ function mergeHookSettings() {
     return before !== JSON.stringify(next);
   };
   const a = wire("PreToolUse", "*", "pre");
-  const b = wire("PostToolUse", "Task", "post");
+  const b = wire("PostToolUse", "*", "post");
   if (a || b) {
     fs.mkdirSync(path.dirname(p), { recursive: true });
     fs.writeFileSync(p, JSON.stringify(s, null, 2) + "\n");
-    console.log(`  ${c.green("+")}    .claude/settings.json ${c.dim("(hooks Task + activité câblés)")}`);
+    console.log(`  ${c.green("+")}    .claude/settings.json ${c.dim("(hooks activité + journal tickets câblés)")}`);
   } else {
     console.log(`  ${c.yellow("skip")} .claude/settings.json ${c.dim("(hooks déjà à jour)")}`);
   }
+}
+
+// Les versions <= 0.15.0 généraient un rapport horodaté par run, à la racine et non ignoré :
+// beaucoup de projets en ont commité. Ajouter la règle au .gitignore ne détraque pas un fichier
+// déjà suivi — on le signale donc, sans jamais y toucher (supprimer des fichiers versionnés
+// n'est pas au programme d'un `update`).
+function warnTrackedReports() {
+  let tracked = [];
+  try {
+    const out = require("child_process").execSync(
+      "git ls-files -z -- \"*_ailed-status.html\" \"*_ailed-memory-diff.html\" ailed-status.html",
+      { cwd, stdio: ["ignore", "pipe", "ignore"] }
+    ).toString();
+    tracked = out.split("\0").filter(Boolean);
+  } catch (_) { return; } // pas un dépôt git, ou git absent : rien à signaler
+  if (!tracked.length) return;
+  console.log(`  ${c.yellow("!")}    ${c.bold(tracked.length)} rapport(s) généré(s) déjà suivi(s) par git ${c.dim("(versions ≤ 0.15.0)")}`);
+  console.log(`       ${c.dim(tracked.slice(0, 3).join(", ") + (tracked.length > 3 ? ", …" : ""))}`);
+  console.log(`       ${c.dim("Le .gitignore ne dé-suit pas un fichier déjà indexé. Pour les sortir du dépôt :")}`);
+  console.log(`       ${c.cyan("git rm --cached ")}${c.dim("<fichiers>")}   ${c.dim("puis commite — le rapport vivant s'appelle désormais ailed-status.html.")}`);
 }
 
 function ensureGitignore() {
   const p = path.join(cwd, ".gitignore");
   let txt = "";
   if (fs.existsSync(p)) txt = fs.readFileSync(p, "utf8");
-  if (txt.split("\n").some((l) => l.trim() === ".ailed/" || l.trim() === ".ailed")) return;
-  const add = (txt && !txt.endsWith("\n") ? "\n" : "") + "\n# AI-Led runtime (progress sidebar state)\n.ailed/\n";
-  fs.writeFileSync(p, txt + add);
-  console.log(`  ${c.green("+")}    .gitignore ${c.dim("(+ .ailed/)")}`);
+  const has = (v) => txt.split("\n").some((l) => l.trim() === v);
+  // `.ailed/` holds the runtime state, the ticket journal and the screenshots. The
+  // generated reports land at the project root and are *derived artefacts*: the live
+  // dashboard, the timestamped snapshots kept for sharing, and the memory-diff reports.
+  // None of them belongs in git — before this, they silently piled up as tracked files.
+  const want = [".ailed/", "ailed-status.html", "*_ailed-status.html", "*_ailed-memory-diff.html"]
+    .filter((v) => !has(v) && !(v === ".ailed/" && has(".ailed")));
+  if (want.length) {
+    // Une nouvelle entrée s'insère dans le bloc AI-Led déjà présent plutôt qu'en fin de
+    // fichier : sinon chaque version y empile son propre en-tête, et le .gitignore d'un
+    // projet suivi de longue date finit en accordéon de commentaires. L'en-tête existant
+    // n'est pas réécrit — c'est un fichier de l'utilisateur, il a pu le retoucher.
+    const lines = txt.length ? txt.replace(/\n$/, "").split("\n") : [];
+    let at = -1;
+    lines.forEach((l, i) => { if (/^#\s*AI-Led/i.test(l)) at = i; });
+    if (at >= 0) {
+      let end = at + 1;
+      while (end < lines.length && lines[end].trim() !== "") end++;
+      lines.splice(end, 0, ...want);
+      fs.writeFileSync(p, lines.join("\n") + "\n");
+    } else {
+      const add = (txt && !txt.endsWith("\n") ? "\n" : "")
+        + "\n# AI-Led: runtime state (sidebar, ticket journal, screenshots) + generated reports\n"
+        + want.join("\n") + "\n";
+      fs.writeFileSync(p, txt + add);
+    }
+    console.log(`  ${c.green("+")}    .gitignore ${c.dim("(+ " + want.join(" + ") + ")")}`);
+  }
+  // hors de la branche ci-dessus : le rappel doit rester visible aux updates suivants,
+  // tant que des rapports générés traînent réellement dans l'index git.
+  warnTrackedReports();
 }
 
 async function init() {
@@ -980,30 +1030,253 @@ function statusTerminal(entries, memDirRel, style, archiveMd) {
   console.log(`${c.dim("Synthèse enrichie dans Claude Code :")} /ailed-status\n`);
 }
 
-function statusHtml(entries, outPath, style, archiveMd) {
-  const data = entries.map((e) => ({
-    name: e.name, file: e.file, title: e.title, date: e.date, age: e.age, content: e.content,
-  }));
-  // Embed as JSON inside an inline <script>. Guard the three sequences that are
-  // valid in JSON but break an inline script: `</…` (closes the tag early) and the
-  // U+2028/U+2029 line separators (illegal in older JS string literals).
-  const safeJson = (v) => JSON.stringify(v)
-    .replace(/<\//g, "<\\/")
-    .replace(/[\u2028\u2029]/g, (m) => "\\u" + m.charCodeAt(0).toString(16));
-  const json = safeJson(data);
-  const archive = safeJson({ kanban: archiveMd || "" });
-  const generated = new Date().toISOString().slice(0, 16).replace("T", " ");
-  // IMPORTANT: pass function replacements so `$`-sequences in the injected values
-  // (`$&`, `$\``, `$'`, `$1`… — common in code/prices/apostrophes inside memory
-  // content) are inserted literally instead of triggering replace's special patterns.
+// ── Journal des tickets & captures d'écran (données hors mémoire) ───────────
+// Le kanban ne porte qu'une date de création : l'historique réel des transitions est
+// capté par le hook runtime dans `.ailed/journal.jsonl` (append-only, une ligne par
+// changement de statut). Les captures de `/ailed-screens` vivent en PNG sur disque —
+// jamais inlinées dans le rapport vivant, sinon il grossit de ~300 Ko par prise de vue.
+
+const JOURNAL_MAX_LINES = 20000; // au-delà, on compacte le fichier sur disque
+const JOURNAL_MAX_PER_TICKET = 40;
+
+function journalPath(projectDir) { return path.join(projectDir, ".ailed", "journal.jsonl"); }
+
+// .ailed/journal.jsonl → { ID: [{ts, from, to}] } en ordre chronologique.
+// Les lignes illisibles sont ignorées : un journal à moitié écrit ne doit jamais
+// faire échouer la génération du tableau de bord.
+function readJournal(projectDir) {
+  const p = journalPath(projectDir);
+  let raw = "";
+  try { raw = fs.readFileSync(p, "utf8"); } catch (_) { return { events: {}, lines: 0 }; }
+  const lines = raw.split("\n").filter((l) => l.trim());
+  const events = {};
+  for (const l of lines) {
+    let e;
+    try { e = JSON.parse(l); } catch (_) { continue; }
+    if (!e || !e.id || !e.to || !e.ts) continue;
+    (events[e.id] = events[e.id] || []).push({ ts: e.ts, from: e.from || null, to: e.to });
+  }
+  // borne par ticket : on garde la première entrée dans chaque statut (c'est elle qui
+  // date l'étape) puis les événements les plus récents pour les allers-retours.
+  for (const id of Object.keys(events)) {
+    const list = events[id];
+    if (list.length <= JOURNAL_MAX_PER_TICKET) continue;
+    const firsts = [], seen = new Set();
+    for (const e of list) if (!seen.has(e.to)) { seen.add(e.to); firsts.push(e); }
+    const tail = list.slice(-(JOURNAL_MAX_PER_TICKET - firsts.length));
+    const keep = firsts.concat(tail.filter((e) => firsts.indexOf(e) < 0));
+    events[id] = keep.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+  }
+  return { events, lines: lines.length };
+}
+
+// Réécrit le journal en ne gardant, par ticket, que la première entrée dans chaque
+// statut et les 10 derniers événements. Appelé seulement au-delà du seuil : le fichier
+// est de la télémétrie dérivée, pas de la mémoire — le borner est sans risque.
+function compactJournal(projectDir, events) {
+  const rows = [];
+  for (const id of Object.keys(events)) {
+    const list = events[id], seen = new Set(), keep = [];
+    for (const e of list) if (!seen.has(e.to)) { seen.add(e.to); keep.push(e); }
+    for (const e of list.slice(-10)) if (keep.indexOf(e) < 0) keep.push(e);
+    keep.forEach((e) => rows.push({ ts: e.ts, id, from: e.from, to: e.to }));
+  }
+  rows.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+  try {
+    fs.writeFileSync(journalPath(projectDir), rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
+  } catch (_) { return 0; }
+  return rows.length;
+}
+
+const SHOT_VIEWPORTS = [["desktop", /desktop|wide|1280|1440|1920/i], ["mobile", /mobile|phone|iphone|390|375|428/i], ["tablet", /tablet|ipad|768|834/i]];
+
+// Nom de fichier → libellés, quand meta.json est absent (capture faite à la main,
+// ou skill interrompue avant l'écriture du manifeste).
+function shotFromFilename(file) {
+  const base = file.replace(/\.(png|jpe?g|webp)$/i, "");
+  const vp = (SHOT_VIEWPORTS.find(([, re]) => re.test(base)) || [""])[0];
+  const label = base.replace(/^\d+[-_]/, "").replace(/[-_](desktop|mobile|tablet|wide|phone|ipad)$/i, "").replace(/[-_]+/g, " ").trim();
+  return { file, viewport: vp, state: label || base, reached: true };
+}
+
+// .ailed/screens/<TICKET>/<run>/ → dernière planche par ticket.
+// `srcBase` est le préfixe relatif que le rapport utilisera (résolu depuis `.ailed/`).
+function readScreens(projectDir) {
+  const root = path.join(projectDir, ".ailed", "screens");
+  const out = {};
+  let bytes = 0, runs = 0;
+  let tickets = [];
+  try { tickets = fs.readdirSync(root); } catch (_) { return { screens: out, bytes: 0, runs: 0 }; }
+  const isDir = (p) => { try { return fs.statSync(p).isDirectory(); } catch (_) { return false; } };
+  for (const ticket of tickets) {
+    const tdir = path.join(root, ticket);
+    if (!isDir(tdir)) continue; // ignore les planches HTML historiques posées à plat
+    const all = fs.readdirSync(tdir).filter((d) => isDir(path.join(tdir, d))).sort();
+    if (!all.length) continue;
+    runs += all.length;
+    const run = all[all.length - 1]; // la plus récente fait foi
+    const rdir = path.join(tdir, run);
+    let meta = {};
+    try { meta = JSON.parse(fs.readFileSync(path.join(rdir, "meta.json"), "utf8")) || {}; } catch (_) {}
+    const pngs = fs.readdirSync(rdir).filter((f) => /\.(png|jpe?g|webp)$/i.test(f)).sort();
+    const declared = Array.isArray(meta.shots) ? meta.shots : [];
+    const shots = (declared.length ? declared : pngs.map(shotFromFilename))
+      .filter((s) => s && s.file && pngs.indexOf(s.file) >= 0)
+      .map((s) => {
+        let size = 0;
+        try { size = fs.statSync(path.join(rdir, s.file)).size; } catch (_) {}
+        bytes += size;
+        return {
+          src: ["screens", ticket, run, s.file].join("/"),
+          abs: path.join(rdir, s.file),
+          screen: s.screen || "", route: s.route || "", state: s.state || "",
+          criterion: s.criterion || "", viewport: s.viewport || shotFromFilename(s.file).viewport,
+          reached: s.reached !== false, bytes: size,
+        };
+      });
+    if (!shots.length && !(meta.unreached || []).length) continue;
+    out[ticket.toUpperCase()] = {
+      run, capturedAt: meta.capturedAt || run, branch: meta.branch || "", baseUrl: meta.baseUrl || "",
+      shots, unreached: Array.isArray(meta.unreached) ? meta.unreached.slice(0, 20) : [],
+      console: Array.isArray(meta.console) ? meta.console.slice(0, 20) : [],
+      olderRuns: all.length - 1,
+    };
+  }
+  return { screens: out, bytes, runs };
+}
+
+function humanBytes(n) {
+  if (n < 1024) return n + " B";
+  if (n < 1024 * 1024) return (n / 1024).toFixed(0) + " Ko";
+  return (n / 1024 / 1024).toFixed(1) + " Mo";
+}
+
+// Embed as JSON inside an inline <script>. Guard the three sequences that are
+// valid in JSON but break an inline script: `</…` (closes the tag early) and the
+// U+2028/U+2029 line separators (illegal in older JS string literals).
+const safeJson = (v) => JSON.stringify(v)
+  .replace(/<\//g, "<\\/")
+  .replace(/[\u2028\u2029]/g, (m) => "\\u" + m.charCodeAt(0).toString(16));
+
+// Construit la charge utile du tableau de bord. `stamp` en est l'empreinte : c'est
+// elle que la page compare à chaque sondage pour décider s'il faut se redessiner.
+function statusPayload(entries, style, archiveMd, projectDir, opts) {
+  const j = readJournal(projectDir);
+  if (j.lines > JOURNAL_MAX_LINES) compactJournal(projectDir, j.events);
+  const sc = readScreens(projectDir);
+  const screens = sc.screens;
+  // Mode autonome : les PNG deviennent des data: URI pour que le fichier se partage
+  // seul. C'est le seul mode où le poids des captures entre dans le rapport.
+  if (opts && opts.inlineShots) {
+    for (const t of Object.keys(screens)) {
+      screens[t].shots = screens[t].shots.map((s) => {
+        try {
+          const ext = path.extname(s.abs).slice(1).toLowerCase();
+          const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+          return Object.assign({}, s, { abs: undefined, src: `data:${mime};base64,` + fs.readFileSync(s.abs).toString("base64") });
+        } catch (_) { return Object.assign({}, s, { abs: undefined, src: "", reached: false, missing: true }); }
+      });
+    }
+  } else {
+    for (const t of Object.keys(screens)) screens[t].shots = screens[t].shots.map((s) => Object.assign({}, s, { abs: undefined }));
+  }
+  const payload = {
+    generated: new Date().toISOString().slice(0, 16).replace("T", " "),
+    generatedAt: new Date().toISOString(),
+    style: style || "standard",
+    files: entries.map((e) => ({ name: e.name, file: e.file, title: e.title, date: e.date, age: e.age, content: e.content })),
+    archive: { kanban: archiveMd || "" },
+    journal: j.events,
+    journalSince: (function () {
+      try { return JSON.parse(fs.readFileSync(path.join(projectDir, ".ailed", "kanban-state.json"), "utf8")).since || null; }
+      catch (_) { return null; }
+    })(),
+    screens,
+  };
+  // L'empreinte ignore `generated*` : sinon chaque sondage verrait un changement et la
+  // page se redessinerait toutes les secondes pour rien.
+  const stamp = sha256(safeJson(Object.assign({}, payload, { generated: "", generatedAt: "" }))).slice(0, 16);
+  payload.stamp = stamp;
+  return { payload, stats: { shotBytes: sc.bytes, runs: sc.runs, journalLines: j.lines } };
+}
+
+// Écrit `data.js` : une simple affectation de global, chargée par <script src>.
+// Volontairement pas du JSON lu en fetch() — fetch est bloqué par CORS sur file://,
+// une balise script non. C'est ce qui permet le rechargement à chaud sans serveur.
+function writeStatusData(dataPath, payload) {
+  fs.mkdirSync(path.dirname(dataPath), { recursive: true });
+  fs.writeFileSync(dataPath, "window.__AILED__ = " + safeJson(payload) + ";\n");
+}
+
+// Chemin relatif utilisable dans une URL, depuis le dossier du rapport.
+function relUrl(fromDir, target) {
+  const r = path.relative(fromDir, target).split(path.sep).join("/");
+  return r.startsWith(".") ? r : "./" + r;
+}
+
+function renderShell(outPath, dataSrc, ailedRoot, style, generated, inlineData) {
+  // Charge utile : balise externe (rapport vivant, rechargeable) ou script inline
+  // (instantané autonome). Une balise `src=""` ferait recharger le document lui-même,
+  // d'où le choix d'injecter la balise entière plutôt qu'une URL vide.
+  const dataTag = inlineData
+    ? "<script>" + inlineData + "<\/script>"
+    : (dataSrc ? '<script src="' + dataSrc + '"><\/script>' : "");
   fs.writeFileSync(
     outPath,
+    // IMPORTANT: pass function replacements so `$`-sequences in the injected values
+    // (`$&`, `$\``, `$'`, `$1`… — common in code/prices/apostrophes inside memory
+    // content) are inserted literally instead of triggering replace's special patterns.
     HTML_TEMPLATE
-      .replace("/*__DATA__*/", () => json)
-      .replace("/*__ARCHIVE__*/", () => archive)
+      .replace("<!--__DATA_TAG__-->", () => dataTag)
+      .replace(/__DATA_SRC__/g, () => dataSrc)
+      .replace(/__AILED_ROOT__/g, () => ailedRoot)
       .replace(/__GENERATED__/g, () => generated)
       .replace(/__STYLE__/g, () => style || "standard")
   );
+}
+
+// Rapport vivant : coquille au chemin `outPath` + données dans `.ailed/status/data.js`.
+function statusHtml(entries, outPath, style, archiveMd, projectDir) {
+  const { payload, stats } = statusPayload(entries, style, archiveMd, projectDir, { inlineShots: false });
+  const dataPath = path.join(projectDir, ".ailed", "status", "data.js");
+  writeStatusData(dataPath, payload);
+  const outDir = path.dirname(outPath);
+  renderShell(outPath, relUrl(outDir, dataPath), relUrl(outDir, path.join(projectDir, ".ailed")) + "/", style, payload.generated, "");
+  return { payload, stats, dataPath };
+}
+
+// Instantané autonome : tout dans un seul fichier, captures inlinées en base64.
+// Destiné au partage et à l'archivage d'une revue, pas au suivi quotidien.
+function statusSnapshot(entries, outPath, style, archiveMd, projectDir) {
+  const { payload, stats } = statusPayload(entries, style, archiveMd, projectDir, { inlineShots: true });
+  renderShell(outPath, "", "", style, payload.generated, "window.__AILED__ = " + safeJson(payload) + ";");
+  return { payload, stats };
+}
+
+// Signature de l'état observable : mtime + taille des sources du tableau de bord.
+// Un sondage (quelques dizaines de stat()) plutôt qu'un fs.watch : `recursive` n'est
+// pas portable avant Node 20 et les watchers ratent les écritures atomiques (rename),
+// exactement le motif d'un agent qui réécrit un fichier de mémoire.
+function statusSignature(projectDir) {
+  const parts = [];
+  const stat = (p) => {
+    try { const st = fs.statSync(p); return st.mtimeMs + ":" + st.size; } catch (_) { return "-"; }
+  };
+  const walk = (dir, depth) => {
+    let names = [];
+    try { names = fs.readdirSync(dir).sort(); } catch (_) { return; }
+    for (const n of names) {
+      const p = path.join(dir, n);
+      let st;
+      try { st = fs.statSync(p); } catch (_) { continue; }
+      if (st.isDirectory()) { if (depth > 0) walk(p, depth - 1); }
+      else parts.push(p + "=" + st.mtimeMs + ":" + st.size);
+    }
+  };
+  walk(path.join(projectDir, "memory"), 1);
+  parts.push("journal=" + stat(path.join(projectDir, ".ailed", "journal.jsonl")));
+  walk(path.join(projectDir, ".ailed", "screens"), 2);
+  return sha256(parts.join("|"));
 }
 
 function status() {
@@ -1013,26 +1286,133 @@ function status() {
     console.error(`Lance d'abord : ${c.cyan("npx @s2bp/ai-led-framework init")}\n`);
     process.exit(1);
   }
-  const entries = readMemory(memDir);
+  const load = () => {
+    const entries = readMemory(memDir);
+    return { entries, archiveMd: readKanbanArchive(memDir) };
+  };
+  let { entries, archiveMd } = load();
   if (!entries.length) {
     console.error(`\n${c.yellow("Aucun fichier memory/*.md trouvé.")}\n`);
     process.exit(1);
   }
   // --style flag overrides the config value for this run; otherwise read memory/config.md
   const style = flag("style") ? canonStyle(flag("style")) : readStyle(entries);
-  const archiveMd = readKanbanArchive(memDir);
-  if (argv.includes("--html")) {
-    // default filename is prefixed with a local YYYYMMDDHHmmss stamp so each run
-    // produces a distinct, chronologically-sortable report (overridable via --out).
-    const d = new Date(), p = (n) => String(n).padStart(2, "0");
-    const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+
+  if (!argv.includes("--html")) { statusTerminal(entries, path.relative(cwd, memDir) || memDir, style, archiveMd); return; }
+
+  // Instantané autonome et horodaté : un seul fichier, captures en base64, à partager
+  // ou à archiver. C'est l'ancien comportement, désormais explicite.
+  if (argv.includes("--snapshot")) {
+    const d = new Date(), p2 = (n) => String(n).padStart(2, "0");
+    const stamp = `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}`;
     const out = path.resolve(cwd, flag("out") || `${stamp}_ailed-status.html`);
-    statusHtml(entries, out, style, archiveMd);
-    console.log(`\n${c.green("✓")} Tableau de bord généré : ${c.cyan(path.relative(cwd, out) || out)}`);
+    const { stats } = statusSnapshot(entries, out, style, archiveMd, cwd);
+    const size = fs.statSync(out).size;
+    console.log(`\n${c.green("✓")} Instantané autonome : ${c.cyan(path.relative(cwd, out) || out)} ${c.dim("(" + humanBytes(size) + ")")}`);
+    if (stats.shotBytes) console.log(`  ${c.dim("dont " + humanBytes(stats.shotBytes) + " de captures inlinées — un seul fichier, partageable tel quel")}`);
     console.log(`  Ouvre-le dans un navigateur : ${c.dim("file://" + out)}\n`);
-  } else {
-    statusTerminal(entries, path.relative(cwd, memDir) || memDir, style, archiveMd);
+    return;
   }
+
+  // Rapport vivant : nom stable (rechargeable / marque-page), données à côté.
+  const out = path.resolve(cwd, flag("out") || "ailed-status.html");
+  const emit = () => statusHtml(entries, out, style, archiveMd, cwd);
+  const { stats, dataPath } = emit();
+  const shellSize = fs.statSync(out).size, dataSize = fs.statSync(dataPath).size;
+  console.log(`\n${c.green("✓")} Tableau de bord : ${c.cyan(path.relative(cwd, out) || out)} ${c.dim("(coquille " + humanBytes(shellSize) + " · données " + humanBytes(dataSize) + ")")}`);
+  console.log(`  ${c.dim("données : " + (path.relative(cwd, dataPath) || dataPath) + " — rechargées à chaud, la page se redessine seule")}`);
+  if (stats.runs) {
+    console.log(`  ${c.dim("captures : " + humanBytes(stats.shotBytes) + " sur disque (" + stats.runs + " planche(s)), référencées et non inlinées")}`);
+    if (stats.shotBytes > 200 * 1024 * 1024) {
+      console.log(`  ${c.yellow("!")}    ${c.dim(".ailed/screens/ dépasse 200 Mo — `ai-led clean --screens` ne garde que la dernière planche par ticket")}`);
+    }
+  }
+  console.log(`  Ouvre-le dans un navigateur : ${c.dim("file://" + out)}`);
+
+  if (!argv.includes("--live")) {
+    console.log(`  ${c.dim("Astuce : --live régénère les données à chaque changement de memory/ ; --snapshot produit un fichier autonome partageable.")}\n`);
+    return;
+  }
+
+  const every = Math.max(250, parseInt(flag("interval") || "1000", 10) || 1000);
+  console.log(`\n${c.bold("--live")} ${c.dim("· sondage " + every + " ms · Ctrl-C pour arrêter")}\n`);
+  let sig = statusSignature(cwd);
+  let n = 0;
+  setInterval(() => {
+    const next = statusSignature(cwd);
+    if (next === sig) return;
+    sig = next;
+    try {
+      const fresh = load();
+      if (!fresh.entries.length) return; // écriture en cours : on retentera au prochain tour
+      entries = fresh.entries; archiveMd = fresh.archiveMd;
+      emit();
+      n++;
+      process.stdout.write(`\r${c.green("↻")} ${new Date().toTimeString().slice(0, 8)} — données régénérées (${n})   `);
+    } catch (err) {
+      process.stdout.write(`\r${c.yellow("!")} ${new Date().toTimeString().slice(0, 8)} — ${String(err.message).slice(0, 60)}   `);
+    }
+  }, every);
+  // le timer référencé suffit à garder la boucle d'événements en vie ; surtout ne pas
+  // l'unref (le process rendrait la main aussitôt après la première génération).
+  process.on("SIGINT", () => {
+    process.stdout.write(`\n${c.dim("--live arrêté · le rapport reste ouvrable, il ne se mettra plus à jour.")}\n`);
+    process.exit(0);
+  });
+}
+
+// ── clean : borne ce que le runtime laisse sur disque ───────────────────────
+// `.ailed/` est dérivé et ignoré par git : on peut le tailler sans rien perdre. Les
+// captures sont le seul poste qui grossit vraiment (~300 Ko la prise de vue), d'où une
+// purge qui ne garde que la dernière planche par ticket.
+function clean() {
+  const dir = path.join(cwd, ".ailed");
+  if (!fs.existsSync(dir)) { console.log(`\n${c.dim(".ailed/ absent — rien à nettoyer.")}\n`); return; }
+  const all = !argv.includes("--screens") && !argv.includes("--journal");
+  const rm = (p) => { try { fs.rmSync(p, { recursive: true, force: true }); return true; } catch (_) { return false; } };
+  const isDir = (p) => { try { return fs.statSync(p).isDirectory(); } catch (_) { return false; } };
+  let freed = 0, removed = 0;
+  const sizeOf = (p) => {
+    let n = 0;
+    const walk = (q) => {
+      let st; try { st = fs.statSync(q); } catch (_) { return; }
+      if (!st.isDirectory()) { n += st.size; return; }
+      let names = []; try { names = fs.readdirSync(q); } catch (_) { return; }
+      names.forEach((x) => walk(path.join(q, x)));
+    };
+    walk(p); return n;
+  };
+
+  if (all || argv.includes("--screens")) {
+    const root = path.join(dir, "screens");
+    let tickets = []; try { tickets = fs.readdirSync(root); } catch (_) {}
+    for (const t of tickets) {
+      const tdir = path.join(root, t);
+      if (!isDir(tdir)) continue;
+      const runs = fs.readdirSync(tdir).filter((d) => isDir(path.join(tdir, d))).sort();
+      for (const r of runs.slice(0, -1)) { // tout sauf la plus récente
+        const p = path.join(tdir, r), s = sizeOf(p);
+        if (rm(p)) { freed += s; removed++; }
+      }
+    }
+    // planches HTML autonomes des versions antérieures (captures en base64)
+    let flat = []; try { flat = fs.readdirSync(root).filter((f) => /\.html$/i.test(f)); } catch (_) {}
+    for (const f of flat) { const p = path.join(root, f), s = sizeOf(p); if (rm(p)) { freed += s; removed++; } }
+  }
+
+  if (all || argv.includes("--journal")) {
+    const j = readJournal(cwd);
+    if (j.lines) {
+      const before = sizeOf(journalPath(cwd));
+      const kept = compactJournal(cwd, j.events);
+      const after = sizeOf(journalPath(cwd));
+      freed += Math.max(0, before - after);
+      console.log(`  ${c.dim("journal compacté : " + j.lines + " → " + kept + " lignes")}`);
+    }
+  }
+
+  console.log(`\n${c.green("✓")} ${removed} élément(s) supprimé(s) · ${humanBytes(freed)} libéré(s).`);
+  console.log(`  ${c.dim("Conservé : la dernière planche de captures par ticket et l'historique compacté des tickets.")}\n`);
 }
 
 const HTML_TEMPLATE = `<!doctype html>
@@ -1101,11 +1481,14 @@ const HTML_TEMPLATE = `<!doctype html>
   /* Timeline des EPICs */
   .epic-timeline { list-style:none; margin:0; padding:6px 0 2px; display:flex; gap:0; overflow-x:auto; }
   .epic-timeline li { position:relative; flex:1 1 0; min-width:128px; padding:0 8px; }
-  .epic-timeline li:not(:last-child):after { content:""; position:absolute; top:13px; left:calc(50% + 16px); right:calc(-50% + 16px); height:2px; background:var(--border); }
+  .epic-timeline li:not(:last-child):after { content:""; position:absolute; top:17px; left:calc(50% + 20px); right:calc(-50% + 20px); height:2px; background:var(--border); }
   .epic-timeline li.done:not(:last-child):after { background:var(--ok); }
-  .epic-timeline .node { position:relative; z-index:1; width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:13px; margin:0 auto 9px; background:var(--panel2); border:2px solid var(--border); color:var(--muted); }
-  .epic-timeline li.done .node { background:var(--ok); border-color:var(--ok); color:#06240a; }
-  .epic-timeline li.current .node { border-color:var(--accent); color:var(--accent); box-shadow:0 0 0 4px rgba(110,168,254,.18); }
+  /* le nœud est un camembert : un cercle vide ne dit pas où en est une EPIC en cours */
+  .epic-timeline .node { position:relative; z-index:1; display:block; width:34px; height:34px; margin:0 auto 9px; line-height:0; border-radius:50%; }
+  .epic-timeline li.current .node { box-shadow:0 0 0 4px rgba(110,168,254,.18); }
+  .epic-timeline .ep-pct { display:block; text-align:center; font-size:10.5px; font-family:ui-monospace,monospace; color:var(--accent); margin-top:3px; }
+  .epic-timeline li.done .ep-pct { color:var(--ok); }
+  .epic-timeline .ep-pct.dim { color:var(--muted); opacity:.7; }
   .epic-timeline .ep-id { font-family:ui-monospace,monospace; font-size:11px; color:var(--muted); text-align:center; display:block; }
   .epic-timeline .ep-title { font-size:12.5px; text-align:center; display:block; line-height:1.35; }
   .epic-timeline li.current .ep-title { color:var(--accent); font-weight:600; }
@@ -1124,7 +1507,8 @@ const HTML_TEMPLATE = `<!doctype html>
   .kcard span { display:block; overflow-wrap:anywhere; }
   .kcard .kms { font-size:10.5px; font-weight:700; letter-spacing:.04em; color:var(--warn); text-transform:uppercase; }
   .kcard .kep { font-size:10.5px; font-family:ui-monospace,monospace; color:var(--muted); }
-  .kcard .kid { font-size:11px; font-family:ui-monospace,monospace; color:var(--accent); margin-top:2px; }
+  .kcard .kid { font-size:11px; font-family:ui-monospace,monospace; color:var(--accent); margin-top:2px; display:flex; align-items:center; gap:6px; }
+  .kcard .kshot { color:var(--warn); font-size:10px; border:1px solid var(--border); border-radius:999px; padding:0 5px; }
   /* titres bornés à 4 lignes : les libellés de tickets peuvent faire un paragraphe entier,
      le détail complet est dans la popup de la carte */
   .kcard .ktt { font-size:13px; line-height:1.35; margin-top:2px; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:4; line-clamp:4; overflow:hidden; }
@@ -1183,12 +1567,54 @@ const HTML_TEMPLATE = `<!doctype html>
   .inc{ border:1px solid var(--border); border-radius:9px; padding:10px 13px; margin-bottom:9px; background:var(--panel2); }
   .inc .inc-h{ font-weight:600; margin-bottom:5px; } .inc .inc-h .mono{ margin-right:9px; }
   .inc ul{ margin:5px 0 0; padding-left:18px; color:var(--muted); font-size:12.5px; } .inc li{ margin:1px 0; }
+  /* indicateur de rechargement à chaud */
+  header .live { font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--ok); border:1px solid rgba(108,192,112,.4); background:rgba(108,192,112,.12); border-radius:999px; padding:2px 9px 2px 18px; cursor:pointer; position:relative; user-select:none; }
+  header .live:before { content:""; position:absolute; left:8px; top:50%; width:6px; height:6px; margin-top:-3px; border-radius:50%; background:var(--ok); animation:pulse 2s ease-in-out infinite; }
+  header .live.paused { color:var(--muted); border-color:var(--border); background:var(--panel); }
+  header .live.paused:before { background:var(--muted); animation:none; }
+  header .live.off { color:var(--danger); border-color:var(--danger); background:transparent; }
+  header .live.off:before { background:var(--danger); animation:none; }
+  @keyframes pulse { 0%,100%{ opacity:1; } 50%{ opacity:.25; } }
+  @media (prefers-reduced-motion:reduce){ header .live:before { animation:none; } }
+  /* historique d'un ticket (popup) */
+  .hist { list-style:none; margin:0 0 8px; padding:0; }
+  .hist li { display:grid; grid-template-columns:14px 1fr auto auto; align-items:baseline; gap:10px; padding:5px 0; border-bottom:1px solid var(--border); font-size:13px; }
+  .hist li:last-child { border-bottom:0; }
+  .hist .hdot { width:9px; height:9px; border-radius:50%; align-self:center; }
+  .hist .hlab { color:var(--text); }
+  .hist .hts { font-family:ui-monospace,monospace; font-size:12px; color:var(--muted); }
+  .hist .hts i { font-style:normal; opacity:.6; }
+  .hist .hgap { font-size:11.5px; color:var(--accent); min-width:64px; text-align:right; }
+  .hist li.miss .hlab { color:var(--muted); }
+  .hfoot { font-size:12px; color:var(--muted); margin:0 0 4px; } .hfoot.dim { opacity:.75; font-style:italic; }
+  .hfoot b { color:var(--text); }
+  /* captures d'écran rattachées au ticket (popup) */
+  .mgrp-sub { font-weight:400; text-transform:none; letter-spacing:0; color:var(--muted); font-size:11.5px; }
+  .shotgrp { margin:0 0 16px; }
+  .shotgrp figcaption { display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; font-size:12.5px; color:var(--muted); margin-bottom:6px; }
+  .shotgrp figcaption b { color:var(--text); }
+  .shotgrp figcaption .st { color:var(--warn); }
+  .shotgrp figcaption .crit { border:1px solid var(--border); border-radius:999px; padding:1px 7px; font-size:11px; }
+  .shots { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-start; }
+  .shot { position:relative; display:block; border:1px solid var(--border); border-radius:8px; overflow:hidden; background:var(--panel2); line-height:0; max-width:100%; }
+  .shot:hover { border-color:var(--accent); }
+  .shot img { display:block; width:auto; height:auto; max-width:min(100%,340px); max-height:300px; }
+  .shot .vp { position:absolute; left:6px; bottom:6px; background:rgba(15,17,23,.82); color:var(--text); font-size:10.5px; border-radius:4px; padding:1px 6px; line-height:1.5; }
+  .unreach { margin:6px 0 0; padding-left:18px; color:var(--warn); font-size:12.5px; }
+  .conslog { margin-top:8px; font-size:12px; color:var(--muted); }
+  .conslog ul { margin:6px 0 0; padding-left:18px; } .conslog li { overflow-wrap:anywhere; }
+  /* capture en grand */
+  .lightbox { position:fixed; inset:0; z-index:60; background:rgba(8,9,12,.92); display:flex; align-items:center; justify-content:center; padding:24px; cursor:zoom-out; }
+  /* display:flex l'emporterait sur le [hidden] du navigateur : on le neutralise */
+  .lightbox[hidden] { display:none; }
+  .lightbox img { max-width:100%; max-height:100%; border-radius:8px; box-shadow:0 12px 48px rgba(0,0,0,.6); }
 </style>
 </head>
 <body>
 <header>
   <h1>AI-Led — Dashboard</h1>
-  <span class="gen">generated on __GENERATED__ · read-only</span>
+  <span class="gen" id="gen">generated on __GENERATED__ · read-only</span>
+  <span class="live" id="live" role="button" tabindex="0" title="live reload — click to pause">live</span>
   <button id="featBtn" class="featbtn" type="button">Feature list</button>
   <div class="badges" id="badges"></div>
 </header>
@@ -1207,10 +1633,21 @@ const HTML_TEMPLATE = `<!doctype html>
     <div id="modalBody" class="mbody"></div>
   </div>
 </div>
+<div id="lightbox" class="lightbox" hidden><img alt="captured screen"></div>
+<!--__DATA_TAG__-->
 <script>
-  var DATA = /*__DATA__*/;
-  var ARCHIVE = /*__ARCHIVE__*/;
-  var STYLE = "__STYLE__";
+  // Charge utile : soit déjà présente (instantané autonome, --snapshot), soit chargée
+  // juste avant par <script src="…/data.js"> — jamais par fetch(), bloqué par CORS en
+  // file://. C'est ce choix qui rend le rechargement à chaud possible sans serveur.
+  var DATA_SRC = "__DATA_SRC__";
+  var AILED_ROOT = "__AILED_ROOT__";
+  var PAYLOAD = window.__AILED__ || { files:[], archive:{kanban:''}, style:"__STYLE__", journal:{}, screens:{}, generated:"__GENERATED__", stamp:'' };
+  var DATA = PAYLOAD.files || [];
+  var ARCHIVE = PAYLOAD.archive || { kanban:'' };
+  var STYLE = PAYLOAD.style || "__STYLE__";
+  var SCREENS = PAYLOAD.screens || {};
+  var JOURNAL = PAYLOAD.journal || {};
+  var JOURNAL_SINCE = PAYLOAD.journalSince || null;
   // statuts comptés dans l'avancement (ordre de workflow)
   var STATUSES = ['TO_CHECK','TODO','IN_PROGRESS','TO_TEST','DONE'];
   // statuts hors avancement, affichés sur le board seulement s'ils existent :
@@ -1527,6 +1964,9 @@ const HTML_TEMPLATE = `<!doctype html>
 
   // ── Modal (popups) ────────────────────────────────────────
   var modalEl=null;
+  // Dernière popup ouverte, rejouée après un rechargement à chaud : on ne ferme pas
+  // la fenêtre que l'humain était en train de lire parce que la mémoire a bougé.
+  var lastModal=null;
   function openModal(title, count, html){
     if(!modalEl) modalEl=document.getElementById('modal');
     document.getElementById('modalTitle').textContent=mdPlain(title);
@@ -1534,7 +1974,7 @@ const HTML_TEMPLATE = `<!doctype html>
     document.getElementById('modalBody').innerHTML=html||'';
     modalEl.hidden=false;
   }
-  function closeModal(){ if(modalEl) modalEl.hidden=true; }
+  function closeModal(){ if(modalEl) modalEl.hidden=true; lastModal=null; }
   // colored status pill
   function badge(st){ var col=SCOL[st]||'#8b929e'; return '<span class="badge-st" style="background:'+col+'22;color:'+col+';border:1px solid '+col+'66">'+(LABEL[st]||st)+'</span>'; }
   // statut affiché : pastille pour les statuts du référentiel, libellé brut sinon
@@ -1634,10 +2074,12 @@ const HTML_TEMPLATE = `<!doctype html>
   }
   // popup openers
   function openStatus(st){
+    lastModal=function(){ openStatus(st); };
     var l=tickets.filter(function(t){ return t.status===st; }).sort(recent);
     openModal((LABEL[st]||st)+' — tasks', l.length+' ticket'+(l.length===1?'':'s'), taskTable(l,true));
   }
   function openEpic(id){
+    lastModal=function(){ openEpic(id); };
     var l=ticketsOf(id).sort(recent);
     var ep=epics.filter(function(e){ return e.id.toUpperCase()===String(id||'').toUpperCase(); })[0];
     var brief=epicBrief(id), body;
@@ -1653,24 +2095,33 @@ const HTML_TEMPLATE = `<!doctype html>
   }
   // détail d'un ticket (carte du kanban)
   function openTicket(id){
-    var t=tickets.filter(function(x){ return x.id===id; })[0]; if(!t) return;
+    lastModal=function(){ openTicket(id); };
+    var t=tickets.filter(function(x){ return x.id===id; })[0];
+    // le ticket a disparu du kanban entre deux rendus (renommé, archivé, supprimé) :
+    // fermer plutôt que laisser à l'écran un détail qui ne correspond plus à rien
+    if(!t){ closeModal(); return; }
     var m=ticketMilestone(t);
     var rows=[['Milestone', m? esc(mdPlain(m.name)):'—'],
               ['EPIC', esc((t.epics||[]).join(', ')||'—')],
               ['Status', stCell(t)],
               ['Created', esc(t.date||'—')],
               ['Source', t.archived? '<code>memory/archive/kanban.md</code>':'<code>memory/kanban.md</code>']];
-    openModal((t.id||'Task')+(t.title? ' — '+t.title:''), '',
+    var sc=SCREENS[String(t.id||'').toUpperCase()];
+    openModal((t.id||'Task')+(t.title? ' — '+t.title:''), sc? (sc.shots||[]).length+' screen(s)':'',
       '<table class="modal-table"><tbody>'+rows.map(function(r){ return '<tr><th style="width:120px">'+r[0]+'</th><td>'+r[1]+'</td></tr>'; }).join('')+'</tbody></table>'
-      + (t.desc? '<h4 class="mgrp">Description</h4><div class="mdlite">'+mdBlocks(t.desc)+'</div>':''));
+      + (t.desc? '<h4 class="mgrp">Description</h4><div class="mdlite">'+mdBlocks(t.desc)+'</div>':'')
+      + historyBlock(t)
+      + screensBlock(t));
   }
   // « État actuel » complet, rendu (le chapô n'en affiche qu'un extrait borné)
   function openState(){
+    lastModal=openState;
     var s=stateSection((get('project-state')||{}).content);
     openModal('Project state', 'memory/project-state.md — current state',
       s? '<div class="mdlite">'+mdBlocks(s.full)+'</div>' : '<p class="modal-empty">Nothing recorded yet.</p>');
   }
   function openIncidents(){
+    lastModal=openIncidents;
     var l=listIncidents((get('incidents')||{}).content);
     var b=l.length? l.map(function(i){ return '<div class="inc"><div class="inc-h"><span class="mono">'+esc(i.id)+'</span>'+mdInline(i.title)+'</div>'
       +(i.fields.length?'<ul>'+i.fields.map(function(f){ return '<li>'+mdInline(f)+'</li>'; }).join('')+'</ul>':'')+'</div>'; }).join('')
@@ -1678,6 +2129,7 @@ const HTML_TEMPLATE = `<!doctype html>
     openModal('Bugs to handle', l.length+' incident'+(l.length===1?'':'s'), b);
   }
   function openVulns(){
+    lastModal=openVulns;
     var l=listVulns((get('security')||{}).content);
     var b=l.length? '<table class="modal-table"><thead><tr><th>ID</th><th>Severity</th><th>Component</th><th>Real risk</th><th>Status</th></tr></thead><tbody>'
       + l.map(function(v){ return '<tr><td class="mono">'+esc(v.id)+'</td><td>'+sevBadge(v.sev)+'</td><td>'+mdInline(v.comp||'—')+'</td><td>'+mdInline(v.risk||'—')+'</td><td>'+mdInline(v.status||'—')+'</td></tr>'; }).join('')
@@ -1685,6 +2137,7 @@ const HTML_TEMPLATE = `<!doctype html>
     openModal('Open vulnerabilities', l.length+' item'+(l.length===1?'':'s'), b);
   }
   function openCandidates(){
+    lastModal=openCandidates;
     var l=listCandidates((get('market-watch')||{}).content);
     var b=l.length? '<table class="modal-table"><thead><tr><th>ID</th><th>Topic</th><th>Value hypothesis</th><th>Impact</th><th>Effort</th></tr></thead><tbody>'
       + l.map(function(x){ return '<tr><td class="mono">'+esc(x.id)+'</td><td>'+mdInline(x.topic||'—')+'</td><td>'+mdInline(x.hyp||'—')+'</td><td>'+mdInline(x.impact||'—')+'</td><td>'+mdInline(x.effort||'—')+'</td></tr>'; }).join('')
@@ -1692,45 +2145,151 @@ const HTML_TEMPLATE = `<!doctype html>
     openModal('Product arbitrations', l.length+' topic'+(l.length===1?'':'s'), b);
   }
   function openFeatures(){
+    lastModal=openFeatures;
     openModal('Feature inventory', 'delivery / release info in the Notes column',
       sectionsWithTables((get('features')||{}).content) || '<p class="modal-empty">No feature recorded yet.</p>');
   }
 
-  // ── En-tête / badges ──────────────────────────────────────
-  var cfg=get('config'); var integ=parseIntegrations(cfg&&cfg.content);
-  var badges = integ.map(function(it){
-    return it.on ? '<span class="badge on">'+esc(it.area)+' <b>'+esc(it.tool)+'</b></span>'
-                 : '<span class="badge off">'+esc(it.area)+'</span>';
-  }).join('') + '<span class="badge style">style&nbsp;<b>'+esc(STYLE)+'</b></span>';
-  document.getElementById('badges').innerHTML = badges;
+  // ── Secteur de camembert (partagé timeline / donuts) ──────
+  function sector(cx,cy,r,frac,fill){
+    if(!(frac>0)) return '';
+    if(frac>=0.9999) return '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="'+fill+'"/>';
+    var a=-Math.PI/2, a2=a+frac*2*Math.PI;
+    var x1=cx+r*Math.cos(a), y1=cy+r*Math.sin(a), x2=cx+r*Math.cos(a2), y2=cy+r*Math.sin(a2);
+    return '<path d="M'+cx+' '+cy+' L'+x1.toFixed(2)+' '+y1.toFixed(2)+' A'+r+' '+r+' 0 '+(frac>0.5?1:0)+' 1 '+x2.toFixed(2)+' '+y2.toFixed(2)+' Z" fill="'+fill+'"/>';
+  }
+  // Nœud de la timeline : un cercle vide ne dit pas où en est une EPIC en cours,
+  // un secteur rempli si. Le % vient des tickets rattachés, jamais du fichier.
+  function nodePie(eff, prog){
+    var frac = prog ? prog.pct/100 : (eff==='done' ? 1 : 0);
+    var col = eff==='done' ? 'var(--ok)' : eff==='current' ? 'var(--accent)' : 'var(--muted)';
+    var ring = eff==='current' ? 'var(--accent)' : 'var(--border)';
+    var inner = eff==='done' && frac>=0.9999
+      ? '<path d="M11.5 17.5l4 4 7.5-7.5" fill="none" stroke="#06240a" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>'
+      : (!prog && eff!=='done' ? '<circle cx="17" cy="17" r="2.4" fill="var(--muted)"/>' : '');
+    return '<span class="node ' + eff + '"><svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true">'
+      + '<circle cx="17" cy="17" r="15" fill="var(--panel2)"/>'
+      + sector(17,17,15,frac,col)
+      + '<circle cx="17" cy="17" r="15" fill="none" stroke="'+ring+'" stroke-width="2"/>'
+      + inner + '</svg></span>';
+  }
+  // avancement d'une EPIC : part de ses tickets DONE. null = aucun ticket rattaché,
+  // auquel cas on n'affiche pas de pourcentage plutôt que d'en inventer un.
+  function epicProgress(id){
+    var ts=ticketsOf(id).filter(function(t){ return STATUSES.indexOf(t.status)>=0; });
+    if(!ts.length) return null;
+    var d=ts.filter(function(t){ return t.status==='DONE'; }).length;
+    return { pct:Math.round(d/ts.length*100), done:d, total:ts.length };
+  }
 
-  var epics = parseEpics((get('epics')||{}).content);
-  var epicIds = epics.map(function(e){ return e.id; });
-  // tickets vivants + tickets archivés par @ailed-release (memory/archive/kanban.md) :
-  // sans l'archive, les EPICs livrées paraissent vides et l'avancement est sous-estimé.
-  // Dédoublonnage par ID, le kanban vivant faisant foi.
-  var tickets = (function(){
-    var live=parseKanbanFull((get('kanban')||{}).content, epicIds, 1000000, false);
-    var old=parseKanbanFull(ARCHIVE.kanban, epicIds, 0, true);
-    var seen={}, out=[];
-    live.concat(old).forEach(function(t){
-      if(t.id){ if(seen[t.id]) return; seen[t.id]=1; }
-      out.push(t);
+  // ── Historique d'un ticket ────────────────────────────────
+  // La date de création vient de la colonne « Date création » du kanban ; les autres
+  // étapes viennent de .ailed/journal.jsonl, alimenté par le hook runtime à chaque
+  // écriture du kanban. Une étape antérieure à l'installation du journal est affichée
+  // comme non datée — jamais devinée.
+  var STEP_LABEL={TO_CHECK:'Clarification asked',TODO:'Created',IN_PROGRESS:'Development started',TO_TEST:'Handed to test',DONE:'Finalised',SUPERSEDED:'Superseded'};
+  function fmtTs(ts){
+    if(!ts) return '';
+    if(/^\\d{4}-\\d{2}-\\d{2}T/.test(ts)){ var d=new Date(ts); if(!isNaN(d)) return ts.slice(0,10)+' '+ts.slice(11,16); }
+    return String(ts);
+  }
+  function fmtDur(ms){
+    if(!(ms>0)) return '';
+    var m=Math.round(ms/60000);
+    if(m<60) return m+' min';
+    var h=Math.floor(m/60); if(h<24) return h+' h'+(m%60?' '+(m%60)+' min':'');
+    var d=Math.floor(h/24); return d+' d'+(h%24?' '+(h%24)+' h':'');
+  }
+  function tsMs(ts){ var d=new Date(ts); return isNaN(d)?null:d.getTime(); }
+  // chaîne d'étapes : première entrée dans chaque statut, dans l'ordre chronologique
+  function ticketSteps(t){
+    var ev=JOURNAL[t.id]||[], first=[], seen={};
+    ev.forEach(function(e){ if(!seen[e.to]){ seen[e.to]=1; first.push({ status:e.to, ts:e.ts }); } });
+    // création : la colonne du kanban fait foi, le journal ne sert que de repli
+    var created=t.date && t.date!=='—' ? t.date : (first.length? first[0].ts : '');
+    var steps=[{ status:'CREATED', label:'Created', ts:created, src:'memory/kanban.md' }];
+    first.forEach(function(f){
+      if(f.status==='TODO' && steps.length===1 && created) return; // doublon avec la création
+      steps.push({ status:f.status, label:STEP_LABEL[f.status]||f.status, ts:f.ts, src:'journal' });
     });
-    return out;
-  })();
+    // étapes du workflow jamais enregistrées : on les montre vides plutôt que de les taire
+    ['IN_PROGRESS','TO_TEST','DONE'].forEach(function(st){
+      var reached=STATUSES.indexOf(t.status)>=STATUSES.indexOf(st);
+      if(!reached || seen[st]) return;
+      steps.push({ status:st, label:STEP_LABEL[st], ts:'', src:'', missing:true });
+    });
+    return steps;
+  }
+  function historyBlock(t){
+    var steps=ticketSteps(t), prev=null;
+    var rows=steps.map(function(s){
+      var ms=s.ts? tsMs(s.ts):null, gap=(ms&&prev)? fmtDur(ms-prev):'';
+      if(ms) prev=ms;
+      var col=s.status==='CREATED'?'var(--muted)':(SCOL[s.status]||'var(--muted)');
+      return '<li'+(s.missing?' class="miss"':'')+'><span class="hdot" style="background:'+col+'"></span>'
+        + '<span class="hlab">'+esc(s.label)+'</span>'
+        + '<span class="hts">'+(s.ts? esc(fmtTs(s.ts)) : '<i>not recorded</i>')+'</span>'
+        + '<span class="hgap">'+esc(gap)+'</span></li>';
+    }).join('');
+    var firstMs=null, lastMs=null;
+    steps.forEach(function(s){ var m=s.ts?tsMs(s.ts):null; if(m){ if(firstMs===null) firstMs=m; lastMs=m; } });
+    var lead=(firstMs&&lastMs&&lastMs>firstMs)? '<div class="hfoot">Lead time <b>'+esc(fmtDur(lastMs-firstMs))+'</b></div>' : '';
+    var note=JOURNAL_SINCE && !(JOURNAL[t.id]||[]).length
+      ? '<div class="hfoot dim">No transition recorded — the ticket journal only covers changes made since '+esc(fmtTs(JOURNAL_SINCE))+'.</div>'
+      : (!JOURNAL_SINCE ? '<div class="hfoot dim">Ticket journal not started yet — it fills up as agents move tickets in <code>memory/kanban.md</code>.</div>' : '');
+    return '<h4 class="mgrp">History</h4><ul class="hist">'+rows+'</ul>'+lead+note;
+  }
+
+  // ── Captures d'écran rattachées au ticket ─────────────────
+  // Les PNG restent sur disque et sont référencés en relatif : les inliner ferait
+  // grossir le rapport de ~300 Ko par prise de vue.
+  function shotUrl(s){ return /^data:/.test(s.src) ? s.src : AILED_ROOT + s.src; }
+  function screensBlock(t){
+    var sc=SCREENS[String(t.id||'').toUpperCase()];
+    if(!sc) return '';
+    var groups=[], byKey={};
+    (sc.shots||[]).forEach(function(s){
+      var key=(s.screen||'')+'|'+(s.state||'');
+      if(!byKey[key]){ byKey[key]={ screen:s.screen, state:s.state, route:s.route, criterion:s.criterion, shots:[] }; groups.push(byKey[key]); }
+      byKey[key].shots.push(s);
+    });
+    var body=groups.map(function(g){
+      return '<figure class="shotgrp">'
+        + '<figcaption>'+(g.screen? '<b>'+esc(g.screen)+'</b>':'')
+        + (g.route? '<code>'+esc(g.route)+'</code>':'')
+        + (g.state? '<span class="st">'+esc(g.state)+'</span>':'')
+        + (g.criterion? '<span class="crit">'+esc(g.criterion)+'</span>':'')+'</figcaption>'
+        + '<div class="shots">'+g.shots.map(function(s){
+            return '<a class="shot" href="'+esc(shotUrl(s))+'" data-shot="1" title="Click to enlarge">'
+              + '<img loading="lazy" src="'+esc(shotUrl(s))+'" alt="'+esc((g.screen||'')+' '+(g.state||''))+'">'
+              + '<span class="vp">'+esc(s.viewport||'')+'</span></a>';
+          }).join('')+'</div></figure>';
+    }).join('');
+    var un=(sc.unreached||[]).length
+      ? '<ul class="unreach">'+sc.unreached.map(function(u){ return '<li><b>'+esc(u.screen||u.state||'state')+'</b> not reached — '+esc(u.reason||'no reason given')+'</li>'; }).join('')+'</ul>' : '';
+    var cons=(sc.console||[]).length
+      ? '<details class="conslog"><summary>'+sc.console.length+' console message(s)</summary><ul>'+sc.console.map(function(m){ return '<li>'+esc(String(m).slice(0,300))+'</li>'; }).join('')+'</ul></details>' : '';
+    if(!body && !un) return '';
+    return '<h4 class="mgrp">Screens captured at test time'
+      + (sc.capturedAt? ' <span class="mgrp-sub">'+esc(fmtTs(sc.capturedAt))+(sc.olderRuns? ' · '+sc.olderRuns+' earlier run(s) on disk':'')+'</span>':'')+'</h4>'
+      + body + un + cons;
+  }
+
+  // ── Lightbox (une capture en grand) ───────────────────────
+  function openShot(url){
+    var lb=document.getElementById('lightbox');
+    lb.querySelector('img').src=url;
+    lb.hidden=false;
+  }
+  function closeShot(){ var lb=document.getElementById('lightbox'); if(lb){ lb.hidden=true; lb.querySelector('img').removeAttribute('src'); } }
+
+  // ── État dérivé, recalculé à chaque rendu ─────────────────
+  var epics=[], epicIds=[], tickets=[], board={}, miles=[], msByEpic={}, integ=[];
+  var total=0, done=0, pct=0, state=null;
+
   // ordre « plus récent d'abord » : numéro de ticket, puis ordre d'apparition
   function recent(a,b){ return (b.num-a.num)||(b.seq-a.seq); }
-  var board={}; STATUSES.forEach(function(s){ board[s]=[]; });
-  tickets.forEach(function(t){ if(board[t.status]) board[t.status].push(t); });
-  var total = STATUSES.reduce(function(n,s){ return n+board[s].length; },0);
-  var done = board.DONE.length;
-  var pct = total ? Math.round(done/total*100) : 0;
-  var state = stateSection((get('project-state')||{}).content);
   // jalon de rattachement d'un ticket, via la colonne EPICs de roadmap.md
-  var miles = parseMilestonesFull((get('roadmap')||{}).content);
-  var msByEpic = {};
-  miles.forEach(function(m){ m.epics.forEach(function(e){ if(!msByEpic[e]) msByEpic[e]=m; }); });
   function ticketMilestone(t){
     var found=null;
     (t.epics||[]).some(function(e){ if(msByEpic[e]){ found=msByEpic[e]; return true; } return false; });
@@ -1739,165 +2298,291 @@ const HTML_TEMPLATE = `<!doctype html>
   // « M3+++ — Galerie navigable » → « M3+++ »
   function msKey(m){ return m ? mdPlain(m.name.split(/\\s+[—–-]\\s+/)[0]||m.name) : ''; }
 
-  // ── Camemberts : avancement global + jalon en cours ───────
-  var globalSegs = STATUSES.slice().reverse().map(function(s){ return { value:board[s].length, color:SCOL[s], label:LABEL[s], st:s }; });
-  var globalLegend = STATUSES.slice().reverse().filter(function(s){ return board[s].length; })
-    .map(function(s){ return '<li class="clickable" data-st="'+s+'" title="Click to list these tasks"><span class="ldot" style="background:'+SCOL[s]+'"></span>'+LABEL[s]+'<b>'+board[s].length+'</b></li>'; }).join('');
-  var globalCard =
-    '<div class="card pie-card">'
-    + '<div class="piefig">'+pieSvg(globalSegs,{big:pct+'%'})+'</div>'
-    + '<div class="pieinfo"><h3>Overall progress</h3><div class="pie-sub">'+done+' / '+total+' tickets done</div>'
-    +   '<ul class="legend">'+(globalLegend||'<li class="empty">No ticket</li>')+'</ul></div>'
-    + '</div>';
-
-  var ms = milestoneProgress(miles, epics, tickets);
-  var msCard;
-  if(ms){
-    var msSegs=[{ value:ms.done, color:SCOL.DONE },{ value:Math.max(0,ms.total-ms.done), color:'var(--border)' }];
-    msCard =
-      '<div class="card pie-card">'
-      + '<div class="piefig">'+pieSvg(msSegs,{big:ms.pct+'%',small:'≈ est.'})+'</div>'
-      + '<div class="pieinfo"><h3>Current milestone</h3>'
-      +   '<div class="pie-sub"><b style="color:var(--text)">'+esc(mdPlain(ms.name))+'</b>'+(ms.target?' · target '+esc(ms.target):'')+'</div>'
-      +   '<ul class="legend"><li><span class="ldot" style="background:'+SCOL.DONE+'"></span>Covered<b>'+ms.done+'</b></li>'
-      +     '<li><span class="ldot" style="background:var(--border)"></span>Remaining<b>'+Math.max(0,ms.total-ms.done)+'</b></li></ul></div>'
-      + '</div>';
-  } else {
-    msCard = '<div class="card pie-card"><div class="pieinfo"><h3>Current milestone</h3><div class="pie-sub">No milestone defined (roadmap.md)</div></div></div>';
+  function computeModel(){
+    integ = parseIntegrations((get('config')||{}).content);
+    epics = parseEpics((get('epics')||{}).content);
+    epicIds = epics.map(function(e){ return e.id; });
+    // tickets vivants + tickets archivés par @ailed-release (memory/archive/kanban.md) :
+    // sans l'archive, les EPICs livrées paraissent vides et l'avancement est sous-estimé.
+    // Dédoublonnage par ID, le kanban vivant faisant foi.
+    var live=parseKanbanFull((get('kanban')||{}).content, epicIds, 1000000, false);
+    var old=parseKanbanFull(ARCHIVE.kanban, epicIds, 0, true);
+    var seen={}; tickets=[];
+    live.concat(old).forEach(function(t){
+      if(t.id){ if(seen[t.id]) return; seen[t.id]=1; }
+      tickets.push(t);
+    });
+    board={}; STATUSES.forEach(function(s){ board[s]=[]; });
+    tickets.forEach(function(t){ if(board[t.status]) board[t.status].push(t); });
+    total = STATUSES.reduce(function(n,s){ return n+board[s].length; },0);
+    done = board.DONE.length;
+    pct = total ? Math.round(done/total*100) : 0;
+    state = stateSection((get('project-state')||{}).content);
+    miles = parseMilestonesFull((get('roadmap')||{}).content);
+    msByEpic = {};
+    miles.forEach(function(m){ m.epics.forEach(function(e){ if(!msByEpic[e]) msByEpic[e]=m; }); });
   }
 
-  // ── Chiffres d'action : bugs / vulnérabilités / arbitrages ─
-  var inc = countIncidents((get('incidents')||{}).content);
-  var vul = countVulns((get('security')||{}).content);
-  var arb = countCandidates((get('market-watch')||{}).content);
-  function statTile(cls,kind,num,label,sub){
-    return '<div class="stat '+cls+(num?'':' zero')+'" data-kind="'+kind+'" role="button" tabindex="0" title="Click for details">'
-      + '<span class="num">'+num+'</span>'
-      + '<span class="lab">'+label+'<small>'+sub+'</small></span></div>';
-  }
-  var statsCard =
-    '<div class="card stats">'
-    + statTile('bug','bugs',inc,'Bugs to handle','incident workflow')
-    + statTile('vuln','vulns',vul.open,'Vulnerabilities',(vul.crit?vul.crit+' critical/high · ':'')+'security workflow')
-    + statTile('arb','arb',arb,'Product arbitrations','discovery → roadmap')
-    + '</div>';
-
-  // ── Timeline des EPICs ────────────────────────────────────
-  var epList = epics.length ? epics : (function(){
-    var seen=[]; tickets.forEach(function(t){ if(t.epic && !seen.find(function(e){return e.id===t.epic;})) seen.push({ id:t.epic, title:'', status:'todo' }); }); return seen;
-  })();
-  var epEff = epList.map(function(e){ var o={ id:e.id, title:e.title, eff:epicEff(e,tickets) }; return o; });
-  var timelineHtml = epEff.length ? epEff.map(function(e){
-    var g=e.eff==='done'?'✓':(e.eff==='current'?'▶':'·');
-    return '<li class="'+e.eff+' clickable" data-epic="'+esc(e.id)+'" title="Click to list this EPIC\\'s tasks"><span class="node">'+g+'</span><span class="ep-id">'+esc(e.id)+'</span><span class="ep-title">'+esc(mdPlain(e.title||''))+'</span></li>';
-  }).join('') : '<li class="todo"><span class="node">·</span><span class="ep-title">No EPIC defined</span></li>';
-
-  // ── Kanban : une colonne par statut non-DONE, + les DONE récentes à droite ─
   var DONE_SHOWN = 5;
-  function kcard(t){
-    var m=ticketMilestone(t);
-    return '<div class="kcard'+(t.status==='SUPERSEDED'?' sup':'')+'" data-tid="'+esc(t.id)+'" style="--cc:'+(SCOL[t.status]||'#8b929e')
-      + '" title="'+esc(clampText(mdPlain(t.title),300)).replace(/"/g,'&quot;')+' — click for details">'
-      + '<span class="kms">'+esc(m? msKey(m):'—')+'</span>'
-      + '<span class="kep">'+esc((t.epics||[]).join(' ')||'no EPIC')+'</span>'
-      + '<span class="kid">'+esc(t.id||'—')+'</span>'
-      + '<span class="ktt">'+mdInline(t.title||'(untitled)')+'</span>'
-      + (t.status==='OTHER'? '<span class="kraw">'+esc(t.raw)+'</span>':'')
+
+  function renderSynth(){
+    // ── En-tête / badges ──────────────────────────────────────
+    document.getElementById('badges').innerHTML =
+      integ.map(function(it){
+        return it.on ? '<span class="badge on">'+esc(it.area)+' <b>'+esc(it.tool)+'</b></span>'
+                     : '<span class="badge off">'+esc(it.area)+'</span>';
+      }).join('') + '<span class="badge style">style&nbsp;<b>'+esc(STYLE)+'</b></span>';
+
+    // ── Camemberts : avancement global + jalon en cours ───────
+    var globalSegs = STATUSES.slice().reverse().map(function(s){ return { value:board[s].length, color:SCOL[s], label:LABEL[s], st:s }; });
+    var globalLegend = STATUSES.slice().reverse().filter(function(s){ return board[s].length; })
+      .map(function(s){ return '<li class="clickable" data-st="'+s+'" title="Click to list these tasks"><span class="ldot" style="background:'+SCOL[s]+'"></span>'+LABEL[s]+'<b>'+board[s].length+'</b></li>'; }).join('');
+    var globalCard =
+      '<div class="card pie-card">'
+      + '<div class="piefig">'+pieSvg(globalSegs,{big:pct+'%'})+'</div>'
+      + '<div class="pieinfo"><h3>Overall progress</h3><div class="pie-sub">'+done+' / '+total+' tickets done</div>'
+      +   '<ul class="legend">'+(globalLegend||'<li class="empty">No ticket</li>')+'</ul></div>'
       + '</div>';
+
+    var ms = milestoneProgress(miles, epics, tickets);
+    var msCard;
+    if(ms){
+      var msSegs=[{ value:ms.done, color:SCOL.DONE },{ value:Math.max(0,ms.total-ms.done), color:'var(--border)' }];
+      msCard =
+        '<div class="card pie-card">'
+        + '<div class="piefig">'+pieSvg(msSegs,{big:ms.pct+'%',small:'≈ est.'})+'</div>'
+        + '<div class="pieinfo"><h3>Current milestone</h3>'
+        +   '<div class="pie-sub"><b style="color:var(--text)">'+esc(mdPlain(ms.name))+'</b>'+(ms.target?' · target '+esc(ms.target):'')+'</div>'
+        +   '<ul class="legend"><li><span class="ldot" style="background:'+SCOL.DONE+'"></span>Covered<b>'+ms.done+'</b></li>'
+        +     '<li><span class="ldot" style="background:var(--border)"></span>Remaining<b>'+Math.max(0,ms.total-ms.done)+'</b></li></ul></div>'
+        + '</div>';
+    } else {
+      msCard = '<div class="card pie-card"><div class="pieinfo"><h3>Current milestone</h3><div class="pie-sub">No milestone defined (roadmap.md)</div></div></div>';
+    }
+
+    // ── Chiffres d'action : bugs / vulnérabilités / arbitrages ─
+    var inc = countIncidents((get('incidents')||{}).content);
+    var vul = countVulns((get('security')||{}).content);
+    var arb = countCandidates((get('market-watch')||{}).content);
+    function statTile(cls,kind,num,label,sub){
+      return '<div class="stat '+cls+(num?'':' zero')+'" data-kind="'+kind+'" role="button" tabindex="0" title="Click for details">'
+        + '<span class="num">'+num+'</span>'
+        + '<span class="lab">'+label+'<small>'+sub+'</small></span></div>';
+    }
+    var statsCard =
+      '<div class="card stats">'
+      + statTile('bug','bugs',inc,'Bugs to handle','incident workflow')
+      + statTile('vuln','vulns',vul.open,'Vulnerabilities',(vul.crit?vul.crit+' critical/high · ':'')+'security workflow')
+      + statTile('arb','arb',arb,'Product arbitrations','discovery → roadmap')
+      + '</div>';
+
+    // ── Timeline des EPICs (nœud = camembert d'avancement) ────
+    var epList = epics.length ? epics : (function(){
+      var seen=[]; tickets.forEach(function(t){ if(t.epic && !seen.find(function(e){return e.id===t.epic;})) seen.push({ id:t.epic, title:'', status:'todo' }); }); return seen;
+    })();
+    var timelineHtml = epList.length ? epList.map(function(e){
+      var eff=epicEff(e,tickets), prog=epicProgress(e.id);
+      var tip=e.id+(prog? ' — '+prog.done+'/'+prog.total+' tickets done ('+prog.pct+'%)':' — no ticket linked')+' · click for details';
+      return '<li class="'+eff+' clickable" data-epic="'+esc(e.id)+'" title="'+esc(tip)+'">'
+        + nodePie(eff,prog)
+        + '<span class="ep-id">'+esc(e.id)+'</span>'
+        + '<span class="ep-title">'+esc(mdPlain(e.title||''))+'</span>'
+        + (prog? '<span class="ep-pct">'+prog.pct+'% · '+prog.done+'/'+prog.total+'</span>':'<span class="ep-pct dim">no ticket</span>')
+        + '</li>';
+    }).join('') : '<li class="todo">'+nodePie('todo',null)+'<span class="ep-title">No EPIC defined</span></li>';
+
+    // ── Kanban : une colonne par statut non-DONE, + les DONE récentes à droite ─
+    function kcard(t){
+      var m=ticketMilestone(t);
+      var sc=SCREENS[String(t.id||'').toUpperCase()];
+      var nshots=sc? (sc.shots||[]).length : 0;
+      return '<div class="kcard'+(t.status==='SUPERSEDED'?' sup':'')+'" data-tid="'+esc(t.id)+'" style="--cc:'+(SCOL[t.status]||'#8b929e')
+        + '" title="'+esc(clampText(mdPlain(t.title),300)).replace(/"/g,'&quot;')+' — click for details">'
+        + '<span class="kms">'+esc(m? msKey(m):'—')+'</span>'
+        + '<span class="kep">'+esc((t.epics||[]).join(' ')||'no EPIC')+'</span>'
+        + '<span class="kid">'+esc(t.id||'—')+(nshots? '<span class="kshot" title="'+nshots+' screen(s) captured">▣ '+nshots+'</span>':'')+'</span>'
+        + '<span class="ktt">'+mdInline(t.title||'(untitled)')+'</span>'
+        + (t.status==='OTHER'? '<span class="kraw">'+esc(t.raw)+'</span>':'')
+        + '</div>';
+    }
+    function kcol(st, list, shown){
+      var extra=shown && list.length>shown ? list.length-shown : 0;
+      var body=list.length
+        ? list.slice(0, shown||list.length).map(kcard).join('')
+          + (extra? '<button class="kmore" type="button" data-st="'+st+'">+ '+extra+' more…</button>':'')
+        : '<div class="kempty">—</div>';
+      return '<div class="kcol"><h4><span class="kdot" style="background:'+(SCOL[st]||'#8b929e')+'"></span>'+(LABEL[st]||st)
+        + '<span class="kn'+(list.length?' clickable" data-st="'+st+'" title="Click to list them all':'')+'">'+list.length+'</span></h4>'
+        + body+'</div>';
+    }
+    // statuts non-DONE du référentiel, puis SUPERSEDED / OTHER seulement s'ils existent
+    var boardCols = STATUSES.filter(function(s){ return s!=='DONE'; })
+      .concat(OFF_BOARD.filter(function(s){ return tickets.some(function(t){ return t.status===s; }); }))
+      .map(function(st){ return kcol(st, tickets.filter(function(t){ return t.status===st; }).sort(recent)); }).join('');
+    // dernière colonne : les DONE, bornées aux plus récentes (numéro de ticket décroissant)
+    var boardHtml = '<div class="kanban">'+boardCols+kcol('DONE', board.DONE.slice().sort(recent), DONE_SHOWN)+'</div>';
+
+    // ── Watch-out list ────────────────────────────────────────
+    var watch=[];
+    DATA.forEach(function(e){ if(e.age!==null && e.age>staleLimit(e.name)) watch.push(esc(e.file)+' — '+e.age+' days without update'); });
+    var off = integ.filter(function(it){ return !it.on; }).map(function(it){ return esc(it.area); });
+    if(off.length) watch.push('Disabled integrations: '+off.join(', '));
+    if(board.TO_CHECK.length) watch.push(board.TO_CHECK.length+' pending TO_CHECK clarification(s)');
+    var watchHtml = watch.length ? watch.map(function(w){ return '<li>'+w+'</li>'; }).join('') : '<li class="empty">Nothing to report</li>';
+
+    // Chapô : extrait borné en texte brut (jamais de markdown à l'écran) + lien vers la popup
+    var ledeHtml = state
+      ? '<p class="lede">'+esc(clampText(state.first,300))+' <button class="more" type="button" id="stateMore">Read the full state</button></p>'
+      : '';
+
+    document.getElementById('synth').innerHTML =
+      '<h2 class="sec">Overview</h2>'
+      + ledeHtml
+      + '<div class="kpis">'+globalCard+msCard+statsCard+'</div>'
+      + '<h2 class="sec">EPIC timeline</h2>'
+      + '<div class="card"><ol class="epic-timeline">'+timelineHtml+'</ol></div>'
+      + '<h2 class="sec">Kanban — open tasks · '+DONE_SHOWN+' latest done</h2>'
+      + boardHtml
+      + '<h2 class="sec">Watch out</h2>'
+      + '<div class="card"><ul class="watch">'+watchHtml+'</ul></div>';
   }
-  function kcol(st, list, shown){
-    var extra=shown && list.length>shown ? list.length-shown : 0;
-    var body=list.length
-      ? list.slice(0, shown||list.length).map(kcard).join('')
-        + (extra? '<button class="kmore" type="button" data-st="'+st+'">+ '+extra+' more…</button>':'')
-      : '<div class="kempty">—</div>';
-    return '<div class="kcol"><h4><span class="kdot" style="background:'+(SCOL[st]||'#8b929e')+'"></span>'+(LABEL[st]||st)
-      + '<span class="kn'+(list.length?' clickable" data-st="'+st+'" title="Click to list them all':'')+'">'+list.length+'</span></h4>'
-      + body+'</div>';
-  }
-  // statuts non-DONE du référentiel, puis SUPERSEDED / OTHER seulement s'ils existent
-  var boardCols = STATUSES.filter(function(s){ return s!=='DONE'; })
-    .concat(OFF_BOARD.filter(function(s){ return tickets.some(function(t){ return t.status===s; }); }))
-    .map(function(st){ return kcol(st, tickets.filter(function(t){ return t.status===st; }).sort(recent)); }).join('');
-  // dernière colonne : les DONE, bornées aux plus récentes (numéro de ticket décroissant)
-  var boardHtml = '<div class="kanban">'+boardCols+kcol('DONE', board.DONE.slice().sort(recent), DONE_SHOWN)+'</div>';
-
-  // ── Watch-out list ────────────────────────────────────────
-  var watch=[];
-  DATA.forEach(function(e){ if(e.age!==null && e.age>staleLimit(e.name)) watch.push(esc(e.file)+' — '+e.age+' days without update'); });
-  var off = integ.filter(function(it){ return !it.on; }).map(function(it){ return esc(it.area); });
-  if(off.length) watch.push('Disabled integrations: '+off.join(', '));
-  if(board.TO_CHECK.length) watch.push(board.TO_CHECK.length+' pending TO_CHECK clarification(s)');
-  var watchHtml = watch.length ? watch.map(function(w){ return '<li>'+w+'</li>'; }).join('') : '<li class="empty">Nothing to report</li>';
-
-  // Chapô : extrait borné en texte brut (jamais de markdown à l'écran) + lien vers la popup
-  var ledeHtml = state
-    ? '<p class="lede">'+esc(clampText(state.first,300))+' <button class="more" type="button" id="stateMore">Read the full state</button></p>'
-    : '';
-
-  document.getElementById('synth').innerHTML =
-    '<h2 class="sec">Overview</h2>'
-    + ledeHtml
-    + '<div class="kpis">'+globalCard+msCard+statsCard+'</div>'
-    + '<h2 class="sec">EPIC timeline</h2>'
-    + '<div class="card"><ol class="epic-timeline">'+timelineHtml+'</ol></div>'
-    + '<h2 class="sec">Kanban — open tasks · '+DONE_SHOWN+' latest done</h2>'
-    + boardHtml
-    + '<h2 class="sec">Watch out</h2>'
-    + '<div class="card"><ul class="watch">'+watchHtml+'</ul></div>';
 
   // ── Détail (replié) ───────────────────────────────────────
-  var open = STYLE==='detailed' ? ' open' : '';
-  var toc='', det='';
-  DATA.forEach(function(e){
-    var stale=(e.age!==null && e.age>staleLimit(e.name));
-    toc += '<a href="#f-'+e.name+'" data-t="f-'+e.name+'">'+esc(e.title)+(stale?' <span class="dot">●</span>':'')+'</a>';
-    var stamp = e.date ? ('upd '+e.date+(e.age!==null?(' · '+e.age+' d'+(stale?' — stale':'')):'')) : 'date unknown';
-    det += '<details class="file" id="f-'+e.name+'"'+open+'><summary><span class="sf">'+esc(e.file)+'</span> '+esc(e.title)+'<span class="st">'+stamp+'</span></summary><div class="md">'+marked.parse(e.content)+'</div></details>';
-  });
-  document.getElementById('toc').innerHTML = toc;
-  document.getElementById('detail').innerHTML = det;
+  function renderDetail(){
+    var open = STYLE==='detailed' ? ' open' : '';
+    var wasOpen={};
+    document.querySelectorAll('#detail details.file').forEach(function(d){ wasOpen[d.id]=d.open; });
+    var toc='', det='';
+    DATA.forEach(function(e){
+      var stale=(e.age!==null && e.age>staleLimit(e.name));
+      toc += '<a href="#f-'+e.name+'" data-t="f-'+e.name+'">'+esc(e.title)+(stale?' <span class="dot">●</span>':'')+'</a>';
+      var stamp = e.date ? ('upd '+e.date+(e.age!==null?(' · '+e.age+' d'+(stale?' — stale':'')):'')) : 'date unknown';
+      var id='f-'+e.name;
+      var op = (id in wasOpen) ? (wasOpen[id]?' open':'') : open;
+      det += '<details class="file" id="'+id+'"'+op+'><summary><span class="sf">'+esc(e.file)+'</span> '+esc(e.title)+'<span class="st">'+stamp+'</span></summary><div class="md">'+marked.parse(e.content)+'</div></details>';
+    });
+    document.getElementById('toc').innerHTML = toc;
+    document.getElementById('detail').innerHTML = det;
 
-  // bouton repliable du détail de la mémoire (déplié d'office en style détaillé)
-  var detailWrap=document.getElementById('detailWrap');
-  var toggleBtn=document.getElementById('toggleDetail');
-  function setDetail(show){
-    detailWrap.hidden=!show;
-    toggleBtn.setAttribute('aria-expanded', show?'true':'false');
-    toggleBtn.textContent=(show?'▾':'▸')+' Memory detail (raw files)';
+    document.querySelectorAll('code.language-mermaid').forEach(function(code){
+      var div = document.createElement('div'); div.className='mermaid'; div.textContent = code.textContent;
+      (code.closest('pre')||code).replaceWith(div);
+    });
+    runMermaid();
   }
-  setDetail(STYLE==='detailed');
-  toggleBtn.addEventListener('click', function(){ setDetail(detailWrap.hidden); });
 
-  // clic sur une puce du sommaire → ouvre l'accordéon ciblé
-  document.getElementById('toc').addEventListener('click', function(ev){
-    var a = ev.target.closest('a'); if(!a) return;
-    var el = document.getElementById(a.getAttribute('data-t')); if(el) el.open = true;
-  });
+  // Mermaid mesure le DOM pour dimensionner ses diagrammes : le lancer sur un conteneur
+  // encore replié (display:none) donne des largeurs indéfinies — d'où des diagrammes mal
+  // dimensionnés et un « translate(undefined, NaN) » en console. On attend donc que le
+  // panneau de détail soit visible, et on ne traite que les nœuds pas encore rendus.
+  // initialize doit rester immédiat : chargé par balise CDN, mermaid a startOnLoad à
+  // true par défaut et se lancerait tout seul au DOMContentLoaded — donc sur un panneau
+  // encore replié, ce qu'on cherche justement à éviter. Seul run est différé.
+  if (window.mermaid) mermaid.initialize({ startOnLoad:false, theme:'default' });
+  function runMermaid(){
+    if(!window.mermaid) return;
+    var wrap=document.getElementById('detailWrap');
+    if(!wrap || wrap.hidden) return;
+    var pending=[].filter.call(document.querySelectorAll('.mermaid'), function(d){ return !d.getAttribute('data-processed'); });
+    if(!pending.length) return;
+    try { mermaid.run({ nodes:pending }); } catch(_) {}
+  }
 
-  // ── clics de la synthèse → popups (délégation sur #synth, qui persiste) ──
-  document.getElementById('synth').addEventListener('click', function(ev){
-    if(ev.target.closest('#stateMore')){ openState(); return; }
-    var st=ev.target.closest('li[data-st], .kn[data-st], .kmore[data-st]');
-    if(st){ openStatus(st.getAttribute('data-st')); return; }
-    var tk=ev.target.closest('.kcard[data-tid]'); if(tk){ openTicket(tk.getAttribute('data-tid')); return; }
-    var ep=ev.target.closest('li[data-epic]'); if(ep){ openEpic(ep.getAttribute('data-epic')); return; }
-    var k=ev.target.closest('.stat[data-kind]');
-    if(k){ var kind=k.getAttribute('data-kind'); if(kind==='bugs') openIncidents(); else if(kind==='vulns') openVulns(); else openCandidates(); }
-  });
-  // bouton Feature list (en-tête)
-  document.getElementById('featBtn').addEventListener('click', openFeatures);
-  // fermeture du modal : croix, fond, Échap
-  document.getElementById('modal').addEventListener('click', function(ev){
-    if(ev.target.getAttribute('data-close') || ev.target.closest('#modalClose')) closeModal();
-  });
-  document.addEventListener('keydown', function(ev){ if(ev.key==='Escape') closeModal(); });
+  function render(){
+    computeModel();
+    renderSynth();
+    renderDetail();
+    document.getElementById('gen').textContent = 'generated on '+PAYLOAD.generated+' · read-only';
+    // une popup ouverte est réaffichée avec les données fraîches
+    if(lastModal) try { lastModal(); } catch(_) { closeModal(); }
+  }
 
-  document.querySelectorAll('code.language-mermaid').forEach(function(code){
-    var div = document.createElement('div'); div.className='mermaid'; div.textContent = code.textContent;
-    (code.closest('pre')||code).replaceWith(div);
-  });
-  if (window.mermaid){ mermaid.initialize({startOnLoad:false, theme:'default'}); mermaid.run({querySelector:'.mermaid'}); }
+  // ── Câblage, posé une seule fois ──────────────────────────
+  function wire(){
+    var detailWrap=document.getElementById('detailWrap');
+    var toggleBtn=document.getElementById('toggleDetail');
+    function setDetail(show){
+      detailWrap.hidden=!show;
+      toggleBtn.setAttribute('aria-expanded', show?'true':'false');
+      toggleBtn.textContent=(show?'▾':'▸')+' Memory detail (raw files)';
+      if(show) runMermaid();
+    }
+    setDetail(STYLE==='detailed');
+    toggleBtn.addEventListener('click', function(){ setDetail(detailWrap.hidden); });
+
+    // clic sur une puce du sommaire → ouvre l'accordéon ciblé
+    document.getElementById('toc').addEventListener('click', function(ev){
+      var a = ev.target.closest('a'); if(!a) return;
+      var el = document.getElementById(a.getAttribute('data-t')); if(el) el.open = true;
+    });
+
+    // ── clics de la synthèse → popups (délégation sur #synth, qui persiste) ──
+    document.getElementById('synth').addEventListener('click', function(ev){
+      if(ev.target.closest('#stateMore')){ openState(); return; }
+      var st=ev.target.closest('li[data-st], .kn[data-st], .kmore[data-st]');
+      if(st){ openStatus(st.getAttribute('data-st')); return; }
+      var tk=ev.target.closest('.kcard[data-tid]'); if(tk){ openTicket(tk.getAttribute('data-tid')); return; }
+      var ep=ev.target.closest('li[data-epic]'); if(ep){ openEpic(ep.getAttribute('data-epic')); return; }
+      var k=ev.target.closest('.stat[data-kind]');
+      if(k){ var kind=k.getAttribute('data-kind'); if(kind==='bugs') openIncidents(); else if(kind==='vulns') openVulns(); else openCandidates(); }
+    });
+    // bouton Feature list (en-tête)
+    document.getElementById('featBtn').addEventListener('click', openFeatures);
+    // fermeture du modal : croix, fond, Échap · une capture s'ouvre en grand
+    document.getElementById('modal').addEventListener('click', function(ev){
+      var a=ev.target.closest('a[data-shot]');
+      if(a){ ev.preventDefault(); openShot(a.getAttribute('href')); return; }
+      if(ev.target.getAttribute('data-close') || ev.target.closest('#modalClose')) closeModal();
+    });
+    document.getElementById('lightbox').addEventListener('click', closeShot);
+    document.addEventListener('keydown', function(ev){
+      if(ev.key!=='Escape') return;
+      if(!document.getElementById('lightbox').hidden) closeShot(); else closeModal();
+    });
+  }
+
+  // ── Rechargement à chaud ──────────────────────────────────
+  // data.js est rechargé par balise <script> et non par fetch() : en file://, fetch est
+  // bloqué par CORS, pas une balise script. Le paramètre d'horodatage sert de cache-buster.
+  // On ne redessine que si l'empreinte du contenu change — sinon la page clignoterait.
+  var liveTimer=null;
+  function pollData(){
+    var s=document.createElement('script');
+    s.src=DATA_SRC+(DATA_SRC.indexOf('?')>=0?'&':'?')+'t='+Date.now();
+    s.onload=function(){
+      s.remove();
+      var p=window.__AILED__;
+      if(!p || p.stamp===PAYLOAD.stamp){ markLive(true); return; }
+      var y=window.scrollY;
+      adopt(p); render();
+      window.scrollTo(0,y);
+      markLive(true, 'updated ' + new Date().toTimeString().slice(0,8));
+    };
+    s.onerror=function(){ s.remove(); markLive(false); };
+    document.head.appendChild(s);
+  }
+  function markLive(ok, msg){
+    var el=document.getElementById('live'); if(!el) return;
+    el.className='live'+(ok?'':' off');
+    el.title=ok? (msg||'watching '+DATA_SRC) : 'cannot reload '+DATA_SRC+' — open the report from the project folder';
+  }
+  function adopt(p){
+    PAYLOAD=p; DATA=p.files||[]; ARCHIVE=p.archive||{kanban:''};
+    STYLE=p.style||'standard'; SCREENS=p.screens||{}; JOURNAL=p.journal||{}; JOURNAL_SINCE=p.journalSince||null;
+  }
+
+  adopt(PAYLOAD);
+  wire();
+  render();
+  if(DATA_SRC){
+    liveTimer=setInterval(pollData, 2000);
+    document.getElementById('live').addEventListener('click', function(){
+      if(liveTimer){ clearInterval(liveTimer); liveTimer=null; this.classList.add('paused'); this.title='live reload paused — click to resume'; }
+      else { liveTimer=setInterval(pollData, 2000); this.classList.remove('paused'); markLive(true); }
+    });
+  } else {
+    var l=document.getElementById('live'); if(l) l.hidden=true; // instantané autonome : rien à recharger
+  }
 </script>
 </body>
 </html>`;
@@ -2908,6 +3593,7 @@ ${c.bold("Commands")}
   update          Met à jour le framework (agents/skills/commands) en préservant memory/ et CLAUDE.md
   status          Affiche l'état du projet (terminal) ; --html pour un tableau de bord navigateur
   memory-diff     Liste ce qui a changé dans memory/ (par section) ; --html / --clip pour la relecture humaine
+  clean           Taille .ailed/ (captures antérieures, journal des tickets) sans rien perdre de versionné
   watch           Panneau de progression vertical (epics → tâches → agents), rafraîchi en continu
   dashboard       Ouvre un split (gauche: watch figé · droite: claude) via tmux ou zellij
   models          Affiche le modèle LLM de chaque agent (source : memory/config.md)
@@ -2944,12 +3630,29 @@ ${c.bold("update")}
   ${c.dim("Astuce : npx @s2bp/ai-led-framework@latest update  pour contourner le cache npx.")}
 
 ${c.bold("Options de status")}
-  --html              Génère un tableau de bord HTML statique (ailed-status.html), sans serveur
+  --html              Génère le tableau de bord (ailed-status.html), sans serveur
+  --live              Régénère les données dès que memory/ ou les captures bougent (Ctrl-C pour arrêter)
+  --interval=MS       Période de sondage de --live (défaut : 1000)
+  --snapshot          Produit un fichier horodaté 100 % autonome (captures inlinées), à partager
   --out=CHEMIN        Chemin du fichier HTML généré (défaut : ailed-status.html)
   --style=NIVEAU      Force le style pour ce run : concis | standard | détaillé (sinon lu dans memory/config.md)
 
   Le terminal et le HTML montrent d'abord une synthèse (avancement, board kanban, jalons,
   « à surveiller ») ; le HTML met le détail des fichiers memory/ dans des accordéons repliés.
+
+  Le rapport a un nom stable : on le garde ouvert, on le met en marque-page, et il se
+  redessine seul dès que les données changent — la coquille HTML (~60 Ko) est séparée de
+  sa charge utile (.ailed/status/data.js), chargée par balise <script> et non par fetch(),
+  seule façon de recharger à chaud en file:// sans serveur. Les captures d'écran restent
+  des PNG sur disque référencés en relatif : les inliner ferait grossir le rapport de
+  ~300 Ko par prise de vue. --snapshot fait l'inverse à la demande, pour un fichier unique
+  qui se partage tel quel.
+
+${c.bold("Options de clean")}
+  --screens           Ne purge que les captures : garde la dernière planche par ticket
+  --journal           Ne compacte que .ailed/journal.jsonl (1re entrée par statut + 10 derniers events)
+
+  Sans option, les deux. .ailed/ est dérivé et ignoré par git : rien de versionné n'est touché.
 
 ${c.bold("Options de memory-diff")}
   --since=REF         Révision de départ : HEAD (défaut), HEAD~1, une branche, un sha
@@ -2990,6 +3693,9 @@ ${c.dim("Sans flag et en terminal interactif, init pose les questions de configu
       break;
     case "memory-diff":
       memoryDiff();
+      break;
+    case "clean":
+      clean();
       break;
     case "watch":
       watch();
