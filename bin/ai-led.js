@@ -1480,11 +1480,11 @@ const HTML_TEMPLATE = `<!doctype html>
   .stat.zero .num { color:var(--ok); }
   /* Timeline des EPICs */
   .epic-timeline { list-style:none; margin:0; padding:6px 0 2px; display:flex; gap:0; overflow-x:auto; }
-  .epic-timeline li { position:relative; flex:1 1 0; min-width:128px; padding:0 8px; }
-  .epic-timeline li:not(:last-child):after { content:""; position:absolute; top:17px; left:calc(50% + 20px); right:calc(-50% + 20px); height:2px; background:var(--border); }
+  .epic-timeline li { position:relative; flex:1 1 0; min-width:132px; padding:0 8px; }
+  .epic-timeline li:not(:last-child):after { content:""; position:absolute; top:30px; left:calc(50% + 36px); right:calc(-50% + 36px); height:2px; background:var(--border); }
   .epic-timeline li.done:not(:last-child):after { background:var(--ok); }
-  /* le nœud est un camembert : un cercle vide ne dit pas où en est une EPIC en cours */
-  .epic-timeline .node { position:relative; z-index:1; display:block; width:34px; height:34px; margin:0 auto 9px; line-height:0; border-radius:50%; }
+  /* le nœud est le donut d'« Overall progress » en petit : mêmes couleurs de statut, % au centre */
+  .epic-timeline .node { position:relative; z-index:1; display:block; width:60px; height:60px; margin:0 auto 9px; line-height:0; border-radius:50%; }
   .epic-timeline li.current .node { box-shadow:0 0 0 4px rgba(110,168,254,.18); }
   .epic-timeline .ep-pct { display:block; text-align:center; font-size:10.5px; font-family:ui-monospace,monospace; color:var(--accent); margin-top:3px; }
   .epic-timeline li.done .ep-pct { color:var(--ok); }
@@ -1540,7 +1540,7 @@ const HTML_TEMPLATE = `<!doctype html>
   .legend li.clickable:hover b { color:var(--accent); }
   .epic-timeline li.clickable { cursor:pointer; }
   .epic-timeline li.clickable:hover .ep-title { color:var(--accent); }
-  .epic-timeline li.clickable:hover .node { border-color:var(--accent); }
+  .epic-timeline li.clickable:hover .node { box-shadow:0 0 0 3px rgba(110,168,254,.22); }
   .stat { cursor:pointer; }
   header .featbtn { margin-left:auto; background:var(--accent); border:1px solid var(--accent); color:#0b1220; font-weight:600; border-radius:999px; padding:6px 15px; font-size:13px; cursor:pointer; white-space:nowrap; }
   header .featbtn:hover { filter:brightness(1.08); }
@@ -1548,7 +1548,10 @@ const HTML_TEMPLATE = `<!doctype html>
   .modal[hidden]{ display:none; }
   .modal{ position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center; padding:24px; }
   .modal .backdrop{ position:absolute; inset:0; background:rgba(4,6,10,.64); }
-  .modal .box{ position:relative; background:var(--panel); border:1px solid var(--border); border-radius:14px; width:min(880px,100%); max-height:86vh; display:flex; flex-direction:column; box-shadow:0 24px 64px rgba(0,0,0,.55); }
+  /* les popups s'empilent dans la même cellule : celle du dessous reste visible, en retrait */
+  .modal .mstack{ position:relative; display:grid; width:min(880px,100%); }
+  .modal .box{ grid-area:1/1; place-self:center; position:relative; width:100%; background:var(--panel); border:1px solid var(--border); border-radius:14px; max-height:86vh; display:flex; flex-direction:column; box-shadow:0 24px 64px rgba(0,0,0,.55); }
+  .modal .box.under{ transform:translateY(-18px) scale(.97); opacity:.45; pointer-events:none; }
   .modal .mhead{ display:flex; align-items:baseline; gap:12px; padding:15px 20px; border-bottom:1px solid var(--border); }
   .modal .mhead h3{ margin:0; font-size:16px; }
   .modal .mhead .mcount{ color:var(--muted); font-size:13px; }
@@ -1559,6 +1562,9 @@ const HTML_TEMPLATE = `<!doctype html>
   .modal-table th,.modal-table td{ border-bottom:1px solid var(--border); padding:8px 11px; text-align:left; vertical-align:top; }
   .modal-table th{ color:var(--muted); font-weight:600; font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; }
   .modal-table tbody tr:hover{ background:var(--panel2); }
+  /* une ligne de tâche ouvre son détail par-dessus la popup courante */
+  .modal-table tbody tr[data-tid]{ cursor:pointer; }
+  .modal-table tbody tr[data-tid]:hover .mono{ text-decoration:underline; }
   .mono{ font-family:ui-monospace,monospace; font-size:12px; color:var(--accent); white-space:nowrap; }
   .badge-st{ display:inline-block; padding:2px 9px; border-radius:999px; font-size:11.5px; font-weight:600; white-space:nowrap; }
   .modal-empty{ color:var(--muted); font-style:italic; }
@@ -1628,10 +1634,7 @@ const HTML_TEMPLATE = `<!doctype html>
 </main>
 <div id="modal" class="modal" hidden>
   <div class="backdrop" data-close="1"></div>
-  <div class="box" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
-    <div class="mhead"><h3 id="modalTitle"></h3><span id="modalCount" class="mcount"></span><button id="modalClose" class="mclose" type="button" aria-label="Close">✕</button></div>
-    <div id="modalBody" class="mbody"></div>
-  </div>
+  <div id="modalStack" class="mstack"></div>
 </div>
 <div id="lightbox" class="lightbox" hidden><img alt="captured screen"></div>
 <!--__DATA_TAG__-->
@@ -1760,6 +1763,22 @@ const HTML_TEMPLATE = `<!doctype html>
     return { first:f, full:buf.join('\\n'), more:buf.length>first.length };
   }
   var SCOL={TO_CHECK:'#c08be8',TODO:'#8b929e',IN_PROGRESS:'#6ea8fe',TO_TEST:'#f0c674',DONE:'#6cc070',SUPERSEDED:'#6b7280',OTHER:'#6b7280'};
+  // tranches cumulées d'un camembert : segs = [{value,color}], première tranche à midi.
+  // Partagé par le donut « Overall progress » et les nœuds de la timeline des EPICs.
+  function pieParts(segs, cx, cy, r){
+    var tot=segs.reduce(function(n,s){ return n+s.value; },0);
+    if(!tot) return '';
+    var a=-Math.PI/2, parts='';
+    segs.forEach(function(s){
+      if(!s.value) return;
+      var frac=s.value/tot, a2=a+frac*2*Math.PI;
+      if(frac>=0.99999){ parts+='<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="'+s.color+'"/>'; a=a2; return; }
+      var x1=cx+r*Math.cos(a), y1=cy+r*Math.sin(a), x2=cx+r*Math.cos(a2), y2=cy+r*Math.sin(a2);
+      parts+='<path d="M'+cx+' '+cy+' L'+x1.toFixed(2)+' '+y1.toFixed(2)+' A'+r+' '+r+' 0 '+(frac>0.5?1:0)+' 1 '+x2.toFixed(2)+' '+y2.toFixed(2)+' Z" fill="'+s.color+'"/>';
+      a=a2;
+    });
+    return parts;
+  }
   // donut à partir de segments [{value,color}] ; center = {big,small} affiché dans le trou
   function pieSvg(segs, center){
     center = center || {};
@@ -1768,16 +1787,7 @@ const HTML_TEMPLATE = `<!doctype html>
     var ctr = center.big ? '<text x="64" y="61" text-anchor="middle" fill="var(--text)" font-size="22" font-weight="700">'+esc(center.big)+'</text>'
       + (center.small?'<text x="64" y="80" text-anchor="middle" fill="var(--muted)" font-size="10.5">'+esc(center.small)+'</text>':'') : '';
     if(!tot) return '<svg width="132" height="132" viewBox="0 0 132 132"><g transform="translate(2,2)"><circle cx="64" cy="64" r="56" fill="none" stroke="var(--panel2)" stroke-width="16"/><text x="64" y="69" text-anchor="middle" fill="var(--muted)" font-size="12">aucun</text></g></svg>';
-    var cx=64, cy=64, r=56, a=-Math.PI/2, parts='';
-    segs.forEach(function(s){
-      if(!s.value) return;
-      var frac=s.value/tot, a2=a+frac*2*Math.PI;
-      if(frac>=0.99999){ parts+='<circle cx="64" cy="64" r="'+r+'" fill="'+s.color+'"/>'; a=a2; return; }
-      var x1=cx+r*Math.cos(a), y1=cy+r*Math.sin(a), x2=cx+r*Math.cos(a2), y2=cy+r*Math.sin(a2);
-      parts+='<path d="M'+cx+' '+cy+' L'+x1.toFixed(2)+' '+y1.toFixed(2)+' A'+r+' '+r+' 0 '+(frac>0.5?1:0)+' 1 '+x2.toFixed(2)+' '+y2.toFixed(2)+' Z" fill="'+s.color+'"/>';
-      a=a2;
-    });
-    return '<svg width="132" height="132" viewBox="0 0 132 132"><g transform="translate(2,2)">'+parts+hole+'<circle cx="64" cy="64" r="56" fill="none" stroke="var(--border)"/>'+ctr+'</g></svg>';
+    return '<svg width="132" height="132" viewBox="0 0 132 132"><g transform="translate(2,2)">'+pieParts(segs,64,64,56)+hole+'<circle cx="64" cy="64" r="56" fill="none" stroke="var(--border)"/>'+ctr+'</g></svg>';
   }
   function classifyEpic(s){
     var v=(s||'').toUpperCase();
@@ -1962,28 +1972,64 @@ const HTML_TEMPLATE = `<!doctype html>
     return n;
   }
 
-  // ── Modal (popups) ────────────────────────────────────────
-  var modalEl=null;
-  // Dernière popup ouverte, rejouée après un rechargement à chaud : on ne ferme pas
-  // la fenêtre que l'humain était en train de lire parce que la mémoire a bougé.
-  var lastModal=null;
+  // ── Modal (popups empilables) ─────────────────────────────
+  var modalEl=null, stackEl=null;
+  var BOX_HTML='<div class="box" role="dialog" aria-modal="true">'
+    + '<div class="mhead"><h3 class="mtitle"></h3><span class="mcount"></span>'
+    + '<button class="mclose" type="button" aria-label="Close">✕</button></div>'
+    + '<div class="mbody"></div></div>';
+  // Pile des popups affichées : chaque entrée est la fonction qui redessine son niveau.
+  // Elle sert à deux choses — rejouer la popup à l'écran après un rechargement à chaud
+  // (on ne ferme pas la fenêtre que l'humain lisait parce que la mémoire a bougé), et
+  // revenir à la précédente quand on en a ouvert une par-dessus (EPIC → tâche).
+  var modalStack=[];
+  function modalNodes(){
+    if(!modalEl){ modalEl=document.getElementById('modal'); stackEl=document.getElementById('modalStack'); }
+  }
+  // l'opener s'enregistre au niveau courant de la pile (remplace la version précédente)
+  function setTop(fn){
+    if(modalStack.length) modalStack[modalStack.length-1]=fn; else modalStack.push(fn);
+  }
+  // ouvre une popup par-dessus la courante, qui reste visible en dessous
+  function openOver(fn){ modalStack.push(fn); fn(); }
   function openModal(title, count, html){
-    if(!modalEl) modalEl=document.getElementById('modal');
-    document.getElementById('modalTitle').textContent=mdPlain(title);
-    document.getElementById('modalCount').textContent=count||'';
-    document.getElementById('modalBody').innerHTML=html||'';
+    modalNodes();
+    var boxes=stackEl.children, depth=Math.max(1, modalStack.length);
+    // une boîte par niveau de pile : on retire ce qui dépasse, on complète ce qui manque
+    while(boxes.length>depth) stackEl.removeChild(stackEl.lastChild);
+    while(boxes.length<depth) stackEl.insertAdjacentHTML('beforeend', BOX_HTML);
+    var box=boxes[boxes.length-1], t=mdPlain(title);
+    box.setAttribute('aria-label', t);
+    box.querySelector('.mtitle').textContent=t;
+    box.querySelector('.mcount').textContent=count||'';
+    box.querySelector('.mbody').innerHTML=html||'';
+    for(var i=0;i<boxes.length;i++){
+      var under=i<boxes.length-1;
+      boxes[i].classList.toggle('under', under);
+      boxes[i].setAttribute('aria-hidden', under?'true':'false');
+    }
     modalEl.hidden=false;
   }
-  function closeModal(){ if(modalEl) modalEl.hidden=true; lastModal=null; }
+  function closeModal(){
+    modalNodes(); modalEl.hidden=true; stackEl.innerHTML=''; modalStack=[];
+  }
+  // ✕ / Échap / clic hors popup : on referme le niveau courant, pas toute la pile
+  function backModal(){
+    modalStack.pop();
+    var back=modalStack[modalStack.length-1];
+    if(back) back(); else closeModal();
+  }
   // colored status pill
   function badge(st){ var col=SCOL[st]||'#8b929e'; return '<span class="badge-st" style="background:'+col+'22;color:'+col+';border:1px solid '+col+'66">'+(LABEL[st]||st)+'</span>'; }
   // statut affiché : pastille pour les statuts du référentiel, libellé brut sinon
   function stCell(t){ return t.status==='OTHER' ? '<span class="badge-st" style="color:var(--muted);border:1px solid var(--border)">'+esc(t.raw||'—')+'</span>' : badge(t.status); }
-  // table of tickets (id / title / [epic] / status)
+  // table of tickets (id / title / [epic] / status) — une ligne identifiée ouvre le détail
+  // de la tâche par-dessus la popup courante (EPIC ou liste par statut)
   function taskTable(list, withEpic){
     if(!list.length) return '<p class="modal-empty">No matching task.</p>';
     return '<table class="modal-table"><thead><tr><th>ID</th><th>Title</th>'+(withEpic?'<th>EPIC</th>':'')+'<th>Status</th></tr></thead><tbody>'
-      + list.map(function(t){ return '<tr><td class="mono">'+esc(t.id||'—')+'</td><td>'+mdInline(t.title||'(untitled)')+'</td>'
+      + list.map(function(t){ return '<tr'+(t.id? ' data-tid="'+esc(t.id)+'" title="Click for the task detail"':'')+'>'
+          +'<td class="mono">'+esc(t.id||'—')+'</td><td>'+mdInline(t.title||'(untitled)')+'</td>'
           +(withEpic?'<td class="mono">'+esc((t.epics||[]).join(' ')||'—')+'</td>':'')+'<td>'+stCell(t)+'</td></tr>'; }).join('')
       + '</tbody></table>';
   }
@@ -2074,12 +2120,12 @@ const HTML_TEMPLATE = `<!doctype html>
   }
   // popup openers
   function openStatus(st){
-    lastModal=function(){ openStatus(st); };
+    setTop(function(){ openStatus(st); });
     var l=tickets.filter(function(t){ return t.status===st; }).sort(recent);
     openModal((LABEL[st]||st)+' — tasks', l.length+' ticket'+(l.length===1?'':'s'), taskTable(l,true));
   }
   function openEpic(id){
-    lastModal=function(){ openEpic(id); };
+    setTop(function(){ openEpic(id); });
     var l=ticketsOf(id).sort(recent);
     var ep=epics.filter(function(e){ return e.id.toUpperCase()===String(id||'').toUpperCase(); })[0];
     var brief=epicBrief(id), body;
@@ -2095,11 +2141,12 @@ const HTML_TEMPLATE = `<!doctype html>
   }
   // détail d'un ticket (carte du kanban)
   function openTicket(id){
-    lastModal=function(){ openTicket(id); };
+    setTop(function(){ openTicket(id); });
     var t=tickets.filter(function(x){ return x.id===id; })[0];
     // le ticket a disparu du kanban entre deux rendus (renommé, archivé, supprimé) :
-    // fermer plutôt que laisser à l'écran un détail qui ne correspond plus à rien
-    if(!t){ closeModal(); return; }
+    // revenir au niveau précédent plutôt que laisser à l'écran un détail qui ne
+    // correspond plus à rien
+    if(!t){ backModal(); return; }
     var m=ticketMilestone(t);
     var rows=[['Milestone', m? esc(mdPlain(m.name)):'—'],
               ['EPIC', esc((t.epics||[]).join(', ')||'—')],
@@ -2115,13 +2162,13 @@ const HTML_TEMPLATE = `<!doctype html>
   }
   // « État actuel » complet, rendu (le chapô n'en affiche qu'un extrait borné)
   function openState(){
-    lastModal=openState;
+    setTop(openState);
     var s=stateSection((get('project-state')||{}).content);
     openModal('Project state', 'memory/project-state.md — current state',
       s? '<div class="mdlite">'+mdBlocks(s.full)+'</div>' : '<p class="modal-empty">Nothing recorded yet.</p>');
   }
   function openIncidents(){
-    lastModal=openIncidents;
+    setTop(openIncidents);
     var l=listIncidents((get('incidents')||{}).content);
     var b=l.length? l.map(function(i){ return '<div class="inc"><div class="inc-h"><span class="mono">'+esc(i.id)+'</span>'+mdInline(i.title)+'</div>'
       +(i.fields.length?'<ul>'+i.fields.map(function(f){ return '<li>'+mdInline(f)+'</li>'; }).join('')+'</ul>':'')+'</div>'; }).join('')
@@ -2129,7 +2176,7 @@ const HTML_TEMPLATE = `<!doctype html>
     openModal('Bugs to handle', l.length+' incident'+(l.length===1?'':'s'), b);
   }
   function openVulns(){
-    lastModal=openVulns;
+    setTop(openVulns);
     var l=listVulns((get('security')||{}).content);
     var b=l.length? '<table class="modal-table"><thead><tr><th>ID</th><th>Severity</th><th>Component</th><th>Real risk</th><th>Status</th></tr></thead><tbody>'
       + l.map(function(v){ return '<tr><td class="mono">'+esc(v.id)+'</td><td>'+sevBadge(v.sev)+'</td><td>'+mdInline(v.comp||'—')+'</td><td>'+mdInline(v.risk||'—')+'</td><td>'+mdInline(v.status||'—')+'</td></tr>'; }).join('')
@@ -2137,7 +2184,7 @@ const HTML_TEMPLATE = `<!doctype html>
     openModal('Open vulnerabilities', l.length+' item'+(l.length===1?'':'s'), b);
   }
   function openCandidates(){
-    lastModal=openCandidates;
+    setTop(openCandidates);
     var l=listCandidates((get('market-watch')||{}).content);
     var b=l.length? '<table class="modal-table"><thead><tr><th>ID</th><th>Topic</th><th>Value hypothesis</th><th>Impact</th><th>Effort</th></tr></thead><tbody>'
       + l.map(function(x){ return '<tr><td class="mono">'+esc(x.id)+'</td><td>'+mdInline(x.topic||'—')+'</td><td>'+mdInline(x.hyp||'—')+'</td><td>'+mdInline(x.impact||'—')+'</td><td>'+mdInline(x.effort||'—')+'</td></tr>'; }).join('')
@@ -2145,41 +2192,42 @@ const HTML_TEMPLATE = `<!doctype html>
     openModal('Product arbitrations', l.length+' topic'+(l.length===1?'':'s'), b);
   }
   function openFeatures(){
-    lastModal=openFeatures;
+    setTop(openFeatures);
     openModal('Feature inventory', 'delivery / release info in the Notes column',
       sectionsWithTables((get('features')||{}).content) || '<p class="modal-empty">No feature recorded yet.</p>');
   }
 
-  // ── Secteur de camembert (partagé timeline / donuts) ──────
-  function sector(cx,cy,r,frac,fill){
-    if(!(frac>0)) return '';
-    if(frac>=0.9999) return '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="'+fill+'"/>';
-    var a=-Math.PI/2, a2=a+frac*2*Math.PI;
-    var x1=cx+r*Math.cos(a), y1=cy+r*Math.sin(a), x2=cx+r*Math.cos(a2), y2=cy+r*Math.sin(a2);
-    return '<path d="M'+cx+' '+cy+' L'+x1.toFixed(2)+' '+y1.toFixed(2)+' A'+r+' '+r+' 0 '+(frac>0.5?1:0)+' 1 '+x2.toFixed(2)+' '+y2.toFixed(2)+' Z" fill="'+fill+'"/>';
-  }
-  // Nœud de la timeline : un cercle vide ne dit pas où en est une EPIC en cours,
-  // un secteur rempli si. Le % vient des tickets rattachés, jamais du fichier.
-  function nodePie(eff, prog){
-    var frac = prog ? prog.pct/100 : (eff==='done' ? 1 : 0);
-    var col = eff==='done' ? 'var(--ok)' : eff==='current' ? 'var(--accent)' : 'var(--muted)';
+  // Nœud de la timeline : le même indicateur que « Overall progress », en petit — un
+  // donut par statut (mêmes couleurs) avec le % de tickets terminés au centre. Les
+  // tranches viennent des tickets rattachés à l'EPIC, jamais du statut du fichier.
+  function nodeDonut(eff, prog){
     var ring = eff==='current' ? 'var(--accent)' : 'var(--border)';
-    var inner = eff==='done' && frac>=0.9999
-      ? '<path d="M11.5 17.5l4 4 7.5-7.5" fill="none" stroke="#06240a" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>'
-      : (!prog && eff!=='done' ? '<circle cx="17" cy="17" r="2.4" fill="var(--muted)"/>' : '');
-    return '<span class="node ' + eff + '"><svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true">'
-      + '<circle cx="17" cy="17" r="15" fill="var(--panel2)"/>'
-      + sector(17,17,15,frac,col)
-      + '<circle cx="17" cy="17" r="15" fill="none" stroke="'+ring+'" stroke-width="2"/>'
-      + inner + '</svg></span>';
+    var body, ctr='';
+    if(prog){
+      body = pieParts(STATUSES.slice().reverse().map(function(s){ return { value:prog.by[s], color:SCOL[s] }; }), 30, 30, 26);
+      ctr = '<text x="30" y="34.5" text-anchor="middle" fill="var(--text)" font-size="'+(prog.pct>=100?11.5:13.5)+'" font-weight="700">'+prog.pct+'%</text>';
+    } else if(eff==='done'){
+      // EPIC déclarée terminée dans epics.md sans ticket rattaché : anneau plein + coche
+      body = '<circle cx="30" cy="30" r="26" fill="'+SCOL.DONE+'"/>';
+      ctr = '<path d="M23.5 30.5l4 4 7-7.5" fill="none" stroke="'+SCOL.DONE+'" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>';
+    } else {
+      body = '<circle cx="30" cy="30" r="26" fill="var(--panel2)"/>';
+    }
+    return '<span class="node ' + eff + '"><svg width="60" height="60" viewBox="0 0 60 60" aria-hidden="true">'
+      + body
+      + '<circle cx="30" cy="30" r="16" fill="var(--panel)"/>'
+      + '<circle cx="30" cy="30" r="26" fill="none" stroke="'+ring+'" stroke-width="1.5"/>'
+      + ctr + '</svg></span>';
   }
-  // avancement d'une EPIC : part de ses tickets DONE. null = aucun ticket rattaché,
-  // auquel cas on n'affiche pas de pourcentage plutôt que d'en inventer un.
+  // avancement d'une EPIC : part de ses tickets DONE, et répartition par statut pour le
+  // donut. null = aucun ticket rattaché, auquel cas on n'affiche pas de pourcentage
+  // plutôt que d'en inventer un.
   function epicProgress(id){
     var ts=ticketsOf(id).filter(function(t){ return STATUSES.indexOf(t.status)>=0; });
     if(!ts.length) return null;
-    var d=ts.filter(function(t){ return t.status==='DONE'; }).length;
-    return { pct:Math.round(d/ts.length*100), done:d, total:ts.length };
+    var by={}; STATUSES.forEach(function(s){ by[s]=0; });
+    ts.forEach(function(t){ by[t.status]++; });
+    return { pct:Math.round(by.DONE/ts.length*100), done:by.DONE, total:ts.length, by:by };
   }
 
   // ── Historique d'un ticket ────────────────────────────────
@@ -2384,12 +2432,12 @@ const HTML_TEMPLATE = `<!doctype html>
       var eff=epicEff(e,tickets), prog=epicProgress(e.id);
       var tip=e.id+(prog? ' — '+prog.done+'/'+prog.total+' tickets done ('+prog.pct+'%)':' — no ticket linked')+' · click for details';
       return '<li class="'+eff+' clickable" data-epic="'+esc(e.id)+'" title="'+esc(tip)+'">'
-        + nodePie(eff,prog)
+        + nodeDonut(eff,prog)
         + '<span class="ep-id">'+esc(e.id)+'</span>'
         + '<span class="ep-title">'+esc(mdPlain(e.title||''))+'</span>'
-        + (prog? '<span class="ep-pct">'+prog.pct+'% · '+prog.done+'/'+prog.total+'</span>':'<span class="ep-pct dim">no ticket</span>')
+        + (prog? '<span class="ep-pct">'+prog.done+'/'+prog.total+' tickets</span>':'<span class="ep-pct dim">no ticket</span>')
         + '</li>';
-    }).join('') : '<li class="todo">'+nodePie('todo',null)+'<span class="ep-title">No EPIC defined</span></li>';
+    }).join('') : '<li class="todo">'+nodeDonut('todo',null)+'<span class="ep-title">No EPIC defined</span></li>';
 
     // ── Kanban : une colonne par statut non-DONE, + les DONE récentes à droite ─
     function kcard(t){
@@ -2494,7 +2542,8 @@ const HTML_TEMPLATE = `<!doctype html>
     renderDetail();
     document.getElementById('gen').textContent = 'generated on '+PAYLOAD.generated+' · read-only';
     // une popup ouverte est réaffichée avec les données fraîches
-    if(lastModal) try { lastModal(); } catch(_) { closeModal(); }
+    var top=modalStack[modalStack.length-1];
+    if(top) try { top(); } catch(_) { closeModal(); }
   }
 
   // ── Câblage, posé une seule fois ──────────────────────────
@@ -2532,12 +2581,16 @@ const HTML_TEMPLATE = `<!doctype html>
     document.getElementById('modal').addEventListener('click', function(ev){
       var a=ev.target.closest('a[data-shot]');
       if(a){ ev.preventDefault(); openShot(a.getAttribute('href')); return; }
-      if(ev.target.getAttribute('data-close') || ev.target.closest('#modalClose')) closeModal();
+      if(ev.target.getAttribute('data-close') || ev.target.closest('.mclose')){ backModal(); return; }
+      // ligne de tâche (popup EPIC ou liste par statut) → son détail par-dessus.
+      // Un lien dans le titre garde la priorité : on ne détourne pas sa navigation.
+      var row=ev.target.closest('tr[data-tid]');
+      if(row && !ev.target.closest('a[href]')){ var tid=row.getAttribute('data-tid'); openOver(function(){ openTicket(tid); }); }
     });
     document.getElementById('lightbox').addEventListener('click', closeShot);
     document.addEventListener('keydown', function(ev){
       if(ev.key!=='Escape') return;
-      if(!document.getElementById('lightbox').hidden) closeShot(); else closeModal();
+      if(!document.getElementById('lightbox').hidden) closeShot(); else backModal();
     });
   }
 
