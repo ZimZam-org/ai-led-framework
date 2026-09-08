@@ -7,6 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0]
+
+### Added
+- **Ticket history, captured deterministically.** `memory/kanban.md` only ever carried a creation
+  date, and adding transition columns would have taxed every agent that reads that table. The
+  runtime hook now **re-diffs the kanban statuses on every write** (live board + archive) and
+  appends the transitions to **`.ailed/journal.jsonl`** — one line per status change. Zero tokens,
+  no agent discipline required, and a `sed` run through Bash is caught just like an `Edit` because
+  it is the *file signature* that gets compared, not the tool that wrote it. A ticket's popup in
+  the dashboard now shows **created → development started → handed to test → finalised**, with the
+  elapsed time between steps and the total lead time. A step that predates the journal reads
+  **"not recorded"** rather than being guessed, and a first run never fabricates history.
+- **Screens captured at test time, inside the ticket.** `/ailed-screens` now writes to
+  **`.ailed/screens/<ticket>/<timestamp>/`** — one PNG per shot, a `meta.json` captioning them
+  (screen, route, state, acceptance criterion, viewport, unreachable states, console errors) and
+  a `sheet.html` to open. Those shots **surface on their own in the ticket popup**, grouped by
+  screen × state with desktop and mobile side by side; click for full screen. `@ailed-test` now
+  **offers** the capture after a `PASS` on a UI ticket — an offer, never a quality gate.
+- **`ai-led status --html --live`** regenerates the payload as soon as `memory/` or the
+  screenshots change, so the open report follows the session. `--interval=MS` tunes the poll.
+- **`ai-led status --html --snapshot`** produces the timestamped, 100% self-contained file
+  (shots inlined as base64) for sharing or archiving a review.
+- **`ai-led clean`** bounds what the runtime leaves on disk: `--screens` keeps only the latest
+  sheet per ticket, `--journal` compacts the transition log. `.ailed/` is derived and git-ignored,
+  so nothing versioned is ever touched.
+
+### Changed
+- **EPIC timeline nodes are now progress pies.** An empty circle said nothing about where an
+  in-flight EPIC stood; each node now fills with the share of its `DONE` tickets and carries the
+  figure (`45% · 5/11`). An EPIC with no linked ticket reads **"no ticket"** instead of a
+  misleading 0%.
+- **The dashboard is a live report, not a timestamped one.** `status --html` writes
+  **`ailed-status.html`** — a stable name to keep open in a tab and bookmark. It **redraws itself**
+  when the data changes, preserving scroll position and replaying an open popup against the fresh
+  data. The mechanism: the HTML shell (~70 KB) is split from its payload
+  (`.ailed/status/data.js`), reloaded through a **`<script>` tag rather than `fetch()`** — over
+  `file://`, `fetch()` is blocked by CORS while a script tag is not — with a content fingerprint
+  gating the redraw so the page does not flicker on every poll.
+  A single file rewritten each run **does not grow over time**: its size tracks the current state,
+  not the number of generations. What did accumulate was the old `<timestamp>_ailed-status.html`
+  (one file per run, at the project root, and not git-ignored). The one item that genuinely grows
+  is the screenshots, so they stay **PNG files referenced relatively** and lazily loaded —
+  inlining one shot costs ~300 KB of report.
+- `PostToolUse` is now wired on **every tool** rather than `Task` only: the ticket journal must
+  see any write that moves a kanban status. The hook compares a file signature first, so a tool
+  that touched nothing costs one `stat()`. Existing wirings are upgraded in place, without
+  duplicates.
+- `init` / `update` now git-ignore **every generated report** — `ailed-status.html`,
+  `*_ailed-status.html` and `*_ailed-memory-diff.html`. Until 0.15.0 only `.ailed/` was ignored, so
+  the timestamped reports piled up as *tracked* files in many projects. A `.gitignore` cannot
+  untrack an already-indexed file, so `update` **lists** the reports still tracked and hands over
+  the `git rm --cached` command — it never deletes anything versioned itself. Missing entries are
+  appended **inside the existing AI-Led block** rather than under a fresh header, so a long-lived
+  project's `.gitignore` does not accumulate one comment block per version.
+- CI now covers the paths this release touches: the shell/payload split (and that the shell carries
+  no project data of its own), `--snapshot` self-containment, the hook journaling a `sed`-through-`Bash`
+  transition while inventing nothing on its first run, and an `update` that preserves project
+  memory + `CLAUDE.md` while re-wiring the hook to a single `*` matcher.
+
+### Fixed
+- Mermaid diagrams in the memory accordions were rendered while their container was still
+  `display:none`, so they were measured at ~16 px wide and logged
+  `<g> attribute transform: Expected number, "translate(undefined, NaN)"` 28 times. Rendering is
+  now deferred until the detail panel is actually visible: diagrams come out at full width and the
+  console stays clean.
+
 ## [0.15.0]
 
 ### Added
@@ -195,7 +261,8 @@ installer, the `ailed-*` agents and skills, the persistent `memory/` model, and
 the Jira/Confluence (Atlassian MCP) integration. See the
 [git history](https://github.com/ZimZam-org/ai-led-framework/commits/main) for details.
 
-[Unreleased]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.13.1...v0.14.0
 [0.13.1]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.13.0...v0.13.1
