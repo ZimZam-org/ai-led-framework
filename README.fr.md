@@ -354,11 +354,15 @@ roadmap, kanban, fonctionnalités, veille, process) :
   `ailed-status.html`, un tableau de bord qui ouvre sur une **synthèse visuelle** :
   deux **camemberts** (avancement global + jalon en cours, approximatif), trois compteurs d'action
   (**bugs** à traiter, **vulnérabilités** ouvertes, **arbitrages produit** discovery → roadmap),
-  une **timeline des EPICs dont chaque nœud est un camembert d'avancement** (part de ses tickets
-  `DONE`, en % et en `n/total` — une EPIC sans ticket rattaché affiche « no ticket » plutôt qu'un
-  faux 0 %) et un **board kanban** — une colonne par statut non-`DONE` et, à droite, les
+  une **timeline des EPICs dont chaque nœud reprend le donut d'« Overall progress »** (ses tickets
+  répartis par statut, mêmes couleurs, part des `DONE` au centre et `n/total` dessous — une EPIC
+  sans ticket rattaché affiche « no ticket » plutôt qu'un faux 0 %) et un **board kanban** —
+  une colonne par statut non-`DONE` et, à droite, les
   **5 dernières tâches `DONE`**, chaque carte affichant **jalon → EPIC → ID → titre** et
-  s'ouvrant en popup. Les tickets archivés (`memory/archive/kanban.md`) sont comptés eux aussi ;
+  s'ouvrant en popup. Les popups **s'empilent** : depuis une EPIC (ou une liste par statut), un
+  clic sur une ligne de tâche ouvre son détail **par-dessus**, la liste restant visible en
+  dessous — `✕` / `Échap` / un clic à l'extérieur referme ce niveau et y revient.
+  Les tickets archivés (`memory/archive/kanban.md`) sont comptés eux aussi ;
   le détail brut de chaque fichier `memory/` reste accessible, **replié** en bas de page —
   **aucun serveur, aucune donnée projet envoyée** :
 
