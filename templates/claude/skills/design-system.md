@@ -53,3 +53,5 @@ les fondamentaux à chaque feature.
 
 ## Artefacts mis à jour
 Bloc de tokens/styles partagé, réutilisé dans `memory/ux/*.html`.
+
+{{WRITING_RULES}}

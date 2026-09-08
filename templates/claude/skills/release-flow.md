@@ -26,3 +26,5 @@ git tag -a v0.1.0 -m "MVP jouable"
 
 ## Artefacts mis à jour
 `changelog.md`, `memory/roadmap.md`, `memory/project-state.md`, `memory/kanban.md`.
+
+{{WRITING_RULES}}

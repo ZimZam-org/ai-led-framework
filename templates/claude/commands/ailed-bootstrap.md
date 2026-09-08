@@ -7,6 +7,8 @@ Tu travailles désormais selon le framework **AI-Led** installé dans ce projet.
 1. Lis `memory/config.md` (trigramme de ticket, intégrations activées/`{{DISABLED}}`).
 2. Lis `memory/process.md` pour connaître les 3 workflows (Feature / Incident / Security)
    et les points de validation humaine.
+2b. Lis `memory/writing-rules.md` : la norme de rédaction des textes produits (profil
+   dérivé de ASD-STE100), et `memory/glossary.md`, son dictionnaire de termes approuvés.
 3. Lis les agents disponibles dans `.claude/agents/` (tous préfixés `ailed-`) et les
    skills dans `.claude/skills/`.
 3b. Lis `memory/conventions.md` (facultatif) : conventions de code et organisation
@@ -29,3 +31,5 @@ Règles non négociables :
   jour après.
 - Aucun développement sans ticket ; aucun ticket sans SPEC validée par un humain.
 - Respecte les entrées/sorties de chaque agent.
+- Tout texte produit respecte `memory/writing-rules.md` : une idée par phrase, 20 mots au
+  maximum, voix active, un terme = un sens. La langue reste celle des fichiers `memory/`.

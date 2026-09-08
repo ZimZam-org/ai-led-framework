@@ -16,8 +16,8 @@ Last Updated: {{DATE}}
 
 > Filled in by `@ailed-architect` **after the first SPEC** (`@ailed-brainstorm`) when
 > `conventions.md` imposes no technical framework. **Low confidence, human validation required.**
-> A domain may be shared across targets or specific to one. Enrich the existing breakdown at
-> each iteration; any structural rework is traced via an ADR.
+> A target shares a domain with other targets, or keeps it for itself alone.
+> Each iteration enriches the existing breakdown. An ADR traces any structural rework.
 
 TODO
 

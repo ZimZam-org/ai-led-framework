@@ -23,7 +23,7 @@ npx @s2bp/ai-led-framework init
 | `.claude/skills/`   | 12 `ailed-*` skills (callable via `/ailed-<name>`)             |
 | `.claude/commands/` | `/ailed-bootstrap` slash-command (framework bootstrap)         |
 | `.claude/hooks/`    | `ailed-runtime-hook.js` + `PreToolUse`/`PostToolUse` hooks in `settings.json`, feeding the live progress sidebar (`watch`/`dashboard`) and the **ticket transition journal** (`.ailed/journal.jsonl`) |
-| `memory/`           | 15 project memory files (including `config.md`, `process.md`, `conventions.md` and `market-watch.md`), in the chosen language |
+| `memory/`           | 16 project memory files (including `config.md`, `process.md`, `conventions.md`, `writing-rules.md` and `market-watch.md`), in the chosen language |
 | `CLAUDE.md`         | framework pointer (created only if absent)                     |
 
 Existing files are **never overwritten** unless you pass `--force` (the `settings.json` hooks are
@@ -73,6 +73,52 @@ npx @s2bp/ai-led-framework init --style=concise
 - `detailed` — full explanations: reasoning, discarded alternatives, extended context.
 
 Editable any time in `memory/config.md`, or forced for a single run: `ai-led status --style=detailed`.
+
+### Writing standard (ASD-STE100-derived profile)
+
+Every text the framework produces follows a **writing standard**: memory, tickets, SPECs, ADRs,
+reports, changelog, and text pushed to Jira / Confluence. Goal: a text understood at once, and
+still understood in six months.
+
+The profile derives from **ASD-STE100** (*Simplified Technical English*), the aerospace standard
+for simplified technical English. It reuses the **principles, not the dictionary** — the ASD
+specification stays the property of its publisher. The French profile applies the same structural
+rules with its own list of forbidden phrases.
+
+The 12 rules live in `memory/writing-rules.md`. The first five already change the result:
+
+1. one idea per sentence, 20 words at most (25 for an instruction);
+2. active voice, present tense, explicit subject; imperative for an instruction;
+3. one term = one meaning: `memory/glossary.md` is the authority, synonyms are forbidden;
+4. no acronym the glossary does not define; three words per noun cluster at most;
+5. measured facts (number, ID, file name) instead of adjectives.
+
+**Language.** The text uses the language of the `memory/` files. The `fr` and `en` profiles share
+the 12 rules; only the lists of forbidden phrases differ.
+
+**Two distinct dials.** *Output style* sets the **volume** of a text
+(`concise` / `standard` / `detailed`). The standard sets the **shape of the sentences**, whatever
+that volume: a `detailed` report still uses short, active sentences.
+
+**Three levels of enforcement.** The install injects the rule block into the 21 agents and the 11
+skills in scope (one source, rendered at install time). `memory/writing-rules.md` carries the
+detail and the alternatives. And an automatic checker verifies the measurable rules:
+
+```bash
+npx @s2bp/ai-led-framework lint            # every memory/ file
+npx @s2bp/ai-led-framework lint --strict   # warnings become blocking
+npx @s2bp/ai-led-framework lint <path>     # one file or one folder
+```
+
+The report gives `file:line`, the rule and the offending extract. The exit code is `1` from the
+first error, so the check fits in CI. `/ailed-quality-gate` includes it in its ticket-closing
+checklist. The check applies to prose: code, tables, headings and Mermaid diagrams are skipped.
+
+**Out of scope.** Promotional content (`/ailed-promo`, promo outputs of `@ailed-communication`)
+follows the brand voice. Code and commit messages follow `memory/conventions.md`.
+
+Disable it at install time (`--writing=none`) or later in the *Writing* section of
+`memory/config.md`: agents then follow the *Output style* alone, and `lint` checks nothing.
 
 ### LLM model per agent (token savings)
 
@@ -168,6 +214,7 @@ rewrites it into `config.md`.
 --ticketing=NAME    External ticketing (e.g. Jira, via MCP), or disabled (default)
 --docs=NAME         External documentation (e.g. Confluence, via MCP), or disabled (default)
 --style=LEVEL       Agent/report output style: concise | standard | detailed (default: standard)
+--writing=NORM      Writing standard for produced text: ste | none (default: ste)
 --conventions=PATH  Import an existing conventions / technical-organization file into memory/conventions.md (optional)
 -y, --yes           Non-interactive mode (otherwise questions are asked in the terminal)
 -f, --force         Overwrite existing files

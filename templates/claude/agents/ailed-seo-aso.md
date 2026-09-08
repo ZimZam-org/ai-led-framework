@@ -59,3 +59,5 @@ et **ne vérifie pas** ses propres sources (rôle de `@ailed-fact-check`).
 
 ## Artefacts mis à jour
 `memory/market-watch.md` (sections « Observations brutes » et « Analyses spécialisées › SEO / ASO »).
+
+{{WRITING_RULES}}

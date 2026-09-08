@@ -3,10 +3,10 @@
 Last Updated: {{DATE}}
 
 Source of truth for market watch. Three **isolated** sections: raw → candidate → promoted.
-Rules: every observation is **sourced and dated**; the watch **never writes** to
-`roadmap.md`; a topic only leaves the backlog through **human validation** into
-`@ailed-brainstorm`. Maintained by `@ailed-scout`, `@ailed-seo-aso`, `@ailed-monetization`,
-`@ailed-fact-check`, `@ailed-analyst`.
+Three rules: every observation **carries its source and its date**; the watch **never writes**
+to `roadmap.md`; a topic leaves the backlog through **human validation** into
+`@ailed-brainstorm`. Five agents maintain this file: `@ailed-scout`, `@ailed-seo-aso`,
+`@ailed-monetization`, `@ailed-fact-check` and `@ailed-analyst`.
 
 ## Sources & cadence
 
@@ -16,13 +16,16 @@ Rules: every observation is **sourced and dated**; the watch **never writes** to
 
 ## Raw observations
 
-Added by `@ailed-scout`, `@ailed-seo-aso`, `@ailed-monetization`; verified by `@ailed-fact-check`.
-Confidence: `high` / `medium` / `low`. Categories: `feature`, `pricing`, `trend`, `ux`,
-`seo`, `aso`, `monetization`… Decay beyond 6 months (faster for `seo`/`aso`/`monetization`,
-volatile).
-Rotation: rejected observations (with their reason) or decayed ones (> 6 months) are **moved**
-to `memory/archive/market-watch.md` — never deleted (see `memory/process.md` § Memory rotation).
-Keep a short active table here.
+`@ailed-scout`, `@ailed-seo-aso` and `@ailed-monetization` add the rows.
+`@ailed-fact-check` verifies them. Confidence: `high` / `medium` / `low`.
+Categories: `feature`, `pricing`, `trend`, `ux`, `seo`, `aso`, `monetization`.
+An observation loses one confidence level beyond 6 months. The delay is shorter for
+`seo`, `aso` and `monetization`, the three volatile categories.
+
+Rotation: the agent **moves** rejected observations (with their reason) and observations that
+decayed beyond 6 months to `memory/archive/market-watch.md`. It deletes none of them
+(see `memory/process.md`, section "Memory rotation & cleanup").
+The active table stays short.
 
 | Date | Source (URL) | Confidence | Observation | Category |
 | ---- | ------------ | ---------- | ----------- | -------- |

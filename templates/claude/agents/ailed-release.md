@@ -36,3 +36,5 @@ Livrer une version cohérente, tracée et conforme aux quality gates.
 ## Artefacts mis à jour
 `changelog.md`, `memory/project-state.md`, `memory/roadmap.md` (jalon livré),
 `memory/kanban.md` + `memory/archive/kanban.md` (archivage des tickets `DONE` livrés).
+
+{{WRITING_RULES}}

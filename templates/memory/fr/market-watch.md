@@ -3,10 +3,10 @@
 Last Updated: {{DATE}}
 
 Source de vérité de la veille. Trois sections **étanches** : brut → candidat → promu.
-Règles : toute observation est **sourcée et datée** ; la veille **n'écrit jamais** dans
-`roadmap.md` ; un sujet ne quitte le backlog que par **validation humaine** vers
-`@ailed-brainstorm`. Maintenu par `@ailed-scout`, `@ailed-seo-aso`, `@ailed-monetization`,
-`@ailed-fact-check`, `@ailed-analyst`.
+Trois règles : chaque observation **porte sa source et sa date** ; la veille **n'écrit jamais**
+dans `roadmap.md` ; un sujet quitte le backlog par **validation humaine** vers
+`@ailed-brainstorm`. Cinq agents maintiennent ce fichier : `@ailed-scout`, `@ailed-seo-aso`,
+`@ailed-monetization`, `@ailed-fact-check` et `@ailed-analyst`.
 
 ## Sources & cadence
 
@@ -16,13 +16,16 @@ Règles : toute observation est **sourcée et datée** ; la veille **n'écrit ja
 
 ## Observations brutes
 
-Ajout par `@ailed-scout`, `@ailed-seo-aso`, `@ailed-monetization` ; vérifié par `@ailed-fact-check`.
-Confiance : `haute` / `moyenne` / `basse`. Catégories : `feature`, `pricing`, `tendance`, `ux`,
-`seo`, `aso`, `monetization`… Décote au-delà de 6 mois (plus rapide pour
-`seo`/`aso`/`monetization`, volatils).
-Rotation : les observations rejetées (avec leur raison) ou décotées (> 6 mois) sont **déplacées**
-vers `memory/archive/market-watch.md` — jamais supprimées (cf. `memory/process.md` § Rotation
-de la mémoire). On garde ici une table active courte.
+`@ailed-scout`, `@ailed-seo-aso` et `@ailed-monetization` ajoutent les lignes.
+`@ailed-fact-check` les vérifie. Confiance : `haute` / `moyenne` / `basse`.
+Catégories : `feature`, `pricing`, `tendance`, `ux`, `seo`, `aso`, `monetization`.
+Une observation perd un cran de confiance au-delà de 6 mois. Le délai est plus court pour
+`seo`, `aso` et `monetization`, plus volatils.
+
+Rotation : l'agent **déplace** vers `memory/archive/market-watch.md` les observations rejetées
+(avec leur raison) et les observations décotées de plus de 6 mois. Il n'en supprime aucune
+(voir `memory/process.md`, section « Rotation & nettoyage de la mémoire »).
+La table active reste courte.
 
 | Date | Source (URL) | Confiance | Observation | Catégorie |
 | ---- | ------------ | --------- | ----------- | --------- |

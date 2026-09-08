@@ -8,10 +8,11 @@ Clarification tickets (`TO_CHECK`) carry a `CK-` prefix.
 
 This kanban keeps **only live tickets inline** (`TO_CHECK`→`TO_TEST`) plus `DONE` tickets **not
 yet shipped**. At release time, `@ailed-release` **archives** the shipped `DONE` tickets to
-`memory/archive/kanban.md` once their functionality is captured in `memory/features.md`
-(see "Memory rotation & cleanup" in `memory/process.md`) — hence a `> Archives:
-memory/archive/kanban.md` line at the top once an archive exists. This keeps agent reads light.
-Maintained by `@ailed-pm` / `@ailed-planner` / `@ailed-release`.
+`memory/archive/kanban.md`. It archives a ticket only when `memory/features.md` records its
+functionality (see "Memory rotation & cleanup" in `memory/process.md`). The active file then
+carries a `> Archives: memory/archive/kanban.md` line at the top. Agent reads stay light.
+
+`@ailed-pm`, `@ailed-planner` and `@ailed-release` maintain this file.
 
 **EPIC** column: parent EPIC (`memory/epics.md`). **Solution(s)** column: `short ID` of the
 impacted targets (registry `memory/architecture.md`).
