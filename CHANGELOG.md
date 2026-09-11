@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **The EPIC timeline folds the EPICs already delivered.** A project with ten delivered EPICs in a
+  row pushed the EPIC in progress off screen. A run of **four or more consecutive EPICs at 100 %
+  of tickets done** now shows its first and its last node only, with a button in between —
+  `⋯ 2 EPICs done`. One click unfolds the run, another folds it back, and the state survives a hot
+  reload. A run of three or fewer stays unfolded: folding it would free no cell.
+- **Status chips filter the task list of an EPIC popup.** An EPIC with thirty tickets showed one
+  long undifferentiated table. The popup now opens with a chip row — `All (18)`, `To do (15)`,
+  `To test (3)` — built from the statuses actually present, in workflow order and with the status
+  colour code. One click narrows the table to that status; the header then reads `3 of 18 tasks`.
+  The filter stays on the same popup level: opening a task detail and closing it returns to the
+  filtered list. Chips are hidden when the EPIC holds a single status.
+
 ## [0.17.0]
 
 ### Added
