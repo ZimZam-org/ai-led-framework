@@ -1611,6 +1611,10 @@ const HTML_TEMPLATE = `<!doctype html>
   .legend li.clickable { cursor:pointer; border-radius:6px; padding:3px 5px; margin:0 -5px; }
   .legend li.clickable:hover { background:var(--panel2); color:var(--text); }
   .legend li.clickable:hover b { color:var(--accent); }
+  /* série d'EPICs livrées, pliée derrière un bouton (une cellule de timeline) */
+  .epic-timeline li[hidden] { display:none; }
+  .epic-timeline li.ep-fold .ep-foldbtn { position:relative; z-index:1; display:block; height:30px; margin:15px auto 9px; padding:0 13px; border-radius:999px; border:1px dashed rgba(108,192,112,.55); background:var(--panel2); color:var(--ok); font-family:inherit; font-size:11.5px; font-weight:600; cursor:pointer; white-space:nowrap; }
+  .epic-timeline li.ep-fold .ep-foldbtn:hover { background:rgba(108,192,112,.14); border-style:solid; }
   .epic-timeline li.clickable { cursor:pointer; }
   .epic-timeline li.clickable:hover .ep-title { color:var(--accent); }
   .epic-timeline li.clickable:hover .node { box-shadow:0 0 0 3px rgba(110,168,254,.22); }
@@ -1640,6 +1644,11 @@ const HTML_TEMPLATE = `<!doctype html>
   .modal-table tbody tr[data-tid]:hover .mono{ text-decoration:underline; }
   .mono{ font-family:ui-monospace,monospace; font-size:12px; color:var(--accent); white-space:nowrap; }
   .badge-st{ display:inline-block; padding:2px 9px; border-radius:999px; font-size:11.5px; font-weight:600; white-space:nowrap; }
+  /* chips de filtre par statut (popup EPIC) */
+  .stchips{ display:flex; flex-wrap:wrap; gap:7px; margin:0 0 13px; }
+  .stchips .stchip{ font-family:inherit; font-size:12px; font-weight:600; line-height:1.4; padding:4px 11px; border-radius:999px; background:transparent; border:1px solid var(--border); cursor:pointer; white-space:nowrap; }
+  .stchips .stchip:hover{ filter:brightness(1.25); }
+  .stchips .stchip .n{ font-family:ui-monospace,monospace; font-size:11px; opacity:.75; }
   .modal-empty{ color:var(--muted); font-style:italic; }
   .modal h4.mgrp{ margin:20px 0 9px; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--accent); }
   .modal h4.mgrp:first-child{ margin-top:2px; }
@@ -2191,26 +2200,49 @@ const HTML_TEMPLATE = `<!doctype html>
     while(buf.length && !buf[buf.length-1].trim()) buf.pop();
     return buf.length? mdBlocks(buf.join('\\n')) : '';
   }
+  // chips de filtre par statut (popup EPIC) : « All (18) », « To do (15) », « To test (3) »…
+  // Seuls les statuts présents dans l'EPIC sont proposés. Sous deux statuts distincts, le
+  // filtre n'apporte rien : on n'affiche aucune chip.
+  function statusChips(id, active, list){
+    var found=[];
+    STATUSES.concat(OFF_BOARD).forEach(function(st){
+      var n=list.filter(function(t){ return t.status===st; }).length;
+      if(n) found.push({ st:st, n:n, lab:LABEL[st]||st, col:SCOL[st]||'#8b929e' });
+    });
+    if(found.length<2) return '';
+    var all=[{ st:'', n:list.length, lab:'All', col:'#8b929e' }].concat(found);
+    return '<div class="stchips">'+all.map(function(c){
+      var on=(c.st===(active||''));
+      var css=on ? 'background:'+c.col+'22;color:'+c.col+';border-color:'+c.col
+                 : 'color:'+c.col+';border-color:'+c.col+'55';
+      return '<button type="button" class="stchip'+(on?' on':'')+'" data-epic="'+esc(id)+'" data-st="'+c.st+'"'
+        + ' aria-pressed="'+(on?'true':'false')+'" style="'+css+'">'+esc(c.lab)
+        + ' <span class="n">('+c.n+')</span></button>';
+    }).join('')+'</div>';
+  }
   // popup openers
   function openStatus(st){
     setTop(function(){ openStatus(st); });
     var l=tickets.filter(function(t){ return t.status===st; }).sort(recent);
     openModal((LABEL[st]||st)+' — tasks', l.length+' ticket'+(l.length===1?'':'s'), taskTable(l,true));
   }
-  function openEpic(id){
-    setTop(function(){ openEpic(id); });
-    var l=ticketsOf(id).sort(recent);
+  // st = statut retenu par la chip de filtre (null = tous les tickets de l'EPIC)
+  function openEpic(id, st){
+    setTop(function(){ openEpic(id, st); });
+    var all=ticketsOf(id).sort(recent);
+    var l=st? all.filter(function(t){ return t.status===st; }) : all;
     var ep=epics.filter(function(e){ return e.id.toUpperCase()===String(id||'').toUpperCase(); })[0];
     var brief=epicBrief(id), body;
-    if(l.length){
-      body=taskTable(l,false)+(brief? '<h4 class="mgrp">EPIC definition</h4><div class="mdlite">'+brief+'</div>':'');
+    if(all.length){
+      body=statusChips(id, st, all)+taskTable(l,false)+(brief? '<h4 class="mgrp">EPIC definition</h4><div class="mdlite">'+brief+'</div>':'');
     } else {
       // aucun ticket rattaché (EPIC portée par une SPEC, tickets non découpés, ou colonne
       // EPIC non renseignée) : on montre sa définition plutôt qu'une popup vide.
       body=(brief? '<p class="modal-empty">No ticket linked to this EPIC in <code>memory/kanban.md</code> (nor in the archive) — showing its definition from <code>memory/epics.md</code>.</p><div class="mdlite">'+brief+'</div>'
                  : '<p class="modal-empty">No ticket linked to this EPIC, and no definition found in <code>memory/epics.md</code>.</p>');
     }
-    openModal((ep&&ep.title? id+' — '+ep.title : id), l.length+' task'+(l.length===1?'':'s'), body);
+    openModal((ep&&ep.title? id+' — '+ep.title : id),
+      st? l.length+' of '+all.length+' tasks' : all.length+' task'+(all.length===1?'':'s'), body);
   }
   // détail d'un ticket (carte du kanban)
   function openTicket(id){
@@ -2446,6 +2478,23 @@ const HTML_TEMPLATE = `<!doctype html>
 
   var DONE_SHOWN = 5;
 
+  // Séries d'EPICs livrées dépliées par le lecteur (clé = id de la 1re EPIC de la série).
+  // L'état est conservé hors du rendu : un rechargement à chaud ne replie pas ce que le
+  // lecteur venait d'ouvrir.
+  var TL_FOLD={};
+  function foldLabel(n, open){ return (open? 'Fold ' : '⋯ ')+n+' EPICs'+(open? '':' done'); }
+  function toggleFold(li){
+    var key=li.getAttribute('data-fold')||'', open=!TL_FOLD[key.toUpperCase()];
+    TL_FOLD[key.toUpperCase()]=open;
+    var sibs=li.parentNode.children;
+    for(var i=0;i<sibs.length;i++){
+      if(sibs[i].getAttribute('data-fold-of')===key) sibs[i].hidden=!open;
+    }
+    var n=li.getAttribute('data-n'), b=li.querySelector('.ep-foldbtn');
+    b.textContent=foldLabel(n, open);
+    b.setAttribute('aria-expanded', open?'true':'false');
+    b.title=open? 'Click to fold these EPICs again' : 'Click to show the '+n+' EPICs delivered in between';
+  }
   function renderSynth(){
     // ── En-tête / badges ──────────────────────────────────────
     document.getElementById('badges').innerHTML =
@@ -2501,16 +2550,51 @@ const HTML_TEMPLATE = `<!doctype html>
     var epList = epics.length ? epics : (function(){
       var seen=[]; tickets.forEach(function(t){ if(t.epic && !seen.find(function(e){return e.id===t.epic;})) seen.push({ id:t.epic, title:'', status:'todo' }); }); return seen;
     })();
-    var timelineHtml = epList.length ? epList.map(function(e){
+    function epicLi(e, foldOf){
       var eff=epicEff(e,tickets), prog=epicProgress(e.id);
       var tip=e.id+(prog? ' — '+prog.done+'/'+prog.total+' tickets done ('+prog.pct+'%)':' — no ticket linked')+' · click for details';
-      return '<li class="'+eff+' clickable" data-epic="'+esc(e.id)+'" title="'+esc(tip)+'">'
+      return '<li class="'+eff+' clickable" data-epic="'+esc(e.id)+'"'
+        + (foldOf? ' data-fold-of="'+esc(foldOf)+'"'+(TL_FOLD[foldOf.toUpperCase()]? '':' hidden'):'')
+        + ' title="'+esc(tip)+'">'
         + nodeDonut(eff,prog)
         + '<span class="ep-id">'+esc(e.id)+'</span>'
         + '<span class="ep-title">'+esc(mdPlain(e.title||''))+'</span>'
         + (prog? '<span class="ep-pct">'+prog.done+'/'+prog.total+' tickets</span>':'<span class="ep-pct dim">no ticket</span>')
         + '</li>';
-    }).join('') : '<li class="todo">'+nodeDonut('todo',null)+'<span class="ep-title">No EPIC defined</span></li>';
+    }
+    // Une série d'EPICs consécutives entièrement livrées occupe la timeline sans rien
+    // apprendre au lecteur : on garde la première et la dernière, et un bouton porte le
+    // compte des EPICs pliées entre les deux. Sous FOLD_MIN, plier ne libère aucune
+    // cellule : la série reste dépliée.
+    var FOLD_MIN=4;
+    function fullyDone(e){ var p=epicProgress(e.id); return !!(p && p.done===p.total); }
+    function foldLi(key, n){
+      var open=!!TL_FOLD[key.toUpperCase()];
+      return '<li class="done ep-fold" data-fold="'+esc(key)+'" data-n="'+n+'">'
+        + '<button class="ep-foldbtn" type="button" aria-expanded="'+(open?'true':'false')
+        + '" title="'+(open? 'Click to fold these EPICs again' : 'Click to show the '+n+' EPICs delivered in between')+'">'
+        + foldLabel(n, open)+'</button></li>';
+    }
+    var items=[], i=0;
+    while(i<epList.length){
+      var j=i; while(j<epList.length && fullyDone(epList[j])) j++;
+      var run=j-i;
+      if(run>=FOLD_MIN){
+        var key=epList[i].id;
+        items.push(epicLi(epList[i], ''));
+        for(var k=i+1;k<j-1;k++) items.push(epicLi(epList[k], key));
+        items.push(foldLi(key, run-2));
+        items.push(epicLi(epList[j-1], ''));
+        i=j;
+      } else if(run){
+        for(var k2=i;k2<j;k2++) items.push(epicLi(epList[k2], ''));
+        i=j;
+      } else {
+        items.push(epicLi(epList[i], '')); i++;
+      }
+    }
+    var timelineHtml = epList.length ? items.join('')
+      : '<li class="todo">'+nodeDonut('todo',null)+'<span class="ep-title">No EPIC defined</span></li>';
 
     // ── Kanban : une colonne par statut non-DONE, + les DONE récentes à droite ─
     function kcard(t){
@@ -2644,6 +2728,8 @@ const HTML_TEMPLATE = `<!doctype html>
       var st=ev.target.closest('li[data-st], .kn[data-st], .kmore[data-st]');
       if(st){ openStatus(st.getAttribute('data-st')); return; }
       var tk=ev.target.closest('.kcard[data-tid]'); if(tk){ openTicket(tk.getAttribute('data-tid')); return; }
+      // bouton d'une série d'EPICs livrées : déplie/replie, n'ouvre aucune popup
+      var fb=ev.target.closest('.ep-foldbtn'); if(fb){ toggleFold(fb.closest('li[data-fold]')); return; }
       var ep=ev.target.closest('li[data-epic]'); if(ep){ openEpic(ep.getAttribute('data-epic')); return; }
       var k=ev.target.closest('.stat[data-kind]');
       if(k){ var kind=k.getAttribute('data-kind'); if(kind==='bugs') openIncidents(); else if(kind==='vulns') openVulns(); else openCandidates(); }
@@ -2655,6 +2741,9 @@ const HTML_TEMPLATE = `<!doctype html>
       var a=ev.target.closest('a[data-shot]');
       if(a){ ev.preventDefault(); openShot(a.getAttribute('href')); return; }
       if(ev.target.getAttribute('data-close') || ev.target.closest('.mclose')){ backModal(); return; }
+      // chip de statut (popup EPIC) : on redessine le niveau courant, sans empiler
+      var ch=ev.target.closest('.stchip');
+      if(ch){ openEpic(ch.getAttribute('data-epic'), ch.getAttribute('data-st')||null); return; }
       // ligne de tâche (popup EPIC ou liste par statut) → son détail par-dessus.
       // Un lien dans le titre garde la priorité : on ne détourne pas sa navigation.
       var row=ev.target.closest('tr[data-tid]');
