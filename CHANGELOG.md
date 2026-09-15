@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.1]
+
 ### Changed
 - **The EPIC timeline folds a whole run of delivered EPICs.** The 0.18.0 fold kept the first and
   the last node of a run of four or more delivered EPICs. Those two nodes told the reader nothing
@@ -324,7 +326,8 @@ installer, the `ailed-*` agents and skills, the persistent `memory/` model, and
 the Jira/Confluence (Atlassian MCP) integration. See the
 [git history](https://github.com/ZimZam-org/ai-led-framework/commits/main) for details.
 
-[Unreleased]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.18.1...HEAD
+[0.18.1]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.15.0...v0.16.0
