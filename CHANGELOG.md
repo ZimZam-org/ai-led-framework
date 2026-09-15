@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **The EPIC timeline folds a whole run of delivered EPICs.** The 0.18.0 fold kept the first and
+  the last node of a run of four or more delivered EPICs. Those two nodes told the reader nothing
+  new. A run of **three or more consecutive EPICs at 100 % of tickets done** now shows as one
+  button in place of the run — `⋯ 13 EPICs done`. When unfolded, the run shows after the button.
+  A run of one or two EPICs stays unfolded.
+
 ## [0.18.0]
 
 ### Added

@@ -2483,6 +2483,7 @@ const HTML_TEMPLATE = `<!doctype html>
   // lecteur venait d'ouvrir.
   var TL_FOLD={};
   function foldLabel(n, open){ return (open? 'Fold ' : '⋯ ')+n+' EPICs'+(open? '':' done'); }
+  function foldTitle(n, open){ return open? 'Click to fold these EPICs again' : 'Click to show the '+n+' EPICs delivered'; }
   function toggleFold(li){
     var key=li.getAttribute('data-fold')||'', open=!TL_FOLD[key.toUpperCase()];
     TL_FOLD[key.toUpperCase()]=open;
@@ -2493,7 +2494,7 @@ const HTML_TEMPLATE = `<!doctype html>
     var n=li.getAttribute('data-n'), b=li.querySelector('.ep-foldbtn');
     b.textContent=foldLabel(n, open);
     b.setAttribute('aria-expanded', open?'true':'false');
-    b.title=open? 'Click to fold these EPICs again' : 'Click to show the '+n+' EPICs delivered in between';
+    b.title=foldTitle(n, open);
   }
   function renderSynth(){
     // ── En-tête / badges ──────────────────────────────────────
@@ -2563,35 +2564,24 @@ const HTML_TEMPLATE = `<!doctype html>
         + '</li>';
     }
     // Une série d'EPICs consécutives entièrement livrées occupe la timeline sans rien
-    // apprendre au lecteur : on garde la première et la dernière, et un bouton porte le
-    // compte des EPICs pliées entre les deux. Sous FOLD_MIN, plier ne libère aucune
-    // cellule : la série reste dépliée.
-    var FOLD_MIN=4;
+    // apprendre au lecteur : la série entière tient dans un bouton qui porte son compte.
+    // Dépliée, la série s'affiche derrière ce bouton. Sous FOLD_MIN, la série reste dépliée.
+    var FOLD_MIN=3;
     function fullyDone(e){ var p=epicProgress(e.id); return !!(p && p.done===p.total); }
     function foldLi(key, n){
       var open=!!TL_FOLD[key.toUpperCase()];
       return '<li class="done ep-fold" data-fold="'+esc(key)+'" data-n="'+n+'">'
         + '<button class="ep-foldbtn" type="button" aria-expanded="'+(open?'true':'false')
-        + '" title="'+(open? 'Click to fold these EPICs again' : 'Click to show the '+n+' EPICs delivered in between')+'">'
+        + '" title="'+foldTitle(n, open)+'">'
         + foldLabel(n, open)+'</button></li>';
     }
     var items=[], i=0;
     while(i<epList.length){
       var j=i; while(j<epList.length && fullyDone(epList[j])) j++;
-      var run=j-i;
-      if(run>=FOLD_MIN){
-        var key=epList[i].id;
-        items.push(epicLi(epList[i], ''));
-        for(var k=i+1;k<j-1;k++) items.push(epicLi(epList[k], key));
-        items.push(foldLi(key, run-2));
-        items.push(epicLi(epList[j-1], ''));
-        i=j;
-      } else if(run){
-        for(var k2=i;k2<j;k2++) items.push(epicLi(epList[k2], ''));
-        i=j;
-      } else {
-        items.push(epicLi(epList[i], '')); i++;
-      }
+      var run=j-i, key=run>=FOLD_MIN? epList[i].id : '';
+      if(key) items.push(foldLi(key, run));
+      for(var k=i;k<j;k++) items.push(epicLi(epList[k], key));
+      if(run){ i=j; } else { items.push(epicLi(epList[i], '')); i++; }
     }
     var timelineHtml = epList.length ? items.join('')
       : '<li class="todo">'+nodeDonut('todo',null)+'<span class="ep-title">No EPIC defined</span></li>';
