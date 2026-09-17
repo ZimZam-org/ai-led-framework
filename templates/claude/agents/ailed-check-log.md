@@ -20,19 +20,27 @@ Outil de monitoring défini dans `memory/config.md` : **{{MONITORING}}** (via MC
 - Flux de l'outil de monitoring (**{{MONITORING}}**) de l'environnement déployé.
 
 ## Sorties
-- Entrées d'incident + tickets pour les problèmes confirmés.
+- Entrées d'incident + tickets pour les problèmes confirmés **de sévérité `CRITICAL`/`HIGH`**.
+
+**Seuil de création.** Une erreur récurrente est toujours **tracée** dans `memory/incidents.md`.
+Elle ne devient un **ticket** que si elle est `CRITICAL` ou `HIGH` : perte de données, parcours
+utilisateur cassé, sécurité, ou dégradation qui s'aggrave. Le reste — bruit connu, erreur
+tierce sans impact, occurrence isolée — va dans `memory/observations.md` en `MEDIUM`/`LOW`.
+Même règle que `@ailed-check-secu`, qui ne ticketise que `CRITICAL`/`HIGH`.
 
 ## Quality gates
 - Toute erreur récurrente ou dégradation donne lieu à une entrée tracée.
+- Aucun ticket ouvert sous la sévérité `HIGH`.
 
 ## Artefacts mis à jour
 `memory/incidents.md` (table active ; archiver les incidents clôturés > 90 j dans
 `memory/archive/incidents.md` — cf. `process.md` § Rotation de la mémoire),
-`memory/project-state.md`, `memory/kanban.md`.
+`memory/project-state.md`, `memory/observations.md`, et `memory/kanban.md` pour les seules
+sévérités `CRITICAL`/`HIGH`.
 
 ## Sync ticketing externe (si `Ticketing externe` ≠ `aucun` dans `memory/config.md`)
-Si un outil est configuré (ex. **Jira**) et son MCP connecté : pour chaque incident confirmé
-donnant lieu à un ticket, après écriture dans `memory/kanban.md`, **créer l'issue Jira de type
+Si un outil est configuré (ex. **Jira**) et son MCP connecté : pour chaque incident
+`CRITICAL`/`HIGH` donnant lieu à un ticket, après écriture dans `memory/kanban.md`, **créer l'issue Jira de type
 *bug*** (coordonnée *Type d'issue — bug* des *Coordonnées des outils* de `memory/config.md`), dans
 le projet défini (défaut = trigramme `{{TICKET_PREFIX}}`), avec sévérité, résumé et lien vers
 l'entrée `memory/incidents.md`. **L'ID du ticket devient la clé renvoyée par l'outil**
@@ -43,5 +51,7 @@ manquant et rester en mode fichier-local.
 > Pré-requis : un environnement déployé et **{{MONITORING}}** configuré. Si la valeur
 > vaut `{{DISABLED}}` dans `memory/config.md`, signale le pré-requis manquant et arrête-toi
 > proprement (n'invente pas de source de logs).
+
+{{FINDINGS_RULE}}
 
 {{WRITING_RULES}}

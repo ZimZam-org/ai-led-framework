@@ -75,7 +75,10 @@ const KANBAN_RE = /^(TO_CHECK|TODO|IN_PROGRESS|TO_TEST|DONE|SUPERSEDED)$/;
 // statut canonique, tolérant aux backticks / casse / accents / formulation FR-EN et à un
 // qualificatif en suffixe (« DONE (PR #118, mergé develop) » → DONE).
 function canonStatus(raw) {
-  let v = String(raw || "").replace(/`/g, "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+  // `**TO_TEST**` is a status, not a new status: emphasis markers are decoration.
+  // Without stripping them the row never reaches the journal, and the ticket's
+  // history silently loses every transition.
+  let v = String(raw || "").replace(/[`*~]/g, "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .trim().toUpperCase().replace(/[\s\-–—]+/g, "_");
   v = v.split("(")[0].replace(/^_+|_+$/g, "");
   if (!v) return null;

@@ -17,6 +17,16 @@ carries a `> Archives: memory/archive/kanban.md` line at the top. Agent reads st
 **EPIC** column: parent EPIC (`memory/epics.md`). **Solution(s)** column: `short ID` of the
 impacted targets (registry `memory/architecture.md`).
 
+**Cell weight: {{MAX_CELL_BYTES}} bytes at most.** A bigger cell is a specification: its detail
+— analysis, inventory, test protocol, history — lives in `memory/specs/` and the cell links to
+it. **This file is a table, not a journal**: an EPIC narrative or a review report goes to
+`memory/specs/`, the history of what shipped to `memory/archive/kanban.md`. An update is made
+**in place**: fix the cell, do not add one more dated comment under the table. Without these
+rules, an 85-ticket kanban reaches 300 kilobytes. An agent then pays ~79,000 tokens per read.
+
+An **unrequested** finding (debt, a minor bug, an idea) does not belong here: it goes to
+`memory/observations.md` (see `memory/process.md` § Unrequested findings).
+
 | ID | Created | Status | EPIC | Title | Description | Solution(s) | Technical detail | Mockup |
 | -- | ------- | ------ | ---- | ----- | ----------- | ----------- | ---------------- | ------ |
 

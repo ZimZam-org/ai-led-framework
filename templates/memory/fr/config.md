@@ -11,6 +11,10 @@ quand une intégration vaut `{{DISABLED}}`.
 
 - Trigramme projet (préfixe de ticket) : `{{TICKET_PREFIX}}`
   → les tickets de dev portent les noms `{{TICKET_PREFIX}}-000001`, `{{TICKET_PREFIX}}-000002`, …
+- Version du framework installée : `{{FRAMEWORK_VERSION}}`
+  → réécrite par `init` et `update`. Le manifeste vit sous `.ailed/`, ignoré par git : sans
+    cette ligne, un clone ne peut pas dire sur quelle version il tourne.
+    `npx @s2bp/ai-led-framework doctor` compare cette valeur à celle du CLI.
 
 ## Style de sortie
 
