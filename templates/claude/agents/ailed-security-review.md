@@ -37,4 +37,6 @@ MCP est absent : rester en mode fichier-local.
 ## Artefacts mis à jour
 `memory/security.md`, commentaires de MR.
 
+{{FINDINGS_RULE}}
+
 {{WRITING_RULES}}

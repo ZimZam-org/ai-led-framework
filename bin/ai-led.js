@@ -17,12 +17,21 @@ const assumeYes = argv.includes("--yes") || argv.includes("-y");
 const cwd = process.cwd();
 
 // ── tiny logger ───────────────────────────────────────────────
+// Colour is for a human looking at a terminal. Piped into a file, a grep or a CI step it is
+// noise that breaks the reading: `TO_TEST 1` reaches the pipe as `TO_TEST \x1b[1m1\x1b[0m`,
+// so a gate as simple as `ai-led status | grep -q "TO_TEST 1"` could never match — and
+// `doctor` is meant to be usable exactly that way. Honour NO_COLOR (https://no-color.org)
+// and FORCE_COLOR too.
+const USE_COLOR = process.env.FORCE_COLOR
+  ? process.env.FORCE_COLOR !== "0"
+  : !!process.stdout.isTTY && !process.env.NO_COLOR && process.env.TERM !== "dumb";
+const paint = (code) => (s) => (USE_COLOR ? `\x1b[${code}m${s}\x1b[0m` : String(s));
 const c = {
-  dim: (s) => `\x1b[2m${s}\x1b[0m`,
-  green: (s) => `\x1b[32m${s}\x1b[0m`,
-  yellow: (s) => `\x1b[33m${s}\x1b[0m`,
-  cyan: (s) => `\x1b[36m${s}\x1b[0m`,
-  bold: (s) => `\x1b[1m${s}\x1b[0m`,
+  dim: paint(2),
+  green: paint(32),
+  yellow: paint(33),
+  cyan: paint(36),
+  bold: paint(1),
 };
 
 // ── flag parsing (--key=value or --key value) ─────────────────
@@ -97,6 +106,31 @@ Out of scope: promotional content, which follows the brand voice.`,
 };
 
 // "ste" (on) | "off". Accepts the per-language sentinel word as "off".
+// Injected into every agent, like the writing rules. A finding made in passing is the
+// main way a backlog fills up with work nobody chose: each one looks reasonable alone,
+// and the pile is what becomes unmanageable. The capture channel keeps the signal
+// without letting an agent decide what the project commits to.
+const FINDINGS_RULE_BLOCK = {
+  fr: `
+## Constats hors mission
+
+Un constat fait en passant — dette, bug mineur, idée d'évolution, manque de doc — **ne devient
+pas un ticket**. Écris-le dans \`memory/observations.md\` (date, source, sévérité, une phrase).
+Deux exceptions seulement entrent dans \`memory/kanban.md\` : une demande explicite de l'humain,
+et une sévérité \`CRITICAL\`/\`HIGH\`. Tu **proposes** une promotion, tu ne la décides pas.
+Voir \`memory/process.md\` § « Constats non demandés ».
+`,
+  en: `
+## Findings outside your mission
+
+A finding made in passing — debt, a minor bug, an improvement idea, a documentation gap —
+**does not become a ticket**. Write it in \`memory/observations.md\` (date, source, severity, one
+sentence). Only two things enter \`memory/kanban.md\`: an explicit human request, and a
+\`CRITICAL\`/\`HIGH\` severity. You **propose** a promotion, you do not decide it.
+See \`memory/process.md\` § "Unrequested findings".
+`,
+};
+
 function normWriting(v) {
   if (v === undefined || v === null || v === "") return WRITING_NORM_DEFAULT;
   const s = String(v).trim().toLowerCase();
@@ -260,6 +294,8 @@ function substitute(content, cfg, agentName) {
   const models = cfg.models || AGENT_MODEL_TIERS;
   const model = (agentName && models[agentName]) || "inherit";
   return content
+    .replace(/{{FRAMEWORK_VERSION}}/g, pkg.version)
+    .replace(/{{MAX_CELL_BYTES}}/g, String(MAX_CELL_BYTES))
     .replace(/{{MODEL}}/g, model)
     .replace(/{{MODELS_TABLE}}/g, () => renderModelsTable(models, cfg.lang))
     .replace(/{{TICKET_PREFIX}}/g, cfg.trigram)
@@ -274,6 +310,9 @@ function substitute(content, cfg, agentName) {
     .replace(/{{OUTPUT_STYLE}}/g, cfg.style || "standard")
     .replace(/{{WRITING_NORM}}/g, () =>
       normWriting(cfg.writing) === "off" ? cfg.disabled || "none" : WRITING_NORM_DEFAULT
+    )
+    .replace(/{{FINDINGS_RULE}}/g, () =>
+      (FINDINGS_RULE_BLOCK[cfg.lang] || FINDINGS_RULE_BLOCK[LANG_DEFAULT]).trimEnd()
     )
     .replace(/{{WRITING_RULES}}/g, () =>
       normWriting(cfg.writing) === "off"
@@ -342,6 +381,110 @@ function importConventions(cfg) {
 // Copies the hook script, wires the Task PreToolUse/PostToolUse hooks into
 // .claude/settings.json (without clobbering existing settings), and gitignores
 // the .ailed/ runtime state directory.
+// ── contrat framework : les règles, là où Claude les lit vraiment ───────────
+// Les agents et la mémoire ne servent à rien si le fichier d'instructions du projet
+// ne dit nulle part que `memory/` fait autorité : hors invocation explicite d'un
+// agent, une session ordinaire ignore le framework. Le contrat est donc (re)posé à
+// chaque init et à chaque update, dans un bloc délimité qu'on peut réécrire sans
+// toucher au reste du fichier — qui appartient à l'utilisateur.
+const CONTRACT_BEGIN = "<!-- ai-led:begin — bloc géré par le framework, ne pas éditer à la main -->";
+const CONTRACT_END = "<!-- ai-led:end -->";
+const CONTRACT_RE = /<!--\s*ai-led:begin[\s\S]*?<!--\s*ai-led:end\s*-->\n?/;
+
+// Where the contract belongs. A CLAUDE.md that is nothing but `@AGENTS.md` is a
+// pointer, not a document: writing the block there would put the rules in a file
+// nobody reads past the first line. Follow the pointer instead.
+function contractTarget(projectDir) {
+  const claudeMd = path.join(projectDir, "CLAUDE.md");
+  if (!fs.existsSync(claudeMd)) return { file: null, hasBlock: false, stamped: null, pointer: null };
+  const txt = fs.readFileSync(claudeMd, "utf8");
+  const meaningful = txt.split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("<!--"));
+  const onlyPointers = meaningful.length > 0 && meaningful.every((l) => /^@[\w./-]+$/.test(l));
+  let file = claudeMd;
+  let pointer = null;
+  if (onlyPointers) {
+    for (const l of meaningful) {
+      const p = path.join(projectDir, l.slice(1));
+      if (fs.existsSync(p)) { file = p; pointer = l; break; }
+    }
+  }
+  const body = fs.readFileSync(file, "utf8");
+  const m = body.match(/<!--\s*ai-led:begin[\s\S]*?<!--\s*ai-led:end\s*-->/);
+  const stamped = m ? (m[0].match(/AI-Led\**\s*\(v([0-9][^)]*)\)/i) || [])[1] || null : null;
+  return { file, hasBlock: !!m, stamped, pointer };
+}
+
+function installContract(cfg, projectDir = cwd) {
+  console.log("\n" + c.bold("Contrat") + c.dim("  → CLAUDE.md (règles du framework)"));
+  const tplFile = path.join(TPL, "contract", cfg.lang + ".md");
+  const block =
+    CONTRACT_BEGIN + "\n\n" +
+    substitute(fs.readFileSync(fs.existsSync(tplFile) ? tplFile : path.join(TPL, "contract", "fr.md"), "utf8"), cfg).trim() +
+    "\n\n" + CONTRACT_END + "\n";
+
+  const claudeMd = path.join(projectDir, "CLAUDE.md");
+  if (!fs.existsSync(claudeMd)) {
+    fs.writeFileSync(claudeMd, `# ${path.basename(projectDir)}\n\n${block}`);
+    created++;
+    console.log(`  ${c.green("+")}    CLAUDE.md ${c.dim("(créé, contrat inclus)")}`);
+    return;
+  }
+
+  const t = contractTarget(projectDir);
+  const rel = path.relative(projectDir, t.file) || path.basename(t.file);
+  const cur = fs.readFileSync(t.file, "utf8");
+  let next;
+  if (CONTRACT_RE.test(cur)) {
+    next = cur.replace(CONTRACT_RE, block);
+  } else {
+    // appended, never prepended: the top of an instruction file is the user's, and a
+    // framework block that jumps the queue would bury what they put first on purpose.
+    next = cur.replace(/\s*$/, "") + "\n\n---\n\n" + block;
+  }
+  if (next === cur) {
+    skipped++;
+    console.log(`  ${c.dim("=")}    ${rel} ${c.dim("(contrat à jour)")}`);
+    return;
+  }
+  fs.writeFileSync(t.file, next);
+  created++;
+  const via = t.pointer ? c.dim(` (via CLAUDE.md → ${t.pointer})`) : "";
+  console.log(`  ${c.green(CONTRACT_RE.test(cur) ? "↻" : "+")}    ${rel} ${c.dim(CONTRACT_RE.test(cur) ? "(contrat réécrit)" : "(contrat ajouté)")}${via}`);
+}
+
+// ── marqueur de version, dans un fichier versionné ─────────────────────────
+// Le manifeste vit sous `.ailed/`, ignoré par git : un clone ne peut pas dire sur
+// quelle version il tourne, et deux sources finissent par se contredire. La version
+// est donc inscrite dans `memory/config.md`, qui est commité.
+const STAMP_RE = /^(\s*-\s*Version du framework(?: install[ée]e?)?\s*:\s*).*$|^(\s*-\s*Framework version(?: installed)?\s*:\s*).*$/mi;
+
+function readFrameworkStamp(memDir) {
+  const p = path.join(memDir, "config.md");
+  if (!fs.existsSync(p)) return null;
+  const m = fs.readFileSync(p, "utf8").match(/^\s*-\s*(?:Version du framework(?: install[ée]e?)?|Framework version(?: installed)?)\s*:\s*`?v?([0-9]+\.[0-9]+\.[0-9]+)`?/mi);
+  return m ? m[1] : null;
+}
+
+// Idempotent, line-level: the section merge works on whole sections, so a new bullet
+// inside an existing "Identité" section would never reach a project installed earlier.
+function stampFrameworkVersion(memDir, lang) {
+  const p = path.join(memDir, "config.md");
+  if (!fs.existsSync(p)) return;
+  const txt = fs.readFileSync(p, "utf8");
+  const label = lang === "en" ? "Framework version installed" : "Version du framework installée";
+  const line = `- ${label} : \`${pkg.version}\``.replace(" : ", lang === "en" ? ": " : " : ");
+  let next;
+  if (STAMP_RE.test(txt)) {
+    next = txt.replace(STAMP_RE, line);
+  } else {
+    // anchored under the identity section, right after the trigram bullet
+    const anchor = txt.match(/^(\s*-\s*(?:Trigramme projet|Project trigram)[^\n]*\n(?:\s{2,}[^\n]*\n)*)/mi);
+    if (anchor) next = txt.replace(anchor[1], anchor[1] + line + "\n");
+    else next = txt.replace(/^(#\s+[^\n]*\n)/, `$1\n${line}\n`);
+  }
+  if (next !== txt) fs.writeFileSync(p, next);
+}
+
 function installRuntimeHook(cfg, forceOverwrite) {
   console.log("\n" + c.bold("Hook") + c.dim("  → .claude/hooks/ (panneau de progression)"));
   copyTree(
@@ -493,15 +636,14 @@ async function init() {
   //     template, so exclude it (else update would wipe it as "pristine").
   recordMemoryManifest(cfg, path.join(cwd, "memory"), cwd, cfg.conventions ? new Set(["conventions.md"]) : new Set());
 
-  // 5. CLAUDE.md pointer (only if absent)
-  const claudeMd = path.join(cwd, "CLAUDE.md");
-  if (!fs.existsSync(claudeMd)) {
-    fs.writeFileSync(claudeMd, substitute(CLAUDE_MD_STUB, cfg));
-    created++;
-    console.log(`\n  ${c.green("+")}    CLAUDE.md ${c.dim("(pointeur framework)")}`);
-  } else {
-    console.log(`\n  ${c.yellow("skip")} CLAUDE.md ${c.dim("(exists — voir README pour le snippet à ajouter)")}`);
-  }
+  // 4d. Version marker, in a *versioned* file: the manifest lives under the gitignored
+  //     .ailed/, so a clone could not tell which framework version it runs on.
+  stampFrameworkVersion(path.join(cwd, "memory"), cfg.lang);
+
+  // 5. Framework contract in CLAUDE.md. Posé même quand le fichier existe déjà : sans
+  //    lui, une session ordinaire n'a aucune raison de traiter memory/ comme la source
+  //    de vérité, et le framework ne s'applique qu'aux agents invoqués à la main.
+  installContract(cfg);
 
   console.log(
     `\n${c.green("✓")} Terminé : ${c.bold(created)} fichier(s) créé(s), ${skipped} ignoré(s).\n`
@@ -526,6 +668,18 @@ function parseInstalledConfig(memDir) {
   const disabled = DISABLED_WORD[lang] || "none";
   const unbacktick = (s) => (s || "").replace(/`/g, "").trim();
 
+  // An integration cell is *read back* by every agent, and its value is baked into
+  // their text at install time. A human annotating the table — `**aucun** — tout reste
+  // en fichiers .md` — used to yield that whole sentence as the tool name: the value
+  // then matched neither the tool nor the disabled word, and the "if ≠ <disabled>"
+  // guard in each agent read as "integration active". Keep the decoration out.
+  const cellValue = (s) => {
+    let v = unbacktick(s).replace(/\*\*/g, "").replace(/__/g, "").trim();
+    // an explanatory suffix after a dash is a comment, not part of the tool name
+    v = v.split(/\s+[—–]\s+|\s+--\s+/)[0].trim();
+    return v.replace(/^[*_\s]+|[*_\s]+$/g, "");
+  };
+
   // trigram from the Identity section line (fr "Trigramme…" / en "…trigram…")
   const trig = txt.match(/trigram[^\n]*?`([^`]+)`/i);
   const trigram = ((trig ? trig[1] : deriveTrigram()).replace(/[^A-Za-z0-9]/g, "").slice(0, 5) || "PRJ").toUpperCase();
@@ -546,6 +700,9 @@ function parseInstalledConfig(memDir) {
     writing: WRITING_NORM_DEFAULT,
     // per-agent models: defaults overlaid with whatever the config.md table declares
     models: { ...AGENT_MODEL_TIERS, ...parseModelsTable(txt) },
+    // non-fatal parse problems, surfaced by `update` and `doctor` instead of being
+    // silently absorbed into a disabled integration.
+    warnings: [],
   };
 
   // output style read from the dedicated bullet (fr "Style de communication…" / en "…communication style:")
@@ -588,27 +745,68 @@ function parseInstalledConfig(memDir) {
     const cells = line.split("|").map((s) => s.trim());
     if (cells.length < 3) continue;
     const label = cells[1];
-    const value = unbacktick(cells[2]);
+    const raw = unbacktick(cells[2]);
+    const value = cellValue(cells[2]);
     // skip header/separator rows and the unrelated coordinates table
     if (!value || /^(outil|tool|---)$/i.test(value)) continue;
     for (const [key, re] of labels) {
       if (!seen.has(key) && re.test(label)) {
         cfg[key] = value;
+        if (raw !== value) cfg.warnings.push({ key, kind: "annotated", raw, value });
         seen.add(key);
         break;
       }
     }
   }
+  // A row a human deleted (or a table a template change renamed) used to fall back to
+  // the disabled word without a word: the agent was then installed switched off, and
+  // nothing in `status` could report it — a missing row cannot be listed as disabled.
+  for (const [key] of labels) if (!seen.has(key)) cfg.warnings.push({ key, kind: "missing" });
   return cfg;
+}
+
+// Surface what the config parser could not read. `update` bakes these values into
+// every agent's text, so a silent fallback disables an agent for good.
+function reportConfigWarnings(cfg) {
+  const ws = cfg.warnings || [];
+  if (!ws.length) return;
+  const LABEL = {
+    monitoring: "Monitoring / logs", e2e: "Tests end-to-end", promo: "Génération promo",
+    watch: "Veille concurrentielle", seo_aso: "SEO / ASO",
+    ticketing: "Ticketing externe", documentation: "Documentation externe",
+  };
+  const missing = ws.filter((w) => w.kind === "missing");
+  const annotated = ws.filter((w) => w.kind === "annotated");
+  console.log("");
+  for (const w of annotated) {
+    console.log(`  ${c.yellow("!")}    ${c.bold(LABEL[w.key] || w.key)} : cellule annotée — lue \`${w.value}\``);
+    console.log(`       ${c.dim("écrit : " + w.raw.slice(0, 64))}`);
+  }
+  for (const w of missing) {
+    console.log(`  ${c.yellow("✗")}    ${c.bold(LABEL[w.key] || w.key)} : ligne absente du tableau ${c.bold("Intégrations")} → l'agent serait installé sur \`${cfg.disabled}\``);
+  }
+  if (missing.length) {
+    console.log(`\n${c.yellow("Mise à jour interrompue.")} Rétablis la/les ligne(s) dans ${c.cyan("memory/config.md")} § Intégrations,`);
+    console.log(`puis relance. Pour passer outre en connaissance de cause : ${c.cyan("--force")}.\n`);
+    if (!force) process.exit(1);
+  }
+  console.log("");
 }
 
 // ── memory update: manifest + additive section merge ─────────
 // memory/ mixes two natures: framework-owned scaffolding whose *structure*
 // evolves (config.md, process.md) and pure project data (everything else).
 // `update` must bring structural changes in without ever clobbering user data.
-const FRAMEWORK_MEMORY = new Set(["config.md", "process.md", "writing-rules.md", "glossary.md"]);
+const FRAMEWORK_MEMORY = new Set(["config.md", "process.md", "writing-rules.md", "glossary.md", "observations.md"]);
+const RULE_MEMORY = new Set(["process.md", "writing-rules.md", "observations.md"]);
 
 function sha256(s) { return crypto.createHash("sha256").update(s, "utf8").digest("hex"); }
+
+// `Last Updated:` is rewritten with today's date on every render, so a file nobody
+// ever touched still hashed differently at the next update: it was rewritten each
+// time, its date reset, and `memory-diff` then flagged the churn it had caused.
+// Compare on the stable part only.
+function stableBody(md) { return String(md).replace(/^Last Updated:[^\n]*$/mi, "Last Updated:"); }
 function manifestPath(projectDir) { return path.join(projectDir, ".ailed", "manifest.json"); }
 
 // The manifest records the hash of the exact template bytes we wrote for each
@@ -639,11 +837,11 @@ function writeManifest(projectDir, man) {
 // on-disk content is NOT the template (e.g. an imported conventions.md), so they
 // are never mistaken for pristine and overwritten.
 function recordMemoryManifest(cfg, memDir, projectDir, skip = new Set()) {
-  const man = { version: pkg.version, lang: cfg.lang, memory: {} };
+  const man = { version: pkg.version, lang: cfg.lang, memory: {}, installed: installedInventory() };
   try {
     for (const file of fs.readdirSync(memDir)) {
       if (!file.endsWith(".md") || skip.has(file)) continue;
-      man.memory[file] = sha256(fs.readFileSync(path.join(memDir, file), "utf8"));
+      man.memory[file] = sha256(stableBody(fs.readFileSync(path.join(memDir, file), "utf8")));
     }
   } catch (_) { /* best-effort */ }
   writeManifest(projectDir, man);
@@ -673,6 +871,24 @@ function splitSectionsLines(md) {
 // order, each right after its preceding matched section), substitution already
 // applied. Never edits or removes existing sections. `changed` reports sections
 // present on both sides whose body differs — surfaced, not touched.
+// Replace, in `userMd`, the body of the named sections with the template's own. The
+// counterpart of the additive merge: used only under --refresh-rules, on the
+// framework-owned files, and only for sections the merge reported as drifted.
+function restoreSections(userMd, tplMd, titles) {
+  const u = splitSectionsLines(userMd);
+  const t = splitSectionsLines(tplMd);
+  const want = new Set(titles);
+  const tByKey = new Map(t.sections.map((x) => [x.key, x]));
+  const out = u.pre.slice();
+  for (const us of u.sections) {
+    const ts = tByKey.get(us.key);
+    out.push(...(ts && want.has(us.title) ? ts.lines : us.lines));
+  }
+  let merged = out.join("\n");
+  if (!merged.endsWith("\n")) merged += "\n";
+  return merged;
+}
+
 function mergeSections(userMd, tplMd) {
   const u = splitSectionsLines(userMd);
   const t = splitSectionsLines(tplMd);
@@ -716,7 +932,19 @@ function mergeSections(userMd, tplMd) {
 // memory/ refresh for `update`: pristine files get a clean full rewrite,
 // framework files that were edited get an additive section merge, and edited
 // project-data files are preserved. Updates the manifest as it goes.
-function updateMemory(cfg, memDir, projectDir) {
+// --refresh-rules realigns the template body of framework sections. Left unscoped it
+// defaults to the rule files only: `config.md` holds the project's own integration
+// values and `glossary.md` its own terms, and restoring the template over them would
+// destroy real content. `--refresh-rules=config.md` is the deliberate way to include one.
+function refreshScope() {
+  const raw = argv.find((a) => a === "--refresh-rules" || a.startsWith("--refresh-rules="));
+  if (!raw) return null;
+  const v = raw.includes("=") ? raw.split("=").slice(1).join("=") : "";
+  if (!v) return new Set(RULE_MEMORY);
+  return new Set(v.split(",").map((x) => x.trim()).filter(Boolean).map((x) => (x.endsWith(".md") ? x : x + ".md")));
+}
+
+function updateMemory(cfg, memDir, projectDir, refreshRules = null) {
   console.log("\n" + c.bold("Mémoire") + c.dim(`  → memory/ (fusion structurelle · langue: ${cfg.lang})`));
   const src = path.join(TPL, "memory", cfg.lang);
   const man = readManifest(projectDir) || { version: pkg.version, lang: cfg.lang, memory: {} };
@@ -730,7 +958,7 @@ function updateMemory(cfg, memDir, projectDir) {
 
     if (!fs.existsSync(dest)) {
       fs.writeFileSync(dest, rendered);
-      man.memory[file] = sha256(rendered);
+      man.memory[file] = sha256(stableBody(rendered));
       created++;
       console.log(`  ${c.green("+")}    ${rel} ${c.dim("(nouveau)")}`);
       continue;
@@ -738,15 +966,23 @@ function updateMemory(cfg, memDir, projectDir) {
 
     const current = fs.readFileSync(dest, "utf8");
     const baseline = man.memory[file];
+    const sameAsTemplate = stableBody(current) === stableBody(rendered);
 
-    // pristine: never edited since last install/update → clean full refresh
-    if (baseline && sha256(current) === baseline) {
-      if (rendered !== current) {
+    // Pristine: never edited since the last install/update → clean full refresh.
+    // The manifest lives under the gitignored `.ailed/`, so a fresh clone has no
+    // baseline at all and every file used to look "edited" — frozen for ever. A file
+    // still byte-identical to the template is pristine whatever the manifest says,
+    // which lets a clone recover its baselines on the first update.
+    const pristine = (baseline && (sha256(current) === baseline || sha256(stableBody(current)) === baseline))
+      || (!baseline && sameAsTemplate);
+    if (pristine) {
+      if (!sameAsTemplate) {
         fs.writeFileSync(dest, rendered);
-        man.memory[file] = sha256(rendered);
+        man.memory[file] = sha256(stableBody(rendered));
         created++;
         console.log(`  ${c.green("↻")}    ${rel} ${c.dim("(réécrit — non modifié en local)")}`);
       } else {
+        man.memory[file] = sha256(stableBody(current));
         skipped++;
         console.log(`  ${c.dim("=")}    ${rel} ${c.dim("(à jour)")}`);
       }
@@ -757,6 +993,19 @@ function updateMemory(cfg, memDir, projectDir) {
     // project data is preserved verbatim.
     if (FRAMEWORK_MEMORY.has(file)) {
       const { merged, added, changed } = mergeSections(current, rendered);
+      // The merge is additive by design: it never overwrites a section a human may
+      // have adapted. But when *every* heading already matches, a framework rule that
+      // changed wording inside a section can never land, and the project keeps running
+      // the rules of the version it was installed with. --refresh-rules is the explicit
+      // way out: it restores the template body of the framework-owned sections.
+      if (refreshRules && refreshRules.has(file) && changed.length) {
+        const restored = restoreSections(merged, rendered, changed);
+        fs.writeFileSync(dest, restored);
+        man.memory[file] = sha256(stableBody(restored));
+        created++;
+        console.log(`  ${c.green("↻")}    ${rel} ${c.dim(`(${changed.length} section(s) réalignée(s) : ${changed.join(", ")})`)}`);
+        continue;
+      }
       if (added.length) {
         fs.writeFileSync(dest, merged);
         // merged = framework sections + user edits → never mark pristine again.
@@ -778,7 +1027,19 @@ function updateMemory(cfg, memDir, projectDir) {
 
   man.version = pkg.version;
   man.lang = cfg.lang;
+  // What *we* put in .claude/. A project keeps its own agents and skills in the same
+  // folders, so "present locally but absent from the templates" is not enough to call
+  // a file obsolete — only this list makes the distinction safe.
+  man.installed = installedInventory();
   writeManifest(projectDir, man);
+}
+
+function installedInventory() {
+  const names = (sub) => {
+    try { return fs.readdirSync(path.join(TPL, "claude", sub)).map((n) => n.replace(/\.md$/, "")); }
+    catch (_) { return []; }
+  };
+  return { agents: names("agents"), skills: names("skills"), commands: names("commands") };
 }
 
 // ── update: refresh framework files, preserve project data ────
@@ -795,6 +1056,12 @@ async function update() {
     console.error(`Ce projet n'a pas encore le framework. Lance d'abord : ${c.cyan("npx @s2bp/ai-led-framework init")}\n`);
     process.exit(1);
   }
+
+  // A config the parser could not read is how an agent gets installed switched off,
+  // or — worse — how an integration reads as active because its cell says
+  // "**aucun** — tout reste en fichiers .md" rather than "aucun". This used to be one
+  // dim line nobody read; a missing row now stops the update outright.
+  reportConfigWarnings(cfg);
 
   console.log(
     `\n${c.dim("Config relue depuis memory/config.md")} : langue=${c.bold(cfg.lang)} · trigramme=${c.bold(cfg.trigram)} · monitoring=${cfg.monitoring} · e2e=${cfg.e2e} · promo=${cfg.promo} · veille=${cfg.watch} · seo/aso=${cfg.seo_aso} · ticketing=${cfg.ticketing} · doc=${cfg.documentation} · style=${cfg.style} · rédaction=${normWriting(cfg.writing) === "off" ? cfg.disabled : WRITING_NORM_DEFAULT}\n`
@@ -822,9 +1089,12 @@ async function update() {
 
   // 4. Memory — pristine files refreshed, framework files section-merged,
   //    project data preserved (see updateMemory).
-  updateMemory(cfg, memDir, cwd);
+  updateMemory(cfg, memDir, cwd, refreshScope());
 
-  // CLAUDE.md is left untouched on purpose (user-owned).
+  // Version marker + framework contract: both are rewritten on every update. The rest
+  // of CLAUDE.md stays the user's — only the delimited ai-led block is replaced.
+  stampFrameworkVersion(memDir, cfg.lang);
+  installContract(cfg);
 
   console.log(
     `\n${c.green("✓")} Mise à jour terminée : ${c.bold(created)} fichier(s) écrit(s), ${skipped} préservé(s).`
@@ -833,32 +1103,17 @@ async function update() {
     c.dim(`  Framework réécrit en v${pkg.version} ; memory/*.md existants et CLAUDE.md préservés.`)
   );
   console.log(
-    c.dim(`  Note : un agent/skill supprimé ou renommé dans une version plus récente n'est pas auto-nettoyé.\n`)
+    c.dim(`  Un agent/skill retiré d'une version plus récente n'est jamais supprimé d'office :`)
+  );
+  console.log(
+    c.dim(`  ${"npx @s2bp/ai-led-framework doctor"} les liste, et distingue les tiens des nôtres.\n`)
   );
 }
 
-const CLAUDE_MD_STUB = `# Projet piloté par AI-Led
-
-Ce projet utilise le framework **AI-Led** : mémoire persistante (\`memory/\`),
-agents préfixés \`ailed-*\` (\`.claude/agents/\`) et skills (\`.claude/skills/\`).
-
-## Règles
-
-- Aucun développement sans ticket ; aucun ticket sans SPEC validée par un humain.
-- La mémoire \`memory/\` est la source de vérité : elle est lue avant et mise à jour après chaque tâche.
-- \`memory/config.md\` fixe le trigramme de ticket (\`{{TICKET_PREFIX}}-*\`) et les intégrations outillage.
-- \`memory/conventions.md\` (facultatif) décrit les conventions et l'organisation technique en place.
-
-## Démarrage
-
-Lance \`/ailed-bootstrap\`. Les agents disponibles (préfixe \`@ailed-\`, avec leurs entrées/sorties)
-sont dans \`.claude/agents/\` ; les workflows (Discovery / Feature / Incident / Security) et leurs
-points de validation humaine sont décrits dans \`memory/process.md\`.
-`;
 
 // ── status: aggregate memory into a snapshot (terminal or static HTML) ──
 const MEMORY_ORDER = [
-  "project-state", "roadmap", "kanban", "epics", "features",
+  "project-state", "roadmap", "kanban", "observations", "epics", "features",
   "market-watch", "process", "architecture", "conventions", "decisions",
   "incidents", "security", "context", "glossary", "config",
 ];
@@ -873,7 +1128,9 @@ const STATUSES = ["TO_CHECK", "TODO", "IN_PROGRESS", "TO_TEST", "DONE"];
 // Returns null when nothing plausible matches.
 function normStatus(raw) {
   let v = String(raw || "")
-    .replace(/`/g, "")
+    // `**TO_TEST**` is a status, not a new status: emphasis markers are decoration.
+    // Without this, the row is invisible to status/watch and to the ticket journal.
+    .replace(/[`*~]/g, "")
     .normalize("NFD").replace(/[̀-ͯ]/g, "") // strip accents
     .trim().toUpperCase().replace(/[\s\-–—]+/g, "_");
   v = v.split("(")[0].replace(/^_+|_+$/g, "");
@@ -1432,6 +1689,526 @@ function status() {
     process.stdout.write(`\n${c.dim("--live arrêté · le rapport reste ouvrable, il ne se mettra plus à jour.")}\n`);
     process.exit(0);
   });
+}
+
+// ── doctor : vérifie qu'une installation est réellement opérationnelle ──────
+// `update` réécrit des fichiers sans jamais dire si le résultat *fonctionne*. Une
+// valeur d'intégration illisible, un contrat absent de CLAUDE.md ou un statut non
+// canonique dégradent en silence : l'agent s'installe éteint, le ticket devient
+// invisible, et le projet tourne sur des règles d'une version antérieure. `doctor`
+// ne répare rien — il rend ces dérives visibles, et nomme la commande qui corrige.
+
+// approximate token cost of a markdown file — 4 characters per token is the usual
+// rule of thumb, and the point here is the order of magnitude, not the exact count.
+function approxTokens(bytes) { return Math.round(bytes / 4); }
+
+// Per-file byte budget for memory/. The framework's only size guard used to count
+// *entries* (40 active), which never fires on a file whose entries are essays:
+// 85 kanban rows can weigh 300 Ko. A volume budget measures what actually costs.
+const MEMORY_BUDGET = { kanban: 120 * 1024, decisions: 80 * 1024, epics: 60 * 1024, _default: 60 * 1024 };
+// Measured per *cell*, not per row. A row legitimately carries a description, a scope and
+// its acceptance criteria: on a real project the median row is ~1.8 KB, and capping the row
+// would push the acceptance criteria out of the ticket — worse than the disease. What is
+// pathological is one cell holding an essay: the median cell is ~390 bytes and the 90th
+// percentile ~1.3 KB, so a cell past 1.5 KB is a specification filed in the wrong place.
+const MAX_CELL_BYTES = 1500;
+
+function doctorFindings(projectDir) {
+  const memDir = path.join(projectDir, "memory");
+  const F = [];
+  const add = (sev, area, msg, hint) => F.push({ sev, area, msg, hint });
+
+  // 0. install present at all
+  if (!fs.existsSync(path.join(memDir, "config.md"))) {
+    add("error", "install", "memory/config.md introuvable — le framework n'est pas installé ici.", "npx @s2bp/ai-led-framework init");
+    return { findings: F, cfg: null };
+  }
+  const cfg = parseInstalledConfig(memDir);
+
+  // 1. version drift — the marker lives in memory/config.md (versioned), not in the
+  //    gitignored manifest: a clone must be able to tell which version it runs.
+  const stamped = readFrameworkStamp(memDir);
+  if (!stamped) {
+    add("warn", "version", "aucune version de framework inscrite dans memory/config.md.", "npx @s2bp/ai-led-framework update");
+  } else if (stamped !== pkg.version) {
+    add("warn", "version", `projet en v${stamped}, CLI en v${pkg.version}.`, "npx @s2bp/ai-led-framework@latest update");
+  } else {
+    add("ok", "version", `framework v${stamped}.`);
+  }
+
+  // 2. config parse — the values below are what agents are installed with. A row a
+  //    human deleted, or annotated with prose, used to degrade to the disabled word
+  //    without a word: the agent was installed switched off.
+  const INTEG = [
+    ["monitoring", "Monitoring / logs", "@ailed-check-log"],
+    ["e2e", "Tests end-to-end", "@ailed-test"],
+    ["promo", "Génération promo", "/ailed-promo"],
+    ["watch", "Veille concurrentielle", "@ailed-scout"],
+    ["seo_aso", "SEO / ASO", "@ailed-seo-aso"],
+    ["ticketing", "Ticketing externe", "@ailed-planner"],
+    ["documentation", "Documentation externe", "@ailed-communication"],
+  ];
+  const warnBy = new Map((cfg.warnings || []).map((w) => [w.key, w]));
+  for (const [key, label, agent] of INTEG) {
+    const w = warnBy.get(key);
+    const val = cfg[key];
+    if (w && w.kind === "missing") {
+      add("error", "config", `ligne « ${label} » absente du tableau Intégrations → ${agent} installé sur \`${cfg.disabled}\`.`,
+        `ajoute la ligne dans memory/config.md § Intégrations, puis relance update`);
+    } else if (w && w.kind === "annotated") {
+      add("warn", "config", `« ${label} » : la cellule contient du commentaire — lue \`${w.value}\` (écrit : ${w.raw.slice(0, 48)}…).`,
+        "garde la cellule Outil réduite au nom de l'outil ; mets le commentaire sous le tableau");
+    } else {
+      add("ok", "config", `${label} = \`${val}\`${val === cfg.disabled ? c.dim(" (désactivé)") : ""}`);
+    }
+  }
+
+  // 3. the framework contract must be reachable from the instruction file, otherwise
+  //    `memory/` is the source of truth only when an agent is invoked by hand.
+  const ct = contractTarget(projectDir);
+  if (!ct.file) {
+    add("error", "contrat", "aucun CLAUDE.md — les règles du framework ne sont chargées nulle part.", "npx @s2bp/ai-led-framework update");
+  } else if (!ct.hasBlock) {
+    add("error", "contrat", `${path.relative(projectDir, ct.file)} ne contient pas le bloc ai-led — en session ordinaire, rien n'impose memory/ comme source de vérité.`,
+      "npx @s2bp/ai-led-framework update");
+  } else if (ct.stamped && ct.stamped !== pkg.version) {
+    add("warn", "contrat", `bloc ai-led en v${ct.stamped} dans ${path.relative(projectDir, ct.file)}.`, "npx @s2bp/ai-led-framework update");
+  } else {
+    add("ok", "contrat", `bloc ai-led présent dans ${path.relative(projectDir, ct.file)}.`);
+  }
+
+  // 4. kanban statuses that no parser can canonicalise: the row exists for a human
+  //    reader and for nobody else — absent from status, watch and the ticket journal.
+  const kanbanPath = path.join(memDir, "kanban.md");
+  if (fs.existsSync(kanbanPath)) {
+    const ghosts = ghostRows(fs.readFileSync(kanbanPath, "utf8"));
+    if (ghosts.length) {
+      add("error", "kanban", `${ghosts.length} ticket(s) au statut illisible, invisibles partout : ${ghosts.slice(0, 6).map((g) => g.id + " (" + g.status + ")").join(", ")}${ghosts.length > 6 ? "…" : ""}.`,
+        "statuts attendus : " + STATUSES.join(" · "));
+    } else {
+      add("ok", "kanban", "tous les statuts sont canoniques.");
+    }
+  }
+
+  // 5. memory baselines. Without one, `update` can no longer tell "never edited" from
+  //    "edited", and preserves the file for ever — including the pristine ones.
+  const man = readManifest(projectDir);
+  const memFiles = fs.existsSync(memDir) ? fs.readdirSync(memDir).filter((f) => f.endsWith(".md")) : [];
+  const hasBase = (f) => !!(man && man.memory && man.memory[f]);
+  const withBase = memFiles.filter(hasBase).length;
+  // A missing baseline only matters for the pure rule files: those are the ones `update`
+  // still has to refresh wholesale. `kanban.md` without a baseline is a project that wrote
+  // its own data, and `config.md` or `glossary.md` hold project values by design — they can
+  // never match the template, so flagging them would be a warning that never goes away.
+  const frameworkNoBase = memFiles.filter((f) => RULE_MEMORY.has(f) && !hasBase(f));
+  if (!man) {
+    add("warn", "mémoire", "aucun manifeste (.ailed/manifest.json) — update préservera tout, y compris ce qui n'a jamais été touché.", "npx @s2bp/ai-led-framework update");
+  } else if (frameworkNoBase.length) {
+    add("warn", "mémoire", `fichier(s) de règles sans empreinte de référence : ${frameworkNoBase.join(", ")}.`,
+      "update ré-enregistre l'empreinte des fichiers encore identiques au gabarit ; --refresh-rules réaligne les autres");
+  } else {
+    const data = memFiles.length - withBase;
+    add("ok", "mémoire", `${withBase}/${memFiles.length} empreintes de référence`
+      + (data ? c.dim(` · ${data} fichier(s) de données projet, édités et préservés`) : "") + ".");
+  }
+
+  // 6. framework files frozen on an older wording. The section titles match, so the
+  //    additive merge adds nothing and the body silently stays a version behind.
+  const tplDir = path.join(TPL, "memory", cfg.lang);
+  const drifted = [];
+  for (const file of RULE_MEMORY) {
+    const dest = path.join(memDir, file), srcF = path.join(tplDir, file);
+    if (!fs.existsSync(dest) || !fs.existsSync(srcF)) continue;
+    const rendered = substitute(fs.readFileSync(srcF, "utf8"), cfg, path.basename(file, ".md"));
+    // the version stamp differs by design as soon as the project trails the CLI
+    const unstamp = (x) => x.replace(STAMP_RE, "");
+    const { added, changed } = mergeSections(unstamp(fs.readFileSync(dest, "utf8")), unstamp(rendered));
+    if (added.length || changed.length) drifted.push(`${file} (${added.length} manquante(s), ${changed.length} en retard)`);
+  }
+  if (drifted.length) {
+    add("warn", "règles", `fichier(s) framework en écart avec le gabarit : ${drifted.join(", ")}.`,
+      "npx @s2bp/ai-led-framework update --refresh-rules  (réaligne le corps des sections de règles)");
+  } else {
+    add("ok", "règles", "fichiers framework alignés sur le gabarit.");
+  }
+
+  // 7. volume. What makes a session expensive is the weight of memory/, read before
+  //    every task — not the number of entries in it.
+  let total = 0;
+  const heavy = [];
+  for (const f of memFiles) {
+    const b = fs.statSync(path.join(memDir, f)).size;
+    total += b;
+    const budget = MEMORY_BUDGET[path.basename(f, ".md")] || MEMORY_BUDGET._default;
+    if (b > budget) heavy.push(`${f} ${humanBytes(b)} (~${approxTokens(b).toLocaleString("fr-FR")} tokens, budget ${humanBytes(budget)})`);
+  }
+  add(heavy.length ? "warn" : "ok", "volume",
+    `memory/ = ${humanBytes(total)} ≈ ${approxTokens(total).toLocaleString("fr-FR")} tokens par lecture complète.`,
+    heavy.length ? "au-dessus du budget : " + heavy.join(" · ") : undefined);
+
+  // 8. archiving. The rule exists in process.md; what was missing is anything that
+  //    actually runs it — hence `ai-led archive`.
+  if (fs.existsSync(kanbanPath)) {
+    const rows = parseKanbanFull(fs.readFileSync(kanbanPath, "utf8"));
+    const done = rows.filter((r) => r.status === "DONE").length;
+    const hasArchive = fs.existsSync(path.join(memDir, "archive", "kanban.md"));
+    if (done > 20 || (done && !hasArchive)) {
+      add("warn", "archive", `${done} ticket(s) DONE encore en ligne dans kanban.md${hasArchive ? "" : " et aucune archive"}.`,
+        "npx @s2bp/ai-led-framework archive --apply");
+    } else {
+      add("ok", "archive", `${done} ticket(s) DONE en ligne${hasArchive ? " · archive présente" : ""}.`);
+    }
+    const kmd = fs.readFileSync(kanbanPath, "utf8");
+    const fat = fatCells(kmd);
+    if (fat.length) {
+      add("warn", "volume", `${fat.length} cellule(s) dépassent ${MAX_CELL_BYTES} octets — la plus grosse : ${fat[0].id} « ${fat[0].col} » à ${humanBytes(fat[0].bytes)}.`,
+        "une cellule de cette taille est une spécification : déplace-la dans memory/specs/ et renvoie-y depuis la ligne");
+    }
+    const ps = proseShare(kmd);
+    if (ps.pct >= 40 && ps.prose > 20 * 1024) {
+      add("warn", "volume", `${ps.pct} % de kanban.md n'est pas une ligne de ticket (${humanBytes(ps.prose)} de prose).`,
+        "récits d'EPIC, rapports de revue, commentaires datés : leur place est dans memory/specs/ ou dans l'archive");
+    }
+  }
+
+  // 9. framework files the project no longer gets from the templates. Only files the
+  //    manifest says *we* installed are candidates: a project's own skills sit in the
+  //    same folders, and deleting them would be the cure being worse than the disease.
+  const orphans = [];
+  const known = (man && man.installed) || null;
+  const scan = (kind, dirRel, tplNames) => {
+    const dir = path.join(projectDir, dirRel);
+    if (!fs.existsSync(dir)) return;
+    const local = fs.readdirSync(dir);
+    for (const n of local) {
+      const base = n.replace(/\.md$/, "");
+      if (tplNames.has(base)) continue;
+      if (known && known[kind] && known[kind].indexOf(base) >= 0) orphans.push(`${dirRel}/${n}`);
+      else if (!known && /^ailed-/.test(base)) orphans.push(`${dirRel}/${n}`);
+    }
+  };
+  const tplNamesOf = (sub) => new Set(fs.readdirSync(path.join(TPL, "claude", sub)).map((n) => n.replace(/\.md$/, "")));
+  scan("agents", ".claude/agents", tplNamesOf("agents"));
+  scan("commands", ".claude/commands", tplNamesOf("commands"));
+  scan("skills", ".claude/skills", tplNamesOf("skills"));
+  if (orphans.length) {
+    add("warn", "orphelins", `posé(s) par une version antérieure et retiré(s) depuis : ${orphans.join(", ")}.`,
+      "à supprimer à la main — le framework ne touche jamais un fichier qu'il n'a pas posé");
+  } else {
+    add("ok", "orphelins", known ? "aucun fichier framework obsolète." : "aucun fichier `ailed-*` obsolète.");
+  }
+
+  // 10. hook wiring — the ticket journal and the progress panel depend on it.
+  const sp = path.join(projectDir, ".claude", "settings.json");
+  let wired = false;
+  try {
+    const st = JSON.parse(fs.readFileSync(sp, "utf8"));
+    const refs = (ev) => (st.hooks && Array.isArray(st.hooks[ev]) ? st.hooks[ev] : [])
+      .some((e) => (e.hooks || []).some((h) => String(h.command || "").includes("ailed-runtime-hook")));
+    wired = refs("PreToolUse") && refs("PostToolUse");
+  } catch (_) { /* absent or unreadable */ }
+  if (!fs.existsSync(path.join(projectDir, ".claude", "hooks", "ailed-runtime-hook.js"))) {
+    add("error", "hook", "le hook runtime n'est pas installé.", "npx @s2bp/ai-led-framework update");
+  } else if (!wired) {
+    add("error", "hook", "le hook runtime n'est pas câblé dans .claude/settings.json.", "npx @s2bp/ai-led-framework update");
+  } else {
+    add("ok", "hook", "hook runtime installé et câblé (Pre + PostToolUse).");
+  }
+
+  // 11. leftovers a past bug or a past version left on disk
+  const stray = [];
+  // The hook writes its runtime state relative to the project dir. When that resolution went
+  // wrong it landed under memory/ — and not only at its root: memory/specs/.ailed exists in
+  // the wild too. Look for any of them rather than the one place we happened to see first.
+  const strayRuntime = [];
+  const hunt = (dir, depth) => {
+    let names = [];
+    try { names = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { return; }
+    for (const e of names) {
+      if (!e.isDirectory()) continue;
+      if (e.name === ".ailed") { strayRuntime.push(path.relative(projectDir, path.join(dir, e.name)) + "/"); continue; }
+      if (depth > 0) hunt(path.join(dir, e.name), depth - 1);
+    }
+  };
+  hunt(memDir, 2);
+  if (strayRuntime.length) stray.push(`${strayRuntime.join(", ")} (état runtime écrit au mauvais endroit)`);
+  try {
+    const tracked = require("child_process")
+      .execSync("git ls-files -- 'ailed-status.html' '*_ailed-status.html' '*_ailed-memory-diff.html'", { cwd: projectDir, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
+      .split("\n").filter(Boolean);
+    if (tracked.length) stray.push(`${tracked.length} rapport(s) générés suivis par git`);
+  } catch (_) { /* not a git repo */ }
+  if (stray.length) add("warn", "résidus", stray.join(" · "), "supprimable sans perte : ce sont des artefacts dérivés");
+  else add("ok", "résidus", "rien à nettoyer.");
+
+  return { findings: F, cfg };
+}
+
+// kanban rows whose ID reads fine but whose status no parser can canonicalise
+function ghostRows(md) {
+  const out = [];
+  let map = null;
+  for (const line of md.split("\n")) {
+    if (line.trim().charAt(0) !== "|") { map = null; continue; }
+    const cs = tableCells(line);
+    const lo = cs.map((x) => x.toLowerCase());
+    if (lo.indexOf("status") >= 0 && (lo.indexOf("titre") >= 0 || lo.indexOf("title") >= 0)) {
+      map = { status: lo.indexOf("status"), id: lo.indexOf("id") };
+      continue;
+    }
+    if (isSeparatorRow(line) || !map || map.id < 0) continue;
+    const id = (cs[map.id] || "").replace(/`/g, "").trim();
+    const raw = (cs[map.status] || "").trim();
+    if (!id || id === "—" || !raw) continue;
+    if (!normStatus(raw)) out.push({ id, status: raw.slice(0, 20) });
+  }
+  return out;
+}
+
+// Cells heavy enough to dominate every read of the file, named with the column they sit in:
+// a ticket whose "Description" is an essay is a spec filed in the wrong place.
+function fatCells(md) {
+  const out = [];
+  let map = null, heads = [];
+  for (const line of md.split("\n")) {
+    if (line.trim().charAt(0) !== "|") { map = null; continue; }
+    const cs = tableCells(line);
+    const lo = cs.map((x) => x.toLowerCase());
+    if (lo.indexOf("status") >= 0 && (lo.indexOf("titre") >= 0 || lo.indexOf("title") >= 0)) {
+      map = { id: lo.indexOf("id") }; heads = cs; continue;
+    }
+    if (isSeparatorRow(line) || !map || map.id < 0) continue;
+    const id = (cs[map.id] || "").replace(/`/g, "").trim();
+    if (!id || id === "—") continue;
+    cs.forEach((cell, i) => {
+      const bytes = Buffer.byteLength(cell, "utf8");
+      if (bytes > MAX_CELL_BYTES) out.push({ id, col: heads[i] || ("col " + (i + 1)), bytes });
+    });
+  }
+  return out.sort((a, b) => b.bytes - a.bytes);
+}
+
+// How much of the kanban is *not* a ticket row. This is the number that actually explains a
+// bloated file: dated comments piled under the tables, EPIC narratives, review reports. A
+// row at least belongs to a ticket; prose past a majority of the file is a spec in hiding.
+function proseShare(md) {
+  let total = 0, rows = 0;
+  for (const line of md.split("\n")) {
+    const b = Buffer.byteLength(line, "utf8") + 1;
+    total += b;
+    if (line.trim().charAt(0) === "|") rows += b;
+  }
+  return { total, prose: total - rows, pct: total ? Math.round(((total - rows) * 100) / total) : 0 };
+}
+
+function doctor() {
+  console.log(`\n${c.bold("ai-led doctor")} ${c.dim("v" + pkg.version)} — ${c.cyan(cwd)}\n`);
+  const { findings } = doctorFindings(cwd);
+  const glyph = { ok: c.green("✓"), warn: c.yellow("!"), error: c.yellow("✗") };
+  const quiet = argv.includes("--quiet");
+  let errors = 0, warns = 0;
+  for (const f of findings) {
+    if (f.sev === "error") errors++;
+    if (f.sev === "warn") warns++;
+    if (quiet && f.sev === "ok") continue;
+    console.log(`  ${glyph[f.sev]}  ${c.dim(f.area.padEnd(10))} ${f.msg}`);
+    if (f.hint && f.sev !== "ok") console.log(`     ${c.dim("↳ " + f.hint)}`);
+  }
+  console.log(
+    `\n${errors ? c.yellow("✗") : c.green("✓")} ${c.bold(errors)} problème(s) · ${c.bold(warns)} avertissement(s) · ${findings.filter((f) => f.sev === "ok").length} contrôle(s) au vert.\n`
+  );
+  if (errors) process.exitCode = 1;
+}
+
+// ── archive : sort du kanban ce qui est fini ────────────────────────────────
+// La règle existe depuis toujours dans `process.md` ; ce qui manquait, c'est quelque
+// chose qui l'exécute. Elle dépendait de `@ailed-release`, et d'un seuil compté en
+// *entrées actives* (40) que des lignes-dissertations ne franchissent jamais : un
+// kanban de 85 tickets peut peser 300 Ko sans qu'aucun garde-fou ne se déclenche.
+// Ici on déplace, on ne supprime pas — le principe de `process.md` reste entier.
+
+const SEP1 = String.fromCharCode(0);
+const SEP2 = String.fromCharCode(1);
+
+// Split a kanban into a heading-aware stream of blocks, so a moved row can be
+// re-emitted in the archive under the very section it came from.
+function kanbanBlocks(md) {
+  const lines = md.split("\n");
+  const blocks = [];
+  let stack = [];
+  let table = null;
+  const flush = () => { if (table) { blocks.push(table); table = null; } };
+  for (const line of lines) {
+    const h = line.match(/^(#{1,6})\s+(.*)$/);
+    if (h) {
+      flush();
+      const lvl = h[1].length;
+      stack = stack.filter((s) => s.level < lvl);
+      stack.push({ level: lvl, text: line });
+      blocks.push({ kind: "line", line });
+      continue;
+    }
+    if (line.trim().charAt(0) === "|") {
+      const cs = tableCells(line);
+      const lo = cs.map((x) => x.toLowerCase());
+      if (lo.indexOf("status") >= 0 && (lo.indexOf("titre") >= 0 || lo.indexOf("title") >= 0)) {
+        flush();
+        table = {
+          kind: "table",
+          id: blocks.length,
+          path: stack.slice(),
+          header: line,
+          sep: null,
+          rows: [],
+          idx: { status: lo.indexOf("status"), id: lo.indexOf("id"), date: lo.findIndex((x) => /date/.test(x)) },
+        };
+        continue;
+      }
+      if (table && isSeparatorRow(line) && !table.sep) { table.sep = line; continue; }
+      if (table) { table.rows.push(line); continue; }
+      blocks.push({ kind: "line", line });
+      continue;
+    }
+    flush();
+    blocks.push({ kind: "line", line });
+  }
+  flush();
+  return blocks;
+}
+
+function renderBlocks(blocks) {
+  const out = [];
+  for (const b of blocks) {
+    if (b.kind === "line") { out.push(b.line); continue; }
+    out.push(b.header);
+    if (b.sep) out.push(b.sep);
+    for (const r of b.rows) out.push(r);
+  }
+  return out.join("\n");
+}
+
+// key a table by its heading path, so two archive runs land in the same section
+const pathKey = (p) => p.map((s) => s.text).join(SEP1);
+
+function archive() {
+  const memDir = path.join(cwd, "memory");
+  const live = path.join(memDir, "kanban.md");
+  if (!fs.existsSync(live)) {
+    console.error(`\n${c.yellow("memory/kanban.md introuvable")} dans ${cwd}.\n`);
+    process.exit(1);
+  }
+  const apply = argv.includes("--apply");
+  const statuses = (flag("status") || "DONE").split(",").map((s) => normStatus(s)).filter(Boolean);
+  const keep = parseInt(flag("keep") || "0", 10) || 0;
+  const olderThan = parseInt((flag("older-than") || "").replace(/[^0-9]/g, ""), 10) || 0;
+
+  const md = fs.readFileSync(live, "utf8");
+  const blocks = kanbanBlocks(md);
+  const beforeBytes = Buffer.byteLength(md, "utf8");
+
+  // candidates, oldest first: --keep protects the tail, which is what a human still
+  // wants under the eyes right after a release.
+  const cands = [];
+  for (const b of blocks) {
+    if (b.kind !== "table") continue;
+    b.rows.forEach((line, i) => {
+      const cs = tableCells(line);
+      const st = normStatus(cs[b.idx.status]);
+      if (!st || statuses.indexOf(st) < 0) return;
+      const id = (b.idx.id >= 0 ? cs[b.idx.id] : "").replace(/`/g, "").trim();
+      if (!id || id === "—") return;
+      const date = b.idx.date >= 0 ? ((cs[b.idx.date] || "").match(/\d{4}-\d{2}-\d{2}/) || [])[0] || null : null;
+      if (olderThan && date && daysSince(date) < olderThan) return;
+      cands.push({ block: b, i, id, st, date, bytes: Buffer.byteLength(line, "utf8") });
+    });
+  }
+  const ordered = cands.slice().sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+  const rowKey = (x) => x.block.id + SEP1 + x.i;
+  const move = new Set(ordered.slice(0, Math.max(0, ordered.length - keep)).map(rowKey));
+  const moving = cands.filter((x) => move.has(rowKey(x)));
+
+  console.log(`\n${c.bold("ai-led archive")} ${c.dim("v" + pkg.version)} — ${c.cyan(path.relative(cwd, live))}`);
+  console.log(c.dim(`  statuts : ${statuses.join(" · ")}${keep ? ` · garde les ${keep} plus récents` : ""}${olderThan ? ` · plus vieux que ${olderThan} j` : ""}\n`));
+
+  if (!moving.length) {
+    console.log(`${c.green("✓")} Rien à archiver.\n`);
+    return;
+  }
+
+  // `features.md` is the durable trace of what shipped: archiving a DONE ticket whose
+  // feature was never captured there loses the only remaining record of it.
+  const feat = path.join(memDir, "features.md");
+  if (fs.existsSync(feat) && fs.statSync(feat).mtimeMs < fs.statSync(live).mtimeMs) {
+    console.log(`  ${c.yellow("!")}  features.md est plus ancien que kanban.md — vérifie qu'il reflète bien le livré avant d'archiver.`);
+    console.log(`     ${c.dim("process.md § Rotation : un ticket DONE ne part en archive qu'une fois sa fonctionnalité captée dans features.md.")}\n`);
+  }
+
+  const bytes = moving.reduce((n, x) => n + x.bytes + 1, 0);
+  const byStatus = {};
+  moving.forEach((x) => { byStatus[x.st] = (byStatus[x.st] || 0) + 1; });
+  console.log(`  ${c.bold(moving.length)} ticket(s) à déplacer ${c.dim("(" + Object.entries(byStatus).map(([k, v]) => v + " " + k).join(", ") + ")")}`);
+  console.log(`  ${humanBytes(bytes)} ${c.dim("≈ " + Math.round(bytes / 4).toLocaleString("fr-FR") + " tokens retirés de chaque lecture du kanban")}`);
+  console.log(`  ${c.dim(moving.slice(0, 8).map((x) => x.id).join(", ") + (moving.length > 8 ? ", …" : ""))}`);
+
+  if (!apply) {
+    console.log(`\n${c.yellow("○")} Simulation — rien n'a été écrit.`);
+    console.log(`  ${c.dim("Rejoue avec --apply pour déplacer vers memory/archive/kanban.md.")}\n`);
+    return;
+  }
+
+  // 1. drop the rows from the live file, keeping every table header in place: an
+  //    emptied table is a section that still exists, it just has no live ticket left.
+  const dropped = new Map();
+  for (const x of moving) {
+    if (!dropped.has(x.block)) dropped.set(x.block, new Set());
+    dropped.get(x.block).add(x.i);
+  }
+  const movedByTable = [];
+  for (const [b, idxs] of dropped) {
+    movedByTable.push({ block: b, rows: b.rows.filter((_, i) => idxs.has(i)) });
+    b.rows = b.rows.filter((_, i) => !idxs.has(i));
+  }
+  let nextLive = renderBlocks(blocks);
+  const rel = "memory/archive/kanban.md";
+  if (!/^>\s*Archives?\s*:/mi.test(nextLive)) {
+    nextLive = nextLive.replace(/^(Last Updated:[^\n]*\n)/mi, `$1\n> Archives : ${rel}\n`);
+  }
+  nextLive = nextLive.replace(/^Last Updated:[^\n]*$/mi, `Last Updated: ${new Date().toISOString().slice(0, 10)}`);
+
+  // 2. merge into the archive by heading path, so repeated runs do not stack
+  //    duplicate sections on top of each other.
+  const archPath = path.join(memDir, "archive", "kanban.md");
+  let archMd = fs.existsSync(archPath)
+    ? fs.readFileSync(archPath, "utf8")
+    : `# Kanban — archive\n\nLast Updated: ${new Date().toISOString().slice(0, 10)}\n\n> Fichier vivant : memory/kanban.md\n>\n> Les agents lisent **uniquement** le fichier vivant. Cette archive s'ouvre pour une\n> seule raison : une investigation historique explicite.\n`;
+  const archBlocks = kanbanBlocks(archMd);
+  const archByKey = new Map();
+  for (const b of archBlocks) if (b.kind === "table") archByKey.set(pathKey(b.path) + SEP2 + b.header, b);
+
+  const tail = [];
+  for (const { block, rows } of movedByTable) {
+    const key = pathKey(block.path) + SEP2 + block.header;
+    const target = archByKey.get(key);
+    if (target) { target.rows.push(...rows); continue; }
+    // new section in the archive: replay the heading path, then the table
+    tail.push("");
+    for (const h of block.path) if (!archMd.includes(h.text)) tail.push(h.text);
+    tail.push(block.header);
+    if (block.sep) tail.push(block.sep);
+    tail.push(...rows);
+  }
+  let nextArch = renderBlocks(archBlocks).replace(/\s*$/, "\n");
+  if (tail.length) nextArch += tail.join("\n") + "\n";
+  nextArch = nextArch.replace(/^Last Updated:[^\n]*$/mi, `Last Updated: ${new Date().toISOString().slice(0, 10)}`);
+
+  fs.mkdirSync(path.dirname(archPath), { recursive: true });
+  fs.writeFileSync(archPath, nextArch);
+  fs.writeFileSync(live, nextLive.replace(/\s*$/, "\n"));
+
+  const afterBytes = Buffer.byteLength(nextLive, "utf8");
+  console.log(`\n${c.green("✓")} ${moving.length} ticket(s) déplacé(s) vers ${c.cyan(rel)}.`);
+  console.log(`  kanban.md : ${humanBytes(beforeBytes)} → ${humanBytes(afterBytes)} ${c.dim("(-" + humanBytes(beforeBytes - afterBytes) + ", ≈ -" + Math.round((beforeBytes - afterBytes) / 4).toLocaleString("fr-FR") + " tokens par lecture)")}`);
+  console.log(`  ${c.dim("Rien n'est supprimé : tout est relisible dans l'archive.")}\n`);
 }
 
 // ── clean : borne ce que le runtime laisse sur disque ───────────────────────
@@ -4076,6 +4853,8 @@ ${c.bold("Usage")}
 ${c.bold("Commands")}
   init            Installe agents, skills et mémoire dans le projet courant
   update          Met à jour le framework (agents/skills/commands) en préservant memory/ et CLAUDE.md
+  doctor          Vérifie qu'une installation est réellement opérationnelle (lecture seule)
+  archive         Sort du kanban les tickets terminés vers memory/archive/ (simulation par défaut)
   status          Affiche l'état du projet (terminal) ; --html pour un tableau de bord navigateur
   memory-diff     Liste ce qui a changé dans memory/ (par section) ; --html / --clip pour la relecture humaine
   lint            Vérifie la norme de rédaction (memory/writing-rules.md) ; --strict bloque aussi sur les avertissements
@@ -4112,8 +4891,18 @@ ${c.bold("Modèles LLM par agent")}
 
 ${c.bold("update")}
   Réécrit .claude/agents, .claude/skills et .claude/commands en dernière version,
-  ajoute les nouveaux fichiers memory/, et préserve memory/*.md et CLAUDE.md existants.
-  La config (trigramme, intégrations, langue) est relue depuis memory/config.md.
+  ajoute les nouveaux fichiers memory/, et préserve les données projet de memory/*.md.
+  Le bloc de règles ai-led de CLAUDE.md est réécrit ; le reste du fichier reste à toi.
+  La config (trigramme, intégrations, langue) est relue depuis memory/config.md — une
+  ligne d'intégration absente arrête la mise à jour au lieu de désactiver un agent en
+  silence (${c.dim("--force")} passe outre).
+  ${c.dim("--refresh-rules  Réaligne aussi le *corps* des sections sur le gabarit. Sans ce flag,")}
+  ${c.dim("                 la fusion n'ajoute que les sections manquantes : une règle réécrite")}
+  ${c.dim("                 dans une section existante n'atteint jamais le projet.")}
+  ${c.dim("                 Par défaut, ne touche que les fichiers de règles pures :")}
+  ${c.dim("                 process.md, writing-rules.md, observations.md.")}
+  ${c.dim("                 --refresh-rules=config.md  pour en viser un autre, en connaissance")}
+  ${c.dim("                 de cause : config.md et glossary.md portent du contenu projet.")}
   ${c.dim("Astuce : npx @s2bp/ai-led-framework@latest update  pour contourner le cache npx.")}
 
 ${c.bold("Rédaction (norme ste)")}
@@ -4149,6 +4938,25 @@ ${c.bold("Options de status")}
   des PNG sur disque référencés en relatif : les inliner ferait grossir le rapport de
   ~300 Ko par prise de vue. --snapshot fait l'inverse à la demande, pour un fichier unique
   qui se partage tel quel.
+
+${c.bold("doctor")}
+  Ne répare rien : rend visibles les dérives qu'une mise à jour laisse en silence.
+  Contrôle la version installée, ce que le parser lit vraiment dans memory/config.md,
+  la présence du contrat framework dans CLAUDE.md, les statuts de kanban illisibles,
+  les empreintes mémoire manquantes, les règles en retard sur le gabarit, le volume de
+  memory/, l'archivage en retard, les fichiers framework obsolètes, le câblage du hook.
+  ${c.dim("--quiet  N'affiche que les problèmes et les avertissements.")}
+  Code de sortie 1 s'il reste un problème : utilisable en CI.
+
+${c.bold("Options d'archive")}
+  --apply             Écrit réellement (sans ce flag : simulation, rien n'est touché)
+  --status=A,B        Statuts à déplacer (défaut : DONE ; ex. DONE,SUPERSEDED)
+  --keep=N            Garde les N tickets les plus récents dans le fichier vivant
+  --older-than=Nd     Ne déplace que les tickets créés il y a plus de N jours
+
+  Les tickets partent dans memory/archive/kanban.md, regroupés sous la section d'où ils
+  viennent. Rien n'est supprimé : le principe de process.md § Rotation reste entier —
+  « rien ne disparaît, tout se déplace ».
 
 ${c.bold("Options de clean")}
   --screens           Ne purge que les captures : garde la dernière planche par ticket
@@ -4198,6 +5006,12 @@ ${c.dim("Sans flag et en terminal interactif, init pose les questions de configu
       break;
     case "lint":
       lint();
+      break;
+    case "doctor":
+      doctor();
+      break;
+    case "archive":
+      archive();
       break;
     case "clean":
       clean();

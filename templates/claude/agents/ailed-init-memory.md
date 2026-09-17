@@ -30,9 +30,16 @@ model: {{MODEL}}
 
 ## Quality gates
 - Aucune affirmation non sourcée présentée comme certaine.
-- Les inconnues sont listées et converties en tickets `TO_CHECK`.
+- Les inconnues sont listées dans `memory/observations.md`. Seules celles qui **bloquent la
+  reconstruction de la mémoire** deviennent des tickets `TO_CHECK` (préfixe `CK-`) : une
+  question sans laquelle une section reste vide ou fausse. Sur un projet existant un peu gros,
+  tout convertir en tickets noie le kanban dès l'amorçage.
+- Plafond : **10 tickets `CK-` au maximum**. Au-delà, les inconnues restent en observations et
+  l'agent **propose** une liste priorisée à l'humain.
 
 ## Artefacts mis à jour
 Tous les fichiers `memory/*`.
+
+{{FINDINGS_RULE}}
 
 {{WRITING_RULES}}

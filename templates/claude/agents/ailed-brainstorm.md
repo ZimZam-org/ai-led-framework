@@ -52,4 +52,6 @@ par les agents suivants.
 ## Artefacts mis à jour
 `memory/context.md`, `memory/glossary.md`, la SPEC.
 
+{{FINDINGS_RULE}}
+
 {{WRITING_RULES}}
