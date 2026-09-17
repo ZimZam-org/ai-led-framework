@@ -16,6 +16,19 @@ d'agents restent légères. Maintenu par `@ailed-pm` / `@ailed-planner` / `@aile
 Colonne **EPIC** : EPIC de rattachement (`memory/epics.md`). Colonne **Solution(s)** : `ID court`
 des cibles impactées (registre `memory/architecture.md`).
 
+**Poids d'une cellule : {{MAX_CELL_BYTES}} octets au maximum.** Une cellule plus grosse est une
+spécification : son détail — analyse, inventaire, protocole de test, historique — vit dans
+`memory/specs/` et la cellule y renvoie. **Ce fichier est un tableau, pas un journal** : un récit
+d'EPIC ou un rapport de revue va dans `memory/specs/`, l'historique d'un livré dans
+`memory/archive/kanban.md`.
+
+Une mise à jour se fait **en place** : on corrige la cellule, on n'ajoute pas un commentaire daté
+de plus sous le tableau. Sans ces règles, un kanban de 85 tickets atteint 300 Ko. Un agent paie
+alors ~79 000 tokens par lecture.
+
+Un constat **non demandé** (dette, bug mineur, idée) ne rentre pas ici : il va dans
+`memory/observations.md` (cf. `memory/process.md` § Constats non demandés).
+
 | ID | Date création | Status | EPIC | Titre | Description | Solution(s) | Détail technique | Maquette |
 | -- | ------------- | ------ | ---- | ----- | ----------- | ----------- | ---------------- | -------- |
 

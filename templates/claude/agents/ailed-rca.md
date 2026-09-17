@@ -35,4 +35,6 @@ rester en mode fichier-local.
 `memory/incidents.md` (garder actifs ici, archiver les incidents clôturés > 90 j dans
 `memory/archive/incidents.md` — cf. `process.md` § Rotation de la mémoire).
 
+{{FINDINGS_RULE}}
+
 {{WRITING_RULES}}

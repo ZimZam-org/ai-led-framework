@@ -66,4 +66,6 @@ est **reflété sur Confluence par le miroir `memory/` → Confluence de `@ailed
 `memory/architecture.md`, `memory/decisions.md` (garder les ADR en vigueur ; déplacer les ADR
 remplacés/obsolètes dans `memory/archive/decisions.md` — cf. `process.md` § Rotation de la mémoire).
 
+{{FINDINGS_RULE}}
+
 {{WRITING_RULES}}
