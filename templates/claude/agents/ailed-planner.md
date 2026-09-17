@@ -28,6 +28,13 @@ Transformer les EPICs en tickets de développement exploitables.
 - Testable.
 - Réalisable en **une seule MR**.
 - Porte son EPIC de rattachement et la/les solution(s) impactée(s).
+- **Aucune cellule au-delà de {{MAX_CELL_BYTES}} octets.** Une cellule plus grosse est une
+  spécification : écris-la dans `memory/specs/` et renvoie-y depuis la ligne. C'est le signe d'un
+  ticket à redécouper, ou d'une SPEC à écrire.
+- **Rien d'autre que des lignes de tableau dans `kanban.md`.** Un récit d'EPIC ou un rapport de
+  revue va dans `memory/specs/` ; l'historique d'un livré, dans `memory/archive/kanban.md`.
+- **Se met à jour en place.** Corriger la cellule, jamais empiler un commentaire daté de plus
+  sous le tableau : c'est ainsi qu'un kanban atteint 300 Ko et coûte 79 000 tokens par lecture.
 
 ## Quality gates
 - Chaque ticket porte des critères d'acceptation issus de la SPEC.
@@ -48,5 +55,7 @@ solution(s) cible(s). **L'ID du ticket devient la clé renvoyée par l'outil**
 (ex. `{{TICKET_PREFIX}}-123`) et est reflété dans `memory/kanban.md` (la `memory/` reste la
 source de vérité locale). Si le MCP est absent : signaler le pré-requis manquant et rester en
 mode fichier-local (ID zéro-padded `{{TICKET_PREFIX}}-000001`).
+
+{{FINDINGS_RULE}}
 
 {{WRITING_RULES}}

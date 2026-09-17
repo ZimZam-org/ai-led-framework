@@ -83,6 +83,92 @@ jobs:
           # and the entries live in a single AI-Led block, not one header per version
           test "$(grep -c '^# AI-Led' .gitignore)" = "1"
 
+      - name: Verify doctor reports what update used to degrade in silence
+        run: |
+          cd /tmp/ai-led-smoke
+          # a healthy install must be fully green, and usable as a CI gate
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" doctor --quiet
+          # the contract is what makes memory/ authoritative outside an explicit agent call
+          grep -q "ai-led:begin" CLAUDE.md
+          test "$(grep -c 'ai-led:begin' CLAUDE.md)" = "1"
+          grep -q "Version du framework installée" memory/config.md
+          # a deleted integration row used to install its agent disabled, without a word
+          node -e "const fs=require('fs'),f='memory/config.md';
+            fs.writeFileSync(f, fs.readFileSync(f,'utf8').replace(/^\| SEO \/ ASO.*\n/m, ''));"
+          ! node "$GITHUB_WORKSPACE/bin/ai-led.js" update -y
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" update -y --force
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" doctor | grep -q "SEO / ASO"
+          # --refresh-rules restores the template body of the rule files
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" update -y --refresh-rules=config.md --force
+          grep -q "^| SEO / ASO" memory/config.md
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" doctor --quiet
+
+      - name: Verify the kanban volume checks measure cells and prose, not rows
+        run: |
+          mkdir -p /tmp/ai-led-vol && cd /tmp/ai-led-vol
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" init --trigram=VOL -y
+          # a normal ticket carrying description + scope + acceptance criteria is fine, even
+          # though the whole row is well past a kilobyte: the cap is per cell, not per row
+          OK=$(node -e "const c=(n)=>'x'.repeat(n);console.log('| VOL-000001 | 2026-01-01 | \`TODO\` | E1 | t | '+c(800)+' | s | '+c(800)+' | '+c(800)+' |')")
+          printf '%s\n' "$OK" >> memory/kanban.md
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" doctor | grep -v "cellule(s) dépassent"
+          # one cell holding an essay is not
+          BAD=$(node -e "console.log('| VOL-000002 | 2026-01-02 | \`TODO\` | E1 | t | '+'y'.repeat(2000)+' | s | d | m |')")
+          printf '%s\n' "$BAD" >> memory/kanban.md
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" doctor | grep -q "VOL-000002"
+          # and a kanban that is mostly narrative is reported for what it is
+          node -e "const fs=require('fs');fs.appendFileSync('memory/kanban.md','\n'+'Un récit qui ne tient pas dans un tableau.\n'.repeat(1200));"
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" doctor | grep -q "n'est pas une ligne de ticket"
+
+      - name: Verify a bold status is still a status, everywhere
+        run: |
+          mkdir -p /tmp/ai-led-bold && cd /tmp/ai-led-bold
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" init --trigram=BLD -y
+          printf '| BLD-000001 | 2026-01-01 | `TODO` | E1 | a | d | s |\n' >> memory/kanban.md
+          printf '| BLD-000002 | 2026-01-02 | **TO_TEST** | E1 | b | d | s |\n' >> memory/kanban.md
+          # the emphasised row must be counted, not silently dropped from the totals
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" status | grep -q "TO_TEST 1"
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" doctor | grep -q "statuts sont canoniques"
+          # and it must reach the ticket journal through the hook
+          echo "{\"cwd\":\"$PWD\",\"tool_name\":\"Edit\"}" | node .claude/hooks/ailed-runtime-hook.js post
+          grep -q '"BLD-000002": "TO_TEST"' .ailed/kanban-state.json
+
+      - name: Verify archive moves every ticket and loses none
+        run: |
+          cd /tmp/ai-led-bold
+          printf '| BLD-000003 | 2026-01-03 | `DONE` | E1 | c | d | s |\n' >> memory/kanban.md
+          printf '| BLD-000004 | 2026-01-04 | `DONE` | E1 | e | d | s |\n' >> memory/kanban.md
+          # dry run by default: the live file must not move
+          BEFORE=$(wc -c < memory/kanban.md)
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" archive
+          test "$BEFORE" = "$(wc -c < memory/kanban.md)"
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" archive --apply
+          test -s memory/archive/kanban.md
+          grep -q "BLD-000003" memory/archive/kanban.md
+          grep -q "BLD-000004" memory/archive/kanban.md
+          ! grep -q "BLD-000003" memory/kanban.md
+          # live tickets stay put, and nothing is lost: status still sees all four
+          grep -q "BLD-000001" memory/kanban.md
+          grep -q "BLD-000002" memory/kanban.md
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" status | grep -q "DONE 2"
+          grep -q "Archives : memory/archive/kanban.md" memory/kanban.md
+          # --keep protects the most recent ones
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" archive --status=TO_TEST --keep=1 --apply
+          grep -q "BLD-000002" memory/kanban.md
+          # every EPIC section repeats the same table header, so a row must not be keyed
+          # by "header + index": two candidates at the same index in two sections would
+          # then share a key, and --keep would move both when it picked only one.
+          mkdir -p /tmp/ai-led-col && cd /tmp/ai-led-col
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" init --trigram=COL -y
+          H='| ID | Date création | Status | EPIC | Titre | Description | Solution(s) | Détail technique | Maquette |'
+          S='| -- | ------------- | ------ | ---- | ----- | ----------- | ----------- | ---------------- | -------- |'
+          printf '\n### E-A\n%s\n%s\n| COL-000001 | 2026-01-01 | `DONE` | E-A | a | d | s | t | m |\n' "$H" "$S" >> memory/kanban.md
+          printf '\n### E-B\n%s\n%s\n| COL-000003 | 2026-01-03 | `DONE` | E-B | c | d | s | t | m |\n' "$H" "$S" >> memory/kanban.md
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" archive --keep=1 --apply
+          grep -q '^| COL-000001' memory/archive/kanban.md
+          ! grep -q '^| COL-000003' memory/archive/kanban.md
+          grep -q '^| COL-000003' memory/kanban.md
+
       - name: Verify the writing standard ships, checks and can be disabled
         run: |
           # the framework's own memory templates must pass their own standard

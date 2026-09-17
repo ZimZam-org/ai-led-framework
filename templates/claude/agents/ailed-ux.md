@@ -46,4 +46,6 @@ Skills Claude Code natifs à mobiliser quand ils sont disponibles (leviers de qu
 ## Artefacts mis à jour
 `memory/ux/*.html`.
 
+{{FINDINGS_RULE}}
+
 {{WRITING_RULES}}
