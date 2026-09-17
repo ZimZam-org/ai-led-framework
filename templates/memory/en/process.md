@@ -7,8 +7,34 @@ Describes the agent-driven workflows. Each step consumes the artefacts of the pr
 ## Principles
 
 - No development without a ticket; no ticket without a human-validated SPEC.
+- **No agent creates work outside its mission** (see § "Unrequested findings").
 - Each agent has defined inputs/outputs (see `.claude/agents/`).
 - The Step 8 quality gates must be green before closing a ticket.
+
+---
+
+## Unrequested findings
+
+A working agent sees things: debt, a minor bug, an improvement idea, a documentation gap.
+Turning them into tickets looks rigorous. In practice the backlog becomes unreadable.
+The decision to do the work belongs to a human, and it ends up making itself.
+
+**Rule**: a finding outside your mission does not become a ticket. It goes to
+`memory/observations.md`, with its severity and its source.
+
+| Finding | Destination |
+| ------- | ----------- |
+| Explicitly requested by a human | `memory/kanban.md` |
+| `CRITICAL` or `HIGH` severity | `memory/kanban.md` **and** `memory/observations.md` |
+| Everything else | `memory/observations.md` **only** |
+
+This is exactly the pattern already applied to market watch: `@ailed-scout` collects widely
+into `market-watch.md`, and **only a human promotes** a topic into the Feature workflow. The
+technical side now follows the same discipline. An agent **proposes** a promotion; it does
+not decide it.
+
+An `open` observation older than **90 days** turns `stale`. Nobody judged it important
+enough in three months, which is an answer.
 
 ---
 
@@ -28,14 +54,28 @@ The archive opens for one reason only: an explicit historical investigation.
 | `incidents.md` | open incidents or closed < 90 days ago | the rest |
 | `decisions.md` | ADRs still in force | superseded / obsolete ADRs |
 | `market-watch.md` | observations < 6 months old and not dropped | the rest |
+| `observations.md` | `open` and `promoted` findings | `dropped` and `stale` |
 
 **Triggers** (so archiving actually happens, never left to chance):
 
 - **Incrementally**: the maintaining agent archives as soon as it edits the file and an entry
   flips from "active" to "archivable".
-- **Size threshold**: once a file exceeds **40 active entries**, the agent touching it archives
-  the overflow **before** writing. One entry = one table row or one block. The threshold makes
-  cleanup deterministic, instead of leaving it to vigilance.
+- **Volume threshold**: once a file exceeds **40 active entries** *or* its byte budget, the
+  agent touching it archives the overflow **before** writing. Counting entries alone is not
+  enough: 85 tickets whose every row is an essay weigh 300 kilobytes, below the 40-entry
+  mark. Budgets: `kanban.md` 120 kilobytes · `decisions.md` 80 · `epics.md` 60 · others 60.
+  `npx @s2bp/ai-led-framework doctor` checks them.
+- **Weight of a cell**: a `kanban.md` cell holds **{{MAX_CELL_BYTES}} bytes at most**. A row
+  legitimately carries a description, a scope and its acceptance criteria; what goes wrong is
+  **one cell turning into an essay**. The detail (analysis, inventory, test protocol) lives in
+  `memory/specs/` and the cell links to it.
+- **Prose share**: `kanban.md` is a table, not a journal. EPIC narratives, review reports and
+  dated comments belong in `memory/specs/` or in the archive. Past **40 %** of the file outside
+  table rows, `doctor` says so. An update is made **in place**: fix the cell, do not pile one
+  more dated comment under the table.
+- **Dedicated command**: `npx @s2bp/ai-led-framework archive` moves finished tickets to the
+  archive (dry-run by default, `--apply` to write). Archiving no longer depends on an agent's
+  vigilance alone.
 - **Kanban at release**: `@ailed-release` **archives the shipped `DONE` tickets to
   `memory/archive/kanban.md`**, but **only once it has verified that `features.md` reflects the
   delivered functionality**. Otherwise the ticket stays inline: the framework never loses an

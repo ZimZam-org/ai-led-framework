@@ -48,4 +48,6 @@ par les *Coordonnées des outils* de `memory/config.md`** (défaut = trigramme `
 Les tickets atomiques restent du ressort de `@ailed-planner`.
 Si le MCP est absent : signaler le pré-requis manquant et rester en mode fichier-local.
 
+{{FINDINGS_RULE}}
+
 {{WRITING_RULES}}
