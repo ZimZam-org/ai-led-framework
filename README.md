@@ -23,11 +23,25 @@ npx @s2bp/ai-led-framework init
 | `.claude/skills/`   | 12 `ailed-*` skills (callable via `/ailed-<name>`)             |
 | `.claude/commands/` | `/ailed-bootstrap` slash-command (framework bootstrap)         |
 | `.claude/hooks/`    | `ailed-runtime-hook.js` + `PreToolUse`/`PostToolUse` hooks in `settings.json`, feeding the live progress sidebar (`watch`/`dashboard`) and the **ticket transition journal** (`.ailed/journal.jsonl`) |
-| `memory/`           | 16 project memory files (including `config.md`, `process.md`, `conventions.md`, `writing-rules.md` and `market-watch.md`), in the chosen language |
-| `CLAUDE.md`         | framework pointer (created only if absent)                     |
+| `memory/`           | 17 project memory files (including `config.md`, `process.md`, `conventions.md`, `writing-rules.md`, `market-watch.md` and `observations.md`), in the chosen language |
+| `CLAUDE.md`         | the **framework contract**, in a delimited `ai-led` block — written even when the file already exists |
 
 Existing files are **never overwritten** unless you pass `--force` (the `settings.json` hooks are
 merged in non-destructively, and `.ailed/` plus the generated reports are added to `.gitignore`).
+
+`CLAUDE.md` is the one deliberate exception. The framework writes a **delimited block** into it:
+
+```markdown
+<!-- ai-led:begin — bloc géré par le framework, ne pas éditer à la main -->
+## AI-Led framework
+…
+<!-- ai-led:end -->
+```
+
+Only that block is rewritten on each `update`; the rest of the file stays yours. Without it,
+nothing makes `memory/` the source of truth in an ordinary session, and the framework only applies
+to the agents you invoke by hand. If your `CLAUDE.md` is just a pointer (`@AGENTS.md`), the block
+is written **into its target** — where it will actually be read.
 
 ## Configuration (`memory/config.md`)
 
@@ -235,15 +249,39 @@ npx @s2bp/ai-led-framework@latest update
 | `.claude/agents/`, `.claude/skills/`, `.claude/commands/` | **always rewritten** to the new version     |
 | `.claude/hooks/ailed-runtime-hook.js`           | **always rewritten**; the framework's `settings.json` entries are **re-wired** (an older matcher is upgraded in place, with no duplicate) and **your own hooks, permissions and env vars are preserved** |
 | `.gitignore`                                    | missing entries are appended **inside the existing AI-Led block** (no stacked headers) |
-| `memory/config.md`, `memory/process.md` (scaffold files) | **additive section merge**: sections the template gained are appended; your existing sections are **never** touched |
+| `memory/config.md`, `memory/process.md` (scaffold files) | **additive section merge**: sections the template gained are appended; your existing sections are **never** touched — except under `--refresh-rules` (see below) |
 | `memory/*.md` (project data) **never edited**   | **cleanly rewritten** to the new version (detected via `.ailed/manifest.json`) |
 | `memory/*.md` (project data) **edited**         | **preserved** as-is                          |
 | New `memory/` files                             | **added**                                    |
-| `CLAUDE.md`                                      | **left untouched**                          |
+| `CLAUDE.md`                                      | only the **`ai-led` block** is rewritten; the rest of the file is preserved |
 
 The config (trigram, integrations, language) is **re-read from `memory/config.md`**, so the
 `{{TICKET_PREFIX}}`, `{{MONITORING}}`, … placeholders are re-applied correctly — you don't pass the
 `init` flags again. Your own non-`ailed-` agents/skills/commands are left alone.
+
+> **An unreadable config now stops the update.** These values are **baked into each agent's text**
+> as it is written. A row deleted from the *Integrations* table therefore installed its agent on
+> the disabled word in silence — and `status` could not even report it as disabled, since the row
+> was gone. An annotated cell (`**none** — everything stays in .md files`) was worse: taken whole
+> as the tool name, it matched neither the tool nor the disabled word, so every agent's
+> "if ≠ `none`" guard read as *integration active*. Values are now stripped of emphasis and
+> trailing commentary, and a **missing row aborts the `update`** naming which one (`--force`
+> overrides).
+
+### `--refresh-rules` — letting reworded rules land
+
+The section merge is **additive**: it only appends *missing* sections. When the headings already
+match on both sides, a rule whose **body** the framework rewrote can never reach your project.
+Over several versions, `process.md` ends up describing rules the framework no longer applies.
+
+```bash
+npx @s2bp/ai-led-framework@latest update --refresh-rules
+```
+
+With no value, the flag only touches the **pure rule** files: `process.md`, `writing-rules.md`,
+`observations.md`. `config.md` and `glossary.md` are excluded — they hold your values and your
+terms, and restoring the template over them would destroy real content. To target one anyway,
+deliberately: `--refresh-rules=config.md`.
 
 > **How does `update` know what you edited?** `init`/`update` record a hash of every `memory/` file
 > they write into `.ailed/manifest.json` (gitignored, local). On the next `update`, a file whose hash
@@ -268,8 +306,10 @@ The config (trigram, integrations, language) is **re-read from `memory/config.md
 > the newest published version instead of re-running the one already cached.
 >
 > **Caveat:** an agent or skill that was **removed or renamed** in a newer version is *not*
-> auto-deleted (it would risk deleting your own files). If you want a pristine framework tree, remove
-> only the framework folders first, then re-run update:
+> auto-deleted (it would risk deleting your own files — plenty of projects keep their own skills in
+> `.claude/skills/`). `doctor` **lists** them, telling the ones the framework installed apart from
+> yours. If you want a pristine framework tree, remove only the framework folders first, then
+> re-run update:
 >
 > ```bash
 > rm -rf .claude/agents .claude/skills .claude/commands
@@ -277,6 +317,105 @@ The config (trigram, integrations, language) is **re-read from `memory/config.md
 > ```
 >
 > `memory/` and `CLAUDE.md` stay safe — they live outside the deleted folders.
+
+## Checking that an install is healthy (`doctor`)
+
+```bash
+npx @s2bp/ai-led-framework doctor
+```
+
+`update` rewrites files without ever saying whether the result **works**. `doctor` answers that
+question. It is **read-only**: it repairs nothing, it names the command that does.
+
+| Check       | What it catches |
+| ----------- | --------------- |
+| `version`   | the gap between the version stamped in `memory/config.md` and the CLI's own |
+| `config`    | what the parser **actually reads** from the *Integrations* table, row by row: a missing row, an annotated cell |
+| `contract`  | a missing `ai-led` block in `CLAUDE.md` (or in its target) |
+| `kanban`    | statuses no parser can read — the ticket is then invisible everywhere |
+| `memory`    | files with no baseline, which `update` will no longer refresh |
+| `rules`     | rule files trailing the template |
+| `volume`    | the weight of `memory/` in tokens, files over budget, oversized kanban rows |
+| `archive`   | finished tickets still inline |
+| `orphans`   | agents/skills installed by an older version and removed since |
+| `hook`      | the runtime hook missing or not wired into `settings.json` |
+| `leftovers` | `memory/.ailed/`, generated reports still tracked by git |
+
+Exit code **1** while a problem remains, so it drops straight into CI. `--quiet` prints only
+problems and warnings.
+
+## Cleaning up the backlog (`archive`)
+
+```bash
+npx @s2bp/ai-led-framework archive            # dry run: says what it would do
+npx @s2bp/ai-led-framework archive --apply    # actually moves the rows
+```
+
+The rotation rule has lived in `memory/process.md` from the start. What was missing is **anything
+that runs it**: it depended on `@ailed-release`, and on a threshold counted in *active entries*
+(40) that a file of essay-sized rows never crosses. An 85-ticket kanban can weigh **300 KB**, i.e.
+~79,000 tokens on every agent read, without a single guard firing.
+
+| Option            | Effect |
+| ----------------- | ------ |
+| *(none)*          | dry run: how many tickets, bytes and tokens would be removed |
+| `--apply`         | actually writes |
+| `--status=A,B`    | statuses to move (default `DONE`; e.g. `DONE,SUPERSEDED`) |
+| `--keep=N`        | keeps the N most recent tickets in the live file |
+| `--older-than=Nd` | only moves tickets created more than N days ago |
+
+Rows move to `memory/archive/kanban.md`, **grouped under the very section they came from**.
+Nothing is deleted: the `process.md` principle holds — *nothing disappears, everything moves*. If
+`features.md` is older than `kanban.md`, the command says so before acting: a `DONE` ticket whose
+functionality was never captured elsewhere should not leave the live file.
+
+> **Not a `reset`.** The command deletes nothing and never touches live tickets. A backlog that
+> swells almost never needs emptying: it needs what shipped to leave.
+
+## Unrequested findings (`memory/observations.md`)
+
+A working agent sees things: debt, a minor bug, an improvement idea, a documentation gap. Turning
+them into tickets looks rigorous — in practice the backlog becomes unreadable, and the decision to
+do the work, which belongs to a human, ends up making itself.
+
+**A transverse rule, injected into every acting agent**: a finding outside your mission does not
+become a ticket.
+
+| Finding                                | Destination |
+| -------------------------------------- | ----------- |
+| Explicitly requested by a human        | `memory/kanban.md` |
+| `CRITICAL` / `HIGH` severity           | `memory/kanban.md` **and** `memory/observations.md` |
+| Everything else                        | `memory/observations.md` **only** |
+
+This is exactly the pattern already applied to market watch: `@ailed-scout` collects widely into
+`market-watch.md`, and **only a human promotes** a topic into the Feature workflow. The technical
+side now follows the same discipline. An agent **proposes** a promotion; it does not decide it. An
+`open` observation older than **90 days** turns `stale`.
+
+What changed in the agents:
+
+- `@ailed-knowledge-audit` records gaps instead of ticketing every score below 70 %;
+- `@ailed-check-log` gained the severity gate `@ailed-check-secu` already had;
+- `@ailed-init-memory` caps itself at **10 `CK-` tickets** and proposes the rest.
+
+### What actually makes a kanban grow
+
+Two measures, calibrated on a real 85-ticket project whose kanban weighed 300 KB:
+
+- **A cell past 1,500 bytes is a specification**, not a ticket. The threshold is measured per
+  *cell*, not per row: a row legitimately carries a description, a scope and its acceptance
+  criteria — the observed median row is 1.8 KB, and capping the row would push the acceptance
+  criteria out of the ticket, which is worse than the disease. The median *cell* is 390 bytes and
+  the 90th percentile 1.3 KB, so past 1,500 it is an essay. It belongs in `memory/specs/`, with
+  the cell linking to it.
+- **The prose share.** On that project, **61 % of the file was not a table row**: EPIC narratives,
+  review reports, dated comments piled under the tables. That was the dominant cost, and no guard
+  could see it. `doctor` reports it past 40 %. An EPIC narrative belongs in `memory/specs/`, the
+  history of what shipped in `memory/archive/kanban.md`.
+
+An update is made **in place**: fix the cell, do not pile one more dated comment. `doctor` also
+flags `memory/` files over their byte budget — counting entries alone never measured what actually
+costs.
 
 ## The agents (prefix `@ailed-`)
 
@@ -297,12 +436,12 @@ The config (trigram, integrations, language) is **re-read from `memory/config.md
 | `@ailed-test`            | E2E tests (nominal, edge cases, regressions)               |
 | `@ailed-communication`   | Changelog, features, release notes                         |
 | `@ailed-release`         | Quality gates → tag → close-out                            |
-| `@ailed-check-log`       | Logs/errors monitoring (24 h)                              |
+| `@ailed-check-log`       | Logs/errors monitoring (24 h) · tickets `CRITICAL`/`HIGH` only |
 | `@ailed-rca`             | Root Cause Analysis of an incident                         |
 | `@ailed-check-secu`      | Vulnerability scan (deps, code, config)                    |
 | `@ailed-security-review` | Security review of an MR (OWASP)                           |
 | `@ailed-init-memory`     | Rebuilds the memory of an existing project                 |
-| `@ailed-knowledge-audit` | Measures memory completeness                               |
+| `@ailed-knowledge-audit` | Measures memory completeness → `observations.md`           |
 
 ## The skills (prefix `/ailed-`)
 
@@ -572,6 +711,13 @@ routes automatically based on context:
 
 - **Existing project** → `@ailed-init-memory` (rebuilds the memory) then `@ailed-knowledge-audit`.
 - **New project** → `@ailed-brainstorm` to frame the first SPEC.
+
+Then, at regular intervals:
+
+```bash
+npx @s2bp/ai-led-framework doctor    # is the install actually operational?
+npx @s2bp/ai-led-framework archive   # has what shipped left the kanban?
+```
 
 ## Concrete examples: Jira & Confluence on an existing project
 
