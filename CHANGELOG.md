@@ -7,6 +7,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0]
+
+### Added
+- **`ai-led doctor`** — a read-only health check for an installation. `update` rewrote files
+  without ever saying whether the result *worked*; a degraded config value, a contract missing
+  from `CLAUDE.md` or a non-canonical status all failed silently. `doctor` reports the installed
+  version, what the parser actually reads from `memory/config.md`, the presence of the framework
+  contract, unreadable kanban statuses, missing memory baselines, rules trailing the template,
+  the volume of `memory/`, overdue archiving, obsolete framework files and the hook wiring. It
+  repairs nothing and names the command that does. Exit code 1 on a problem, so it runs in CI.
+- **`ai-led archive`** — moves finished tickets out of the kanban into `memory/archive/`. The
+  rotation rule had lived in `process.md` from the start, but nothing ran it: it depended on
+  `@ailed-release`, and on a threshold counted in *active entries* (40) that a file of essay-sized
+  rows never crosses. Dry-run by default; `--apply`, `--status`, `--keep` and `--older-than` to
+  scope it. Nothing is deleted — rows move, under the very section they came from.
+- **`memory/observations.md`** — the capture channel for unrequested findings (debt, a minor bug,
+  an improvement idea, a documentation gap). It is the technical counterpart of `market-watch.md`:
+  capture widely, commit narrowly. An `open` finding older than 90 days turns `stale`.
+- **A framework contract, injected into `CLAUDE.md`.** A delimited `ai-led` block carrying the
+  non-negotiable rules, written on every `init` and `update` — including when `CLAUDE.md` already
+  exists, which previously left a project with no framework rule in its instruction file at all.
+  A `CLAUDE.md` that is only a pointer (`@AGENTS.md`) is followed to its target.
+- **A version marker in `memory/config.md`.** The manifest lives under the gitignored `.ailed/`,
+  so a clone could not tell which version it ran on.
+- **`update --refresh-rules`** — realigns the *body* of framework-owned sections with the
+  template. The additive merge only ever inserted missing sections, so a rule reworded inside an
+  existing section could never reach a project already installed.
+
+### Fixed
+- **A status in bold was invisible everywhere.** `| MYW-000053 | … | **TO_TEST** |` did not
+  normalise, so the row was absent from `status`, from `watch` and from the ticket journal — and
+  the progress bar counted a smaller total. Emphasis markers are now stripped, in the CLI and in
+  the runtime hook.
+- **An annotated integration cell disabled an agent, or falsely enabled one.** A cell reading
+  `**aucun** — tout reste en fichiers .md` was taken whole as the tool name: it matched neither
+  the tool nor the disabled word, so each agent's "if ≠ <disabled>" guard read as *active*. A
+  missing row degraded to the disabled word with no warning at all, installing its agent switched
+  off. Values are now cleaned of emphasis and trailing commentary, and a missing row stops the
+  update instead (`--force` overrides).
+- **A fresh clone froze every memory file.** The baseline manifest is gitignored, so a clone had
+  none and every file looked locally edited — preserved for ever, including the untouched ones. A
+  file still identical to the template is now recognised as pristine whatever the manifest says.
+- **Stray runtime state under `memory/`.** A past `projectDir` resolution wrote `runtime.json`
+  inside `memory/`, and not only at its root — `memory/specs/.ailed/` exists in the wild too.
+  `doctor` now hunts for them rather than checking the one place they were first seen.
+- **`update` reset `Last Updated:` on files nobody had touched.** The rendered date always
+  differed from the stored one, so every pristine file was rewritten on every run — churn that
+  `memory-diff` then flagged. Baselines now compare the stable body.
+
+### Changed
+- **Agents no longer turn incidental findings into tickets.** A transverse rule, injected into
+  every acting agent: a finding outside your mission goes to `memory/observations.md`; only an
+  explicit human request or a `CRITICAL`/`HIGH` severity enters the kanban. `@ailed-knowledge-audit`
+  records gaps instead of ticketing each score below 70 %, `@ailed-check-log` gained the severity
+  gate `@ailed-check-secu` already had, and `@ailed-init-memory` caps itself at 10 `CK-` tickets.
+- **The rotation threshold is measured in volume, not in entries.** 85 tickets whose rows are
+  essays weigh 300 KB without ever crossing the 40-entry mark. Per-file byte budgets are now
+  documented in `process.md` and checked by `doctor`.
+- **Two kanban measures, calibrated on a real project rather than guessed.** A cap per *cell*
+  (1,500 bytes), not per row: a row legitimately carries a description, a scope and its acceptance
+  criteria — the observed median row is 1.8 KB, and capping the row would push the acceptance
+  criteria out of the ticket. The median cell is 390 bytes and the 90th percentile 1.3 KB, so past
+  1,500 a cell is a specification and belongs in `memory/specs/`. And a **prose share** check:
+  on that project **61 % of the kanban was not a table row** — EPIC narratives, review reports and
+  dated comments piled under the tables — which was the dominant cost and which nothing measured.
+  `doctor` reports it past 40 %.
+
+## [0.18.1]
+
 ### Changed
 - **The EPIC timeline folds a whole run of delivered EPICs.** The 0.18.0 fold kept the first and
   the last node of a run of four or more delivered EPICs. Those two nodes told the reader nothing
@@ -324,7 +393,8 @@ installer, the `ailed-*` agents and skills, the persistent `memory/` model, and
 the Jira/Confluence (Atlassian MCP) integration. See the
 [git history](https://github.com/ZimZam-org/ai-led-framework/commits/main) for details.
 
-[Unreleased]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.18.1...HEAD
+[0.18.1]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.15.0...v0.16.0

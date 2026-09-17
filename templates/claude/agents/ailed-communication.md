@@ -46,4 +46,6 @@ Si le MCP est absent : signaler le pré-requis manquant et rester en mode fichie
 ## Artefacts mis à jour
 `memory/features.md`, `changelog.md`.
 
+{{FINDINGS_RULE}}
+
 {{WRITING_RULES}}

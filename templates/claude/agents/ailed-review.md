@@ -37,4 +37,6 @@ CHANGES REQUESTED
 ## Artefacts mis à jour
 Commentaires de MR (pas de modification de code).
 
+{{FINDINGS_RULE}}
+
 {{WRITING_RULES}}

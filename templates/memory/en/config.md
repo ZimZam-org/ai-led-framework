@@ -11,6 +11,10 @@ reads `{{DISABLED}}`.
 
 - Project trigram (ticket prefix): `{{TICKET_PREFIX}}`
   → dev tickets carry the names `{{TICKET_PREFIX}}-000001`, `{{TICKET_PREFIX}}-000002`, …
+- Framework version installed: `{{FRAMEWORK_VERSION}}`
+  → rewritten by `init` and `update`. The manifest lives under `.ailed/`, which git ignores:
+    without this line a clone cannot tell which version it runs on.
+    `npx @s2bp/ai-led-framework doctor` compares it to the CLI's own version.
 
 ## Output style
 

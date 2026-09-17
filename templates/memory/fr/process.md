@@ -7,8 +7,34 @@ Décrit les workflows pilotés par agents. Chaque étape consomme les artefacts 
 ## Principes
 
 - Aucun développement sans ticket ; aucun ticket sans SPEC validée par un humain.
+- **Aucun agent ne crée de tâche hors de sa mission** (cf. § « Constats non demandés »).
 - Chaque agent a des entrées/sorties définies (voir `.claude/agents/`).
 - Les quality gates de l'Étape 8 doivent être verts avant clôture d'un ticket.
+
+---
+
+## Constats non demandés
+
+Un agent qui travaille voit des choses : de la dette, un bug mineur, une idée d'évolution,
+un manque de doc. En faire des tickets paraît rigoureux. En pratique, le backlog devient
+illisible, et la décision de faire — qui appartient à un humain — se prend toute seule.
+
+**Règle** : un constat hors mission ne devient pas un ticket. Il s'écrit dans
+`memory/observations.md`, avec sa sévérité et sa source.
+
+| Constat | Destination |
+| ------- | ----------- |
+| Demandé explicitement par un humain | `memory/kanban.md` |
+| Sévérité `CRITICAL` ou `HIGH` | `memory/kanban.md` **et** `memory/observations.md` |
+| Tout le reste | `memory/observations.md` **uniquement** |
+
+C'est exactement le patron déjà appliqué à la veille : `@ailed-scout` collecte largement
+dans `market-watch.md`, et **seul un humain promeut** un sujet vers le workflow Feature. Le
+volet technique suit désormais la même discipline. L'agent **propose** une promotion ; il ne
+la décide pas.
+
+Une observation `ouvert` de plus de **90 jours** passe `périmé` : trois mois sans qu'elle
+soit jugée assez importante, c'est une réponse.
 
 ---
 
@@ -29,14 +55,28 @@ actif**. L'archive s'ouvre pour une seule raison : une investigation historique 
 | `incidents.md` | incidents ouverts ou clôturés < 90 j | le reste |
 | `decisions.md` | ADR encore en vigueur | ADR supersédés / obsolètes |
 | `market-watch.md` | observations < 6 mois et non écartées | le reste |
+| `observations.md` | constats `ouvert` et `promu` | `écarté` et `périmé` |
 
 **Déclencheurs** (pour que l'archivage ait réellement lieu, jamais « au feeling ») :
 
 - **Au fil de l'eau** : l'agent mainteneur archive dès qu'il édite le fichier et qu'une entrée
   bascule d'« active » à « archivable ».
-- **Seuil de taille** : dès qu'un fichier dépasse **40 entrées actives**, l'agent qui le touche
-  archive le surplus **avant** d'écrire. Une entrée = une ligne de tableau ou un bloc. Le seuil
-  rend le nettoyage déterministe, au lieu de le laisser dépendre de la vigilance.
+- **Seuil de volume** : dès qu'un fichier dépasse **40 entrées actives** *ou* son budget en
+  octets, l'agent qui le touche archive le surplus **avant** d'écrire. Le compte d'entrées seul
+  ne suffit pas : 85 tickets dont chaque ligne est une dissertation pèsent 300 Ko sans jamais
+  franchir le seuil des 40. Budgets : `kanban.md` 120 Ko · `decisions.md` 80 Ko · `epics.md`
+  60 Ko · les autres 60 Ko. `npx @s2bp/ai-led-framework doctor` les vérifie.
+- **Poids d'une cellule** : une cellule de `kanban.md` tient en **{{MAX_CELL_BYTES}} octets**.
+  Une ligne porte légitimement une description, un périmètre et des critères d'acceptation ; ce
+  qui dérape, c'est **une cellule qui devient une dissertation**. Le détail (analyse, inventaire,
+  protocole de test) vit dans `memory/specs/` et la cellule y renvoie.
+- **Part de prose** : `kanban.md` est un tableau, pas un journal. Récits d'EPIC, rapports de
+  revue et commentaires datés appartiennent à `memory/specs/` ou à l'archive. Au-delà de **40 %**
+  du fichier hors lignes de tableau, `doctor` le signale. Une mise à jour se fait **en place** :
+  on corrige la cellule, on n'empile pas un commentaire daté de plus sous le tableau.
+- **Commande dédiée** : `npx @s2bp/ai-led-framework archive` déplace les tickets terminés
+  vers l'archive (simulation par défaut, `--apply` pour écrire). L'archivage ne dépend donc
+  plus de la seule vigilance d'un agent.
 - **Kanban à la release** : `@ailed-release` **archive les tickets `DONE` embarqués vers
   `memory/archive/kanban.md`**, mais **seulement une fois vérifié que `features.md` reflète la
   fonctionnalité livrée** (sinon le ticket reste inline : on ne perd jamais une info pas encore

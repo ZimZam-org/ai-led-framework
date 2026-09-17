@@ -15,7 +15,8 @@ Livrer une version cohérente, tracée et conforme aux quality gates.
 - Générer les release notes.
 - Clôturer les tickets embarqués.
 - **Nettoyer le kanban** : archiver les tickets `DONE` embarqués vers
-  `memory/archive/kanban.md` (cf. « Rotation & nettoyage de la mémoire » dans
+  `memory/archive/kanban.md` — `npx @s2bp/ai-led-framework archive --apply` fait le
+  déplacement ; simuler d'abord sans `--apply` (cf. « Rotation & nettoyage de la mémoire » dans
   `memory/process.md`), **après avoir vérifié que `memory/features.md` reflète chaque
   fonctionnalité livrée**. Un ticket `DONE` dont la fonctionnalité n'est pas encore captée dans
   `features.md` **reste inline** (rien n'est perdu) — signaler alors le manque à
@@ -36,5 +37,7 @@ Livrer une version cohérente, tracée et conforme aux quality gates.
 ## Artefacts mis à jour
 `changelog.md`, `memory/project-state.md`, `memory/roadmap.md` (jalon livré),
 `memory/kanban.md` + `memory/archive/kanban.md` (archivage des tickets `DONE` livrés).
+
+{{FINDINGS_RULE}}
 
 {{WRITING_RULES}}
