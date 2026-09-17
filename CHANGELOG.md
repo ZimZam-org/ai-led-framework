@@ -49,6 +49,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A fresh clone froze every memory file.** The baseline manifest is gitignored, so a clone had
   none and every file looked locally edited — preserved for ever, including the untouched ones. A
   file still identical to the template is now recognised as pristine whatever the manifest says.
+- **Colour is no longer written into a pipe.** The CLI painted its output unconditionally, so
+  `ai-led status` reaching a file, a `grep` or a CI step carried escape codes: `TO_TEST 1` was
+  really `TO_TEST \x1b[1m1\x1b[0m`, and a gate as simple as
+  `ai-led status | grep -q "TO_TEST 1"` could never match — while `doctor` is meant to be used
+  exactly that way. Colour now requires a TTY, and `NO_COLOR` / `FORCE_COLOR` are honoured.
 - **Stray runtime state under `memory/`.** A past `projectDir` resolution wrote `runtime.json`
   inside `memory/`, and not only at its root — `memory/specs/.ailed/` exists in the wild too.
   `doctor` now hunts for them rather than checking the one place they were first seen.
