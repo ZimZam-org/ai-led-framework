@@ -17,12 +17,21 @@ const assumeYes = argv.includes("--yes") || argv.includes("-y");
 const cwd = process.cwd();
 
 // ── tiny logger ───────────────────────────────────────────────
+// Colour is for a human looking at a terminal. Piped into a file, a grep or a CI step it is
+// noise that breaks the reading: `TO_TEST 1` reaches the pipe as `TO_TEST \x1b[1m1\x1b[0m`,
+// so a gate as simple as `ai-led status | grep -q "TO_TEST 1"` could never match — and
+// `doctor` is meant to be usable exactly that way. Honour NO_COLOR (https://no-color.org)
+// and FORCE_COLOR too.
+const USE_COLOR = process.env.FORCE_COLOR
+  ? process.env.FORCE_COLOR !== "0"
+  : !!process.stdout.isTTY && !process.env.NO_COLOR && process.env.TERM !== "dumb";
+const paint = (code) => (s) => (USE_COLOR ? `\x1b[${code}m${s}\x1b[0m` : String(s));
 const c = {
-  dim: (s) => `\x1b[2m${s}\x1b[0m`,
-  green: (s) => `\x1b[32m${s}\x1b[0m`,
-  yellow: (s) => `\x1b[33m${s}\x1b[0m`,
-  cyan: (s) => `\x1b[36m${s}\x1b[0m`,
-  bold: (s) => `\x1b[1m${s}\x1b[0m`,
+  dim: paint(2),
+  green: paint(32),
+  yellow: paint(33),
+  cyan: paint(36),
+  bold: paint(1),
 };
 
 // ── flag parsing (--key=value or --key value) ─────────────────
