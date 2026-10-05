@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.1]
+
+### Changed
+- **Generic Confluence example in the README.** The root-page URL quoted in the Confluence
+  mirror walkthrough (`README.md`, `README.fr.md`) now uses the same placeholders as
+  `memory/config.md` (`SPACE`, `PAGE_ID`, `Page+Title`) instead of a real space and page.
+
 ## [0.19.0]
 
 ### Added
@@ -398,7 +405,9 @@ installer, the `ailed-*` agents and skills, the persistent `memory/` model, and
 the Jira/Confluence (Atlassian MCP) integration. See the
 [git history](https://github.com/ZimZam-org/ai-led-framework/commits/main) for details.
 
-[Unreleased]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.18.1...HEAD
+[Unreleased]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.19.1...HEAD
+[0.19.1]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.19.0...v0.19.1
+[0.19.0]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.18.1...v0.19.0
 [0.18.1]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/ZimZam-org/ai-led-framework/compare/v0.16.0...v0.17.0
