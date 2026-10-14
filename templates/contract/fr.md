@@ -25,6 +25,9 @@ Ce projet est piloté par le framework **AI-Led** (v{{FRAMEWORK_VERSION}}) : mé
    validation humaine des workflows (`memory/process.md`).
 7. **Tout texte produit suit `memory/writing-rules.md`** : une idée par phrase, 20 mots
    au maximum, voix active, un terme = un sens. La langue est celle des fichiers `memory/`.
+8. **Un nouveau module suit son modèle de contexte `VALIDATED`** (`memory/contexts/`) et la
+   *Cible des nouveaux modules* de `memory/conventions.md`. L'ancien code suit les
+   *Conventions en place*. Le mode projet de `memory/config.md` dit lequel des deux s'applique.
 
 ### Démarrage
 

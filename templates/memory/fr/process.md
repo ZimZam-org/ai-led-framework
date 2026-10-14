@@ -7,6 +7,7 @@ Décrit les workflows pilotés par agents. Chaque étape consomme les artefacts 
 ## Principes
 
 - Aucun développement sans ticket ; aucun ticket sans SPEC validée par un humain.
+- Aucun ticket sur un contexte sans modèle de contexte `VALIDATED` (`memory/contexts/`).
 - **Aucun agent ne crée de tâche hors de sa mission** (cf. § « Constats non demandés »).
 - Chaque agent a des entrées/sorties définies (voir `.claude/agents/`).
 - Les quality gates de l'Étape 8 doivent être verts avant clôture d'un ticket.
@@ -137,14 +138,14 @@ l'intégration **Veille** vaut `{{DISABLED}}` dans `config.md`.
 
 ## Workflow Feature
 
-`Brainstorm → UX → PM → Architect → Planner → Dev → Review → Test → Communication → Release`
+`Brainstorm → UX → PM → Architect → [validation humaine] → Planner → Dev → Review → Test → Communication → Release`
 
 ```mermaid
 flowchart LR
     BS[Brainstorm<br/>SPEC] --> UX[UX<br/>wireframes]
     UX --> PM[PM<br/>EPIC + roadmap]
-    PM --> AR[Architect<br/>ADR]
-    AR --> PL[Planner<br/>tickets {{TICKET_PREFIX}}-*]
+    PM --> AR[Architect<br/>audit · modèle de contexte · contrat · ADR]
+    AR -. validation humaine .-> PL[Planner<br/>tickets {{TICKET_PREFIX}}-*]
     PL --> DEV[Dev<br/>branche + MR]
     DEV --> RV{Review}
     RV -- CHANGES REQUESTED --> DEV
@@ -156,7 +157,12 @@ flowchart LR
 ```
 
 **Points de validation humaine** : après `Brainstorm` (SPEC), après `UX` (maquette),
-avant `Release`.
+après `Architect` (audit des conventions, cible, modèle de contexte), avant `Release`.
+
+Au point `Architect`, l'humain lit l'audit et la cible de `memory/conventions.md` et le modèle
+`memory/contexts/<contexte>.md`. Il valide les trois et passe le modèle de `PROPOSED` à
+`VALIDATED`. Sinon il renvoie le lot à `@ailed-architect` avec ses corrections. `@ailed-planner`
+attend ce statut.
 
 ---
 

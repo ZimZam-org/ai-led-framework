@@ -16,6 +16,21 @@ quand une intégration vaut `{{DISABLED}}`.
     cette ligne, un clone ne peut pas dire sur quelle version il tourne.
     `npx @s2bp/ai-led-framework doctor` compare cette valeur à celle du CLI.
 
+## Mode projet
+
+- Mode projet : `{{PROJECT_MODE}}`
+  → valeurs : `greenfield` · `brownfield`.
+
+**Lu par tous les agents avant d'agir.** `init` déduit le mode du dépôt : `brownfield` quand le
+dépôt contient des sources hors des fichiers d'ai-led, sinon `greenfield`. Un humain corrige la
+valeur ici à tout moment, sans réinstaller. `npx @s2bp/ai-led-framework doctor` bloque sur une
+valeur absente, `à renseigner`, ou hors des deux valeurs.
+
+| Mode | Conduite des agents |
+| ---- | ------------------- |
+| `greenfield` | La cible de `memory/conventions.md` est la seule convention du projet. La baseline du contrat de frontières est vide. |
+| `brownfield` | `@ailed-architect` audite les conventions en place avant d'écrire la cible. Le modèle de contexte couvre le périmètre de la SPEC. L'ancien code est un contexte à part, derrière la couche anti-corruption. |
+
 ## Style de sortie
 
 - Style de communication des agents et rapports : `{{OUTPUT_STYLE}}`
@@ -70,10 +85,11 @@ désactive la norme et le contrôle.
 
 ## Conventions techniques (facultatif)
 
-`memory/conventions.md` décrit les conventions de code et l'organisation technique
-**en place**. L'install le renseigne (`--conventions=<chemin>`, import brut) ; sinon un humain
-ou `@ailed-init-memory` le complète. **`@ailed-architect`, `@ailed-dev` et `@ailed-ux` le
-lisent** avant d'agir. Le fichier peut rester partiellement vide.
+`memory/conventions.md` a trois parties, dans cet ordre : *Conventions en place*, *Audit DDD*,
+*Cible des nouveaux modules*. L'install remplit la première (`--conventions=<chemin>`, import
+brut) ; sinon `@ailed-init-memory` ou un humain la décrit, sans la juger. `@ailed-architect`
+remplit l'audit puis la cible, et un humain valide les deux. **`@ailed-architect`, `@ailed-dev`
+et `@ailed-ux` lisent le fichier** avant d'agir. Le fichier peut rester partiellement vide.
 
 ## Modèles LLM par agent
 

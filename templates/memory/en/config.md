@@ -16,6 +16,21 @@ reads `{{DISABLED}}`.
     without this line a clone cannot tell which version it runs on.
     `npx @s2bp/ai-led-framework doctor` compares it to the CLI's own version.
 
+## Project mode
+
+- Project mode: `{{PROJECT_MODE}}`
+  → values: `greenfield` · `brownfield`.
+
+**Read by every agent before acting.** `init` deduces the mode from the repository: `brownfield`
+when the repository holds sources outside the ai-led files, else `greenfield`. A human corrects
+the value here at any time, with no reinstall. `npx @s2bp/ai-led-framework doctor` blocks on a
+value that is absent, `to set`, or outside the two values.
+
+| Mode | Agent conduct |
+| ---- | ------------- |
+| `greenfield` | The target of `memory/conventions.md` is the only convention of the project. The baseline of the boundary contract is empty. |
+| `brownfield` | `@ailed-architect` audits the in-place conventions before it writes the target. The context model covers the scope of the SPEC. Legacy code is a context of its own, behind the anti-corruption layer. |
+
 ## Output style
 
 - Agent & report communication style: `{{OUTPUT_STYLE}}`
@@ -69,10 +84,12 @@ disables the standard and the check.
 
 ## Technical conventions (optional)
 
-`memory/conventions.md` describes the coding conventions and the technical organization
-**already in place**. The install fills it (`--conventions=<path>`, verbatim import); otherwise
-a human or `@ailed-init-memory` completes it. **`@ailed-architect`, `@ailed-dev` and
-`@ailed-ux` read it** before acting. The file may stay partially empty.
+`memory/conventions.md` has three parts, in this order: *In-place conventions*, *DDD audit*,
+*Target for new modules*. The install fills the first one (`--conventions=<path>`, verbatim
+import); otherwise `@ailed-init-memory` or a human describes it, with no judgement.
+`@ailed-architect` fills the audit then the target, and a human validates both.
+**`@ailed-architect`, `@ailed-dev` and `@ailed-ux` read the file** before acting. It may stay
+partially empty.
 
 ## LLM model per agent
 

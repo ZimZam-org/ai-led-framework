@@ -8,13 +8,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Project mode.** `init` records `greenfield` or `brownfield` in `memory/config.md` § *Project
+  mode*, deduced from the repository (sources present → `brownfield`) or forced with `--mode=`.
+  Every agent reads it before acting, so a human corrects a wrong detection in `config.md` with no
+  reinstall. `update` adds the section to an existing install as `to set`, and `doctor` blocks
+  (exit 1) while the value is absent, unset or unknown.
 - **`/ailed-context-model`** — the tactical design of a bounded context, written by
   `@ailed-architect` into `memory/contexts/<context>.md` for every SPEC that creates a module or
   restructures an area: language, aggregates with their invariants and the owning method, value
-  objects, use cases tied to acceptance criteria, ports, anti-corruption layer, target tree. The
-  model stays `PROPOSED` until a human sets `VALIDATED`. The architect used to stop at naming
-  domains in a table, and only when `conventions.md` was empty, so on an existing project the
-  developer improvised the tactical model from the legacy conventions.
+  objects, use cases tied to acceptance criteria, ports, anti-corruption layer, target tree, and the
+  boundary contract that guards it. On `brownfield` the model covers the SPEC's scope and legacy
+  code enters the context map as a context of its own. The model stays `PROPOSED` until a human
+  sets `VALIDATED`. The architect used to stop at naming domains in a table, and only when
+  `conventions.md` was empty, so on an existing project the developer improvised the tactical
+  model from the legacy conventions.
+- **`/ailed-ddd-checklist`** — 33 numbered DDD anti-patterns (language and contexts, aggregates,
+  value objects, repositories, use cases, structure), the single source cited by the conventions
+  audit and by every review finding.
+- **Conventions audit.** `memory/conventions.md` now has three parts: *In-place conventions*
+  (descriptive, filled by `--conventions=`, `@ailed-init-memory` or by hand), *DDD audit* (one
+  verdict per convention — `compatible`, `confined`, `replaced` — citing a checklist item, an ADR
+  for each replacement) and *Target for new modules* (the only convention a new context follows).
+  `update` adds the missing parts and keeps every existing section; an imported file lands under
+  the first part. In-place conventions used to be enforced as they stood, DDD-compatible or not.
+- **Boundary contract.** The architect selects a dependency tool for each solution (two candidates
+  at least, an eight-criteria grid, a trial on the repository, an ADR), writes the contract —
+  domain depends on itself, application on domain and ports, infrastructure and legacy code pass
+  through the ports — and a baseline of tolerated violations. With no passing candidate, the
+  contract becomes an architecture test in the project's test runner. `/ailed-quality-gate` fails
+  on any violation outside the baseline and on a model that is not `VALIDATED`.
+- **Human validation point after `Architect`** in the Feature workflow of `process.md`, covering
+  the audit, the target and the context model. An existing install receives it through
+  `update --refresh-rules=process.md`.
+
+### Changed
+- **`@ailed-architect`** now runs six ordered steps, each with a completion criterion: frame,
+  audit then target, model, contract, trace ADRs, hand over. A `## Autorisations` section
+  lets it install a candidate tool in isolation while the ADR is `provisoire`.
+- **`@ailed-init-memory`** confirms the project mode, describes the in-place conventions without
+  judging them, and lists existing modules as low-confidence candidate contexts.
+- **`@ailed-planner`** waits for a `VALIDATED` model, cuts vertical slices (one use case per
+  ticket), makes the first ticket of a context traverse a full use case and install the tool when
+  the ADR is still provisional, and names the context and use cases in `Détail technique`.
+- **`@ailed-dev`** reads the context model before coding, follows the target tree, writes one test
+  per invariant played by its use case, and runs the boundary contract before the MR.
+- **`@ailed-review`** compares the MR to the context model, applies the checklist, and cites the
+  rule and the location on every finding.
+- **`memory/glossary.md`** gains a `Context` column on the approved-terms table: one term, one
+  meaning, inside its bounded context. `--refresh-rules` keeps excluding the glossary, so an
+  existing install adds the column by hand.
+- **`memory/architecture.md`** registry gains a `Boundary contract` column and a context map.
+- **Framework contract** (`CLAUDE.md` block) gains rule 8: a new module follows its `VALIDATED`
+  context model and the target conventions; legacy code follows the in-place ones.
 
 ## [0.19.1]
 

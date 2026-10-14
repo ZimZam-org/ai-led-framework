@@ -7,7 +7,7 @@ project, with:
 
 - 🧠 a **persistent memory** (`memory/`) kept up to date and used as the source of truth;
 - 🤖 **21 agents** prefixed `ailed-*` covering 4 workflows (Discovery, Feature, Incident, Security);
-- 🛠️ **13 reusable skills** for recurring tasks (status dashboard, memory-change review, ADR, git-flow, quality-gate, design-system, screen contact sheet…).
+- 🛠️ **14 reusable skills** for recurring tasks (status dashboard, memory-change review, ADR, git-flow, quality-gate, design-system, screen contact sheet…).
 
 One-command install:
 
@@ -20,7 +20,7 @@ npx @s2bp/ai-led-framework init
 | Folder              | Contents                                                       |
 | ------------------- | -------------------------------------------------------------- |
 | `.claude/agents/`   | 21 `ailed-*.md` agents (callable via `@ailed-<name>`)          |
-| `.claude/skills/`   | 13 `ailed-*` skills (callable via `/ailed-<name>`)             |
+| `.claude/skills/`   | 14 `ailed-*` skills (callable via `/ailed-<name>`)             |
 | `.claude/commands/` | `/ailed-bootstrap` slash-command (framework bootstrap)         |
 | `.claude/hooks/`    | `ailed-runtime-hook.js` + `PreToolUse`/`PostToolUse` hooks in `settings.json`, feeding the live progress sidebar (`watch`/`dashboard`) and the **ticket transition journal** (`.ailed/journal.jsonl`) |
 | `memory/`           | 17 project memory files (including `config.md`, `process.md`, `conventions.md`, `writing-rules.md`, `market-watch.md` and `observations.md`), in the chosen language |
@@ -114,7 +114,7 @@ the 12 rules; only the lists of forbidden phrases differ.
 (`concise` / `standard` / `detailed`). The standard sets the **shape of the sentences**, whatever
 that volume: a `detailed` report still uses short, active sentences.
 
-**Three levels of enforcement.** The install injects the rule block into the 21 agents and the 12
+**Three levels of enforcement.** The install injects the rule block into the 21 agents and the 13
 skills in scope (one source, rendered at install time). `memory/writing-rules.md` carries the
 detail and the alternatives. And an automatic checker verifies the measurable rules:
 
@@ -205,15 +205,54 @@ npx @s2bp/ai-led-framework init \
 > examples below.
 
 **Existing technical conventions (optional).** If the project already has a document describing its
-coding conventions and technical organization, import it with `--conventions=<path>`: its content is
-copied verbatim into `memory/conventions.md` (with a `Source:` header). `@ailed-architect`, `@ailed-dev`
-and `@ailed-ux` read it before acting. Omit the flag and a `TODO` stub is installed instead — the file
+coding conventions and technical organization, import it with `--conventions=<path>`: its content lands
+verbatim under the *In-place conventions* part of `memory/conventions.md` (with a `Source:` line). The
+two other parts, *DDD audit* and *Target for new modules*, stay empty for `@ailed-architect` (see
+*Project mode and the DDD path* below). Omit the flag and `TODO` stubs are installed instead — the file
 may stay partially empty and be filled later by hand or via `@ailed-init-memory`.
 
 **Local app (optional).** `config.md` also carries the **local app base URL** (plus, optionally,
 its start command and a test account). That is the only coordinate `/ailed-screens` needs to
 capture the screens a dev touched. While it reads `to set`, the skill asks for the value then
 rewrites it into `config.md`.
+
+### Project mode and the DDD path
+
+`init` records a **project mode** in `memory/config.md` § *Project mode*: `brownfield` when the
+repository already holds sources outside the ai-led files, `greenfield` otherwise. `--mode=` forces
+it for a CI install, and a human corrects it in `config.md` at any time. `doctor` blocks while the
+value is absent, `to set` or unknown, so every agent knows which branch to follow.
+
+For every SPEC that creates a module or restructures an area, `@ailed-architect` delivers:
+
+1. a **conventions audit**. `memory/conventions.md` has three parts: *In-place conventions*,
+   *DDD audit*, *Target for new modules*. Each in-place convention gets a verdict — `compatible`,
+   `confined` or `replaced` — that cites a numbered item of `/ailed-ddd-checklist` (33
+   anti-patterns). The target holds only compatible and replacement conventions, and it is the
+   only convention a new context follows; legacy code keeps the in-place ones.
+2. a **context model** per bounded context (`/ailed-context-model`, `memory/contexts/`): language,
+   aggregates with their invariants and owning method, value objects, use cases tied to acceptance
+   criteria, ports, anti-corruption layer, target tree. On `brownfield` the model covers the SPEC's
+   scope, and legacy code sits in the context map as a context of its own.
+3. a **boundary contract** run by a dependency tool, locally and in CI. The architect compares at
+   least two candidates on an eight-criteria grid, tries the chosen one on the repository, traces
+   the choice in an ADR, and generates a **baseline** of the violations tolerated at adoption
+   (empty on `greenfield`). When no candidate passes the grid, the contract becomes an
+   architecture test in the project's own test runner.
+
+A **human validation point** after `Architect` covers the audit, the target and the model
+(`PROPOSED` → `VALIDATED`). `@ailed-planner` waits for `VALIDATED` and cuts each context into
+**vertical slices**, one use case per ticket; the first ticket of a context installs the tool when
+its ADR is still `provisoire`. `@ailed-dev` reads the model before coding, writes one test per
+invariant and runs the contract before the MR. `@ailed-review` applies the checklist and cites the
+rule and the location on every finding. `/ailed-quality-gate` gains two criteria: a `VALIDATED`
+model, and no violation outside the baseline.
+
+On an existing install, `update` adds the *Project mode* section and the three parts of
+`conventions.md` without touching your content. Two steps stay yours: run
+`update --refresh-rules=process.md` to receive the new validation point in the Feature workflow,
+and add the `Context` column to the approved-terms table of `memory/glossary.md`, which
+`--refresh-rules` never rewrites.
 
 ### `init` options
 
@@ -230,6 +269,7 @@ rewrites it into `config.md`.
 --style=LEVEL       Agent/report output style: concise | standard | detailed (default: standard)
 --writing=NORM      Writing standard for produced text: ste | none (default: ste)
 --conventions=PATH  Import an existing conventions / technical-organization file into memory/conventions.md (optional)
+--mode=MODE         Project mode: greenfield | brownfield (default: deduced from the repository, brownfield as soon as it holds sources)
 -y, --yes           Non-interactive mode (otherwise questions are asked in the terminal)
 -f, --force         Overwrite existing files
 ```
@@ -249,7 +289,7 @@ npx @s2bp/ai-led-framework@latest update
 | `.claude/agents/`, `.claude/skills/`, `.claude/commands/` | **always rewritten** to the new version     |
 | `.claude/hooks/ailed-runtime-hook.js`           | **always rewritten**; the framework's `settings.json` entries are **re-wired** (an older matcher is upgraded in place, with no duplicate) and **your own hooks, permissions and env vars are preserved** |
 | `.gitignore`                                    | missing entries are appended **inside the existing AI-Led block** (no stacked headers) |
-| `memory/config.md`, `memory/process.md` (scaffold files) | **additive section merge**: sections the template gained are appended; your existing sections are **never** touched — except under `--refresh-rules` (see below) |
+| `memory/config.md`, `memory/process.md`, `memory/conventions.md` (scaffold files) | **additive section merge**: sections the template gained are appended; your existing sections are **never** touched — except under `--refresh-rules` (see below) |
 | `memory/*.md` (project data) **never edited**   | **cleanly rewritten** to the new version (detected via `.ailed/manifest.json`) |
 | `memory/*.md` (project data) **edited**         | **preserved** as-is                          |
 | New `memory/` files                             | **added**                                    |
@@ -331,6 +371,7 @@ question. It is **read-only**: it repairs nothing, it names the command that doe
 | ----------- | --------------- |
 | `version`   | the gap between the version stamped in `memory/config.md` and the CLI's own |
 | `config`    | what the parser **actually reads** from the *Integrations* table, row by row: a missing row, an annotated cell |
+| `mode`      | a project mode absent, left `to set` or unknown — the agents would not know which branch to follow |
 | `contract`  | a missing `ai-led` block in `CLAUDE.md` (or in its target) |
 | `kanban`    | statuses no parser can read — the ticket is then invisible everywhere |
 | `memory`    | files with no baseline, which `update` will no longer refresh |
@@ -429,7 +470,7 @@ costs.
 | `@ailed-brainstorm`      | Business need → challenged SPEC                            |
 | `@ailed-ux`              | SPEC → 3 wireframes + final mockup                         |
 | `@ailed-pm`              | SPEC → EPICs + roadmap                                     |
-| `@ailed-architect`       | Technical impacts + ADR · context model (DDD) & targets    |
+| `@ailed-architect`       | Conventions audit · context model · boundary contract · ADR |
 | `@ailed-planner`         | EPICs → atomic tickets `<TRIGRAM>-*`                       |
 | `@ailed-dev`             | Implements a ticket (branch + MR, never merges)            |
 | `@ailed-review`          | MR review → `PASS` / `CHANGES REQUESTED`                   |
@@ -446,8 +487,8 @@ costs.
 ## The skills (prefix `/ailed-`)
 
 `ailed-status`, `ailed-memory-diff`, `ailed-adr`, `ailed-architecture-map`, `ailed-context-model`,
-`ailed-git-flow`, `ailed-quality-gate`, `ailed-release-flow`, `ailed-promo`, `ailed-design-system`,
-`ailed-wireframe`, `ailed-mockup-preview`, `ailed-screens`.
+`ailed-ddd-checklist`, `ailed-git-flow`, `ailed-quality-gate`, `ailed-release-flow`, `ailed-promo`,
+`ailed-design-system`, `ailed-wireframe`, `ailed-mockup-preview`, `ailed-screens`.
 
 `ailed-design-system`, `ailed-wireframe` and `ailed-mockup-preview` enrich `@ailed-ux` (shared
 design baseline, 3 wireframe variants, mockup render + screenshots). They rely on the native
@@ -738,10 +779,11 @@ Then in Claude Code:
    `@ailed-knowledge-audit` to rebuild memory from the code.
 2. `@ailed-brainstorm`: you describe the need ("allow PDF export of reports"). The agent produces
    a **challenged SPEC**. **→ human validation of the SPEC.**
-3. `@ailed-pm` turns the SPEC into **EPICs** (and creates/updates the Jira epics via the MCP),
-   `@ailed-architect` records ADRs in `memory/decisions.md` (mirrored to Confluence later by
-   `@ailed-communication`). The Jira project key already defaults to `ZZM` — no other coordinate
-   is needed at this stage.
+3. `@ailed-pm` turns the SPEC into **EPICs** (and creates/updates the Jira epics via the MCP).
+   `@ailed-architect` audits the in-place conventions, writes the context model and the boundary
+   contract, and records ADRs in `memory/decisions.md` (mirrored to Confluence later by
+   `@ailed-communication`). **→ human validation of the audit, the target and the model.** The
+   Jira project key already defaults to `ZZM` — no other coordinate is needed at this stage.
 4. `@ailed-planner` splits the EPIC into **atomic tickets**. For each ticket: write to
    `memory/kanban.md` **then create the Jira issue** via the MCP. The issue comes back with its
    key `ZZM-123`, which becomes the ticket ID mirrored in `memory/kanban.md`.

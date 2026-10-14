@@ -7,11 +7,12 @@ Vocabulaire métier, acronymes et concepts. Enrichi par `@ailed-brainstorm` et `
 ## Termes approuvés (dictionnaire)
 
 Dictionnaire d'autorité de la règle 5 de `memory/writing-rules.md` : un concept porte un seul
-nom. Un agent qui rencontre un concept sans nom approuvé ajoute une ligne ici. Il n'improvise
-jamais un synonyme.
+nom. L'unicité vaut dans un contexte : la colonne `Contexte` nomme le bounded context du terme.
+Un agent qui rencontre un concept sans nom approuvé ajoute une ligne ici. Il n'improvise jamais un synonyme. Le code d'un contexte reprend ses termes
+approuvés : classes, méthodes, use cases, value objects.
 
-| Terme approuvé | Sens unique | Synonymes interdits |
-| -------------- | ----------- | ------------------- |
+| Terme approuvé | Contexte | Sens unique | Synonymes interdits |
+| -------------- | -------- | ----------- | ------------------- |
 
 ## Vocabulaire métier (hypothèses initiales)
 
