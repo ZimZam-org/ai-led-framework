@@ -37,8 +37,10 @@ CHANGES REQUESTED
 ```
 (avec la liste des changements demandés).
 
-Chaque constat cite la règle et l'emplacement : numéro de la checklist ou section du modèle de
-contexte, puis `fichier:ligne`. Seul un constat ainsi formé entre dans la liste des changements.
+Chaque constat cite la règle et l'emplacement : un numéro de `/ailed-ddd-checklist`, une section
+du modèle de contexte, un critère de la SPEC, un ADR, une partie de `memory/conventions.md` ou une
+règle de sécurité, puis `fichier:ligne`. Un constat sans règle citée reste une remarque, hors de
+la liste des changements.
 
 ## Quality gates
 - Verdict `PASS` requis pour passer à `@ailed-test`.

@@ -206,7 +206,8 @@ npx @s2bp/ai-led-framework init \
 
 **Existing technical conventions (optional).** If the project already has a document describing its
 coding conventions and technical organization, import it with `--conventions=<path>`: its content lands
-verbatim under the *In-place conventions* part of `memory/conventions.md` (with a `Source:` line). The
+under the *In-place conventions* part of `memory/conventions.md` (with a `Source:` line), its headings
+demoted so that the part keeps it whole. The
 two other parts, *DDD audit* and *Target for new modules*, stay empty for `@ailed-architect` (see
 *Project mode and the DDD path* below). Omit the flag and `TODO` stubs are installed instead — the file
 may stay partially empty and be filled later by hand or via `@ailed-init-memory`.
@@ -249,7 +250,9 @@ rule and the location on every finding. `/ailed-quality-gate` gains two criteria
 model, and no violation outside the baseline.
 
 On an existing install, `update` adds the *Project mode* section and the three parts of
-`conventions.md` without touching your content. Two steps stay yours: run
+`conventions.md`: the rules the file already holds move under *In-place conventions*, headings
+demoted, so the architect audits them. `doctor` warns on a `##` section outside the three parts.
+Two steps stay yours: run
 `update --refresh-rules=process.md` to receive the new validation point in the Feature workflow,
 and add the `Context` column to the approved-terms table of `memory/glossary.md`, which
 `--refresh-rules` never rewrites.

@@ -29,8 +29,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (descriptive, filled by `--conventions=`, `@ailed-init-memory` or by hand), *DDD audit* (one
   verdict per convention — `compatible`, `confined`, `replaced` — citing a checklist item, an ADR
   for each replacement) and *Target for new modules* (the only convention a new context follows).
-  `update` adds the missing parts and keeps every existing section; an imported file lands under
-  the first part. In-place conventions used to be enforced as they stood, DDD-compatible or not.
+  `update` adds the missing parts and moves the rules an older file already holds under the first
+  part, headings demoted; an imported file lands there the same way. `doctor` warns on a `##`
+  section outside the three parts. A ticket on the `legacy code` context of a `brownfield` project
+  (incident and security fixes included) has no model and follows the in-place conventions. In-place
+  conventions used to be enforced as they stood, DDD-compatible or not.
 - **Boundary contract.** The architect selects a dependency tool for each solution (two candidates
   at least, an eight-criteria grid, a trial on the repository, an ADR), writes the contract —
   domain depends on itself, application on domain and ports, infrastructure and legacy code pass

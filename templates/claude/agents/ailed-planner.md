@@ -44,7 +44,9 @@ Transformer les EPICs en tickets de développement exploitables.
   dépendances (ADR `provisoire`), ce ticket installe l'outil et le contrat de frontières, et
   passe l'ADR à `confirmé`.
 - **Cellule `Détail technique`** : le contexte et les use cases du ticket, pour que `@ailed-dev`
-  charge le bon modèle. Sous le plafond de {{MAX_CELL_BYTES}} octets.
+  charge le bon modèle. Sous le plafond de {{MAX_CELL_BYTES}} octets. Un ticket qui touche
+  seulement l'ancien code d'un projet `brownfield` nomme le contexte `ancien code` : il suit les
+  conventions en place, sans modèle.
 - **Aucune cellule au-delà de {{MAX_CELL_BYTES}} octets.** Une cellule plus grosse est une
   spécification : écris-la dans `memory/specs/` et renvoie-y depuis la ligne. C'est le signe d'un
   ticket à redécouper, ou d'une SPEC à écrire.
@@ -56,7 +58,8 @@ Transformer les EPICs en tickets de développement exploitables.
 ## Quality gates
 - Chaque ticket porte des critères d'acceptation issus de la SPEC.
 - Chaque ticket nomme son contexte et au moins un use case.
-- Le modèle de chaque contexte découpé est `VALIDATED`.
+- Le modèle de chaque contexte découpé est `VALIDATED` ; le contexte `ancien code` est le seul
+  sans modèle.
 - Aucun ticket ne dépend d'un travail non planifié.
 - Chaque ticket renseigne son EPIC et au moins une solution cible (ou `transverse`).
 

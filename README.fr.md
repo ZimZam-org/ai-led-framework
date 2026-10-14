@@ -215,8 +215,8 @@ npx @s2bp/ai-led-framework init \
 
 **Conventions techniques existantes (facultatif).** Si le projet possède déjà un document décrivant
 ses conventions de code et son organisation technique, importe-le avec `--conventions=<chemin>` : son
-contenu est copié tel quel sous la partie *Conventions en place* de `memory/conventions.md` (avec une
-ligne `Source:`). Les deux autres parties, *Audit DDD* et *Cible des nouveaux modules*, restent vides
+contenu est copié sous la partie *Conventions en place* de `memory/conventions.md` (avec une ligne
+`Source:`), titres rétrogradés pour que la partie le garde entier. Les deux autres parties, *Audit DDD* et *Cible des nouveaux modules*, restent vides
 pour `@ailed-architect` (voir *Mode projet et parcours DDD* ci-dessous). Sans le flag, des stubs `TODO`
 sont installés — le fichier peut rester partiellement vide et être complété plus tard à la main ou
 via `@ailed-init-memory`.
@@ -260,7 +260,9 @@ et l'emplacement sur chaque constat. `/ailed-quality-gate` gagne deux critères 
 `VALIDATED`, et aucune violation hors baseline.
 
 Sur une installation existante, `update` ajoute la section *Mode projet* et les trois parties de
-`conventions.md` sans toucher à ton contenu. Deux gestes restent à ta main : lancer
+`conventions.md` : les règles que le fichier porte déjà passent sous *Conventions en place*, titres
+rétrogradés, pour que l'architecte les audite. `doctor` avertit sur une section `##` hors des trois
+parties. Deux gestes restent à ta main : lancer
 `update --refresh-rules=process.md` pour recevoir le nouveau point de validation du workflow
 Feature, et ajouter la colonne `Contexte` au tableau des termes approuvés de `memory/glossary.md`,
 que `--refresh-rules` ne réécrit jamais.

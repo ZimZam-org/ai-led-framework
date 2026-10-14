@@ -30,7 +30,8 @@ MCP `chrome-devtools` (planche de rendu de fin de dev).
 - Un ticket `{{TICKET_PREFIX}}-*` (avec SPEC + ADR associés). Si `Ticketing externe` ≠ `aucun`,
   ce ticket peut être une **clé d'issue existante** (ex. `{{TICKET_PREFIX}}-123`) à tirer de
   l'outil (cf. § Sync ticketing externe).
-- Le modèle de contexte du ticket, `memory/contexts/<contexte>.md`, statut `VALIDATED`.
+- Le modèle de contexte du ticket, `memory/contexts/<contexte>.md`, statut `VALIDATED`. Un
+  ticket sur le contexte `ancien code` n'en a pas : il suit les conventions en place.
 - `memory/conventions.md` : la cible pour un nouveau contexte, les conventions en place pour
   l'ancien code et les adapters de la couche anti-corruption.
 - `memory/glossary.md` : les termes approuvés du contexte.
