@@ -7,7 +7,7 @@ project, with:
 
 - 🧠 a **persistent memory** (`memory/`) kept up to date and used as the source of truth;
 - 🤖 **21 agents** prefixed `ailed-*` covering 4 workflows (Discovery, Feature, Incident, Security);
-- 🛠️ **12 reusable skills** for recurring tasks (status dashboard, memory-change review, ADR, git-flow, quality-gate, design-system, screen contact sheet…).
+- 🛠️ **13 reusable skills** for recurring tasks (status dashboard, memory-change review, ADR, git-flow, quality-gate, design-system, screen contact sheet…).
 
 One-command install:
 
@@ -20,7 +20,7 @@ npx @s2bp/ai-led-framework init
 | Folder              | Contents                                                       |
 | ------------------- | -------------------------------------------------------------- |
 | `.claude/agents/`   | 21 `ailed-*.md` agents (callable via `@ailed-<name>`)          |
-| `.claude/skills/`   | 12 `ailed-*` skills (callable via `/ailed-<name>`)             |
+| `.claude/skills/`   | 13 `ailed-*` skills (callable via `/ailed-<name>`)             |
 | `.claude/commands/` | `/ailed-bootstrap` slash-command (framework bootstrap)         |
 | `.claude/hooks/`    | `ailed-runtime-hook.js` + `PreToolUse`/`PostToolUse` hooks in `settings.json`, feeding the live progress sidebar (`watch`/`dashboard`) and the **ticket transition journal** (`.ailed/journal.jsonl`) |
 | `memory/`           | 17 project memory files (including `config.md`, `process.md`, `conventions.md`, `writing-rules.md`, `market-watch.md` and `observations.md`), in the chosen language |
@@ -114,7 +114,7 @@ the 12 rules; only the lists of forbidden phrases differ.
 (`concise` / `standard` / `detailed`). The standard sets the **shape of the sentences**, whatever
 that volume: a `detailed` report still uses short, active sentences.
 
-**Three levels of enforcement.** The install injects the rule block into the 21 agents and the 11
+**Three levels of enforcement.** The install injects the rule block into the 21 agents and the 12
 skills in scope (one source, rendered at install time). `memory/writing-rules.md` carries the
 detail and the alternatives. And an automatic checker verifies the measurable rules:
 
@@ -429,7 +429,7 @@ costs.
 | `@ailed-brainstorm`      | Business need → challenged SPEC                            |
 | `@ailed-ux`              | SPEC → 3 wireframes + final mockup                         |
 | `@ailed-pm`              | SPEC → EPICs + roadmap                                     |
-| `@ailed-architect`       | Technical impacts + ADR · DDD & deployable targets         |
+| `@ailed-architect`       | Technical impacts + ADR · context model (DDD) & targets    |
 | `@ailed-planner`         | EPICs → atomic tickets `<TRIGRAM>-*`                       |
 | `@ailed-dev`             | Implements a ticket (branch + MR, never merges)            |
 | `@ailed-review`          | MR review → `PASS` / `CHANGES REQUESTED`                   |
@@ -445,8 +445,8 @@ costs.
 
 ## The skills (prefix `/ailed-`)
 
-`ailed-status`, `ailed-memory-diff`, `ailed-adr`, `ailed-architecture-map`, `ailed-git-flow`,
-`ailed-quality-gate`, `ailed-release-flow`, `ailed-promo`, `ailed-design-system`,
+`ailed-status`, `ailed-memory-diff`, `ailed-adr`, `ailed-architecture-map`, `ailed-context-model`,
+`ailed-git-flow`, `ailed-quality-gate`, `ailed-release-flow`, `ailed-promo`, `ailed-design-system`,
 `ailed-wireframe`, `ailed-mockup-preview`, `ailed-screens`.
 
 `ailed-design-system`, `ailed-wireframe` and `ailed-mockup-preview` enrich `@ailed-ux` (shared

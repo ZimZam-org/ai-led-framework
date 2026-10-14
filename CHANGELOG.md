@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`/ailed-context-model`** — the tactical design of a bounded context, written by
+  `@ailed-architect` into `memory/contexts/<context>.md` for every SPEC that creates a module or
+  restructures an area: language, aggregates with their invariants and the owning method, value
+  objects, use cases tied to acceptance criteria, ports, anti-corruption layer, target tree. The
+  model stays `PROPOSED` until a human sets `VALIDATED`. The architect used to stop at naming
+  domains in a table, and only when `conventions.md` was empty, so on an existing project the
+  developer improvised the tactical model from the legacy conventions.
+
 ## [0.19.1]
 
 ### Changed

@@ -26,6 +26,13 @@ jobs:
           node "$GITHUB_WORKSPACE/bin/ai-led.js" init --trigram=TST -y
           test -d .claude && test -d memory
 
+      - name: Verify the architect ships the context model skill
+        run: |
+          cd /tmp/ai-led-smoke
+          test -s .claude/skills/context-model/SKILL.md
+          grep -q "ailed-context-model" .claude/agents/ailed-architect.md
+          grep -q "memory/contexts/" .claude/agents/ailed-architect.md
+
       - name: Verify the dashboard splits shell from payload
         run: |
           cd /tmp/ai-led-smoke

@@ -20,14 +20,21 @@ Définir et tracer les choix techniques nécessaires à la réalisation de la SP
   les **impacts transverses** : contrats d'API partagés, breaking changes inter-cibles,
   shared kernel → ADR si la décision touche un composant partagé.
 
-## Découpage en domaines (DDD)
-- **Déclencheur** : projet sans cadre technique en place (`memory/conventions.md` en `TODO`),
-  **après la première SPEC** produite par `@ailed-brainstorm` — jamais sur un projet vide :
-  le découpage doit s'appuyer sur le langage métier de la SPEC.
-- Proposer un découpage en **sous-domaines / bounded contexts** et le consigner dans la
-  section `## Solutions / cibles déployables` de `memory/architecture.md`.
-- **Confiance basse, validation humaine requise.** Ne pas re-découper de fond en comble à
-  chaque itération : enrichir l'existant ; tracer toute refonte structurante par un ADR.
+## Modèle de contexte (DDD)
+- **Déclencheur** : toute SPEC validée qui crée un module ou restructure une zone, quel que soit
+  l'état de `memory/conventions.md`. Sur un projet existant, le modèle couvre le périmètre de la
+  SPEC. L'ancien code apparaît comme un contexte à part dans la cartographie de
+  `memory/architecture.md`, avec la couche anti-corruption sur chaque frontière.
+- Étapes :
+  1. Cadrer : nommer le bounded context et sa solution dans le registre
+     `## Solutions / cibles déployables` de `memory/architecture.md`. Terminé quand le contexte
+     a sa ligne dans le registre.
+  2. Modéliser : produire `memory/contexts/<contexte>.md` avec `/ailed-context-model`.
+     Terminé quand la skill atteint son critère de fin.
+  3. Tracer : un ADR par décision structurante du modèle. Terminé quand chaque décision
+     structurante a son ADR.
+  4. Remettre le modèle à la validation humaine avec le statut `PROPOSED`. Terminé quand
+     l'humain a le fichier et la liste des ADR.
 
 ## Entrées
 - SPEC validée, maquette UX, `memory/architecture.md`, `memory/decisions.md`,
@@ -36,6 +43,7 @@ Définir et tracer les choix techniques nécessaires à la réalisation de la SP
 
 ## Sorties
 - Mise à jour de l'architecture + nouveaux ADR.
+- `memory/contexts/<contexte>.md` : le modèle de contexte, statut `PROPOSED`.
 
 ### Format ADR
 ```markdown
@@ -52,8 +60,9 @@ Impact :
 - Les impacts sécurité et coût sont explicitement évalués.
 - Les décisions respectent les conventions de `memory/conventions.md` (si renseigné),
   ou justifient explicitement tout écart via un ADR.
-- Le découpage DDD n'est proposé qu'après une première SPEC et `conventions.md` vide ;
-  il reste en confiance basse jusqu'à validation humaine.
+- Chaque SPEC qui crée un module ou restructure une zone a son modèle de contexte, et chaque
+  règle métier de la SPEC y a un propriétaire. Le statut reste `PROPOSED` jusqu'à la
+  validation humaine.
 - Pour tout ticket touchant un monorepo, les impacts inter-solutions (contrats partagés,
   breaking changes) sont évalués explicitement.
 
@@ -63,8 +72,9 @@ est **reflété sur Confluence par le miroir `memory/` → Confluence de `@ailed
 (si `Documentation externe` ≠ `aucun`). Voir `memory/config.md` § *Coordonnées des outils*.
 
 ## Artefacts mis à jour
-`memory/architecture.md`, `memory/decisions.md` (garder les ADR en vigueur ; déplacer les ADR
-remplacés/obsolètes dans `memory/archive/decisions.md` — cf. `process.md` § Rotation de la mémoire).
+`memory/architecture.md`, `memory/contexts/<contexte>.md`, `memory/decisions.md` (garder les
+ADR en vigueur ; déplacer les ADR remplacés/obsolètes dans `memory/archive/decisions.md` — cf.
+`process.md` § Rotation de la mémoire).
 
 {{FINDINGS_RULE}}
 

@@ -14,8 +14,10 @@ Last Updated: {{DATE}}
 
 ### Découpage en domaines métier (DDD)
 
-> Renseigné par `@ailed-architect` **après la première SPEC** (`@ailed-brainstorm`) lorsque
-> `conventions.md` n'impose aucun cadre technique. **Confiance basse, validation humaine requise.**
+> Renseigné par `@ailed-architect` pour toute SPEC qui crée un module ou restructure une zone.
+> Chaque bounded context a son modèle dans `memory/contexts/<contexte>.md` (`/ailed-context-model`).
+> La colonne `Domaines (DDD)` du registre pointe vers ce fichier.
+> **Validation humaine requise** : le modèle passe de `PROPOSED` à `VALIDATED`.
 > Une cible partage un domaine avec d'autres cibles, ou le garde pour elle seule.
 > Chaque itération enrichit l'existant. Un ADR trace toute refonte structurante.
 

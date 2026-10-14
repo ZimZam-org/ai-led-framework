@@ -7,7 +7,7 @@ projet **piloté par agents IA**, avec :
 
 - 🧠 une **mémoire persistante** (`memory/`) tenue à jour et utilisée comme source de vérité ;
 - 🤖 **21 agents** préfixés `ailed-*` couvrant 4 workflows (Discovery, Feature, Incident, Security) ;
-- 🛠️ **12 skills** réutilisables pour les tâches récurrentes (tableau de bord status, relecture des changements de mémoire, ADR, git-flow, quality-gate, design-system, planche d'écrans…).
+- 🛠️ **13 skills** réutilisables pour les tâches récurrentes (tableau de bord status, relecture des changements de mémoire, ADR, git-flow, quality-gate, design-system, planche d'écrans…).
 
 Installation en une commande :
 
@@ -20,7 +20,7 @@ npx @s2bp/ai-led-framework init
 | Dossier             | Contenu                                                        |
 | ------------------- | -------------------------------------------------------------- |
 | `.claude/agents/`   | 21 agents `ailed-*.md` (invocables via `@ailed-<nom>`)         |
-| `.claude/skills/`   | 12 skills `ailed-*` (invocables via `/ailed-<nom>`)            |
+| `.claude/skills/`   | 13 skills `ailed-*` (invocables via `/ailed-<nom>`)            |
 | `.claude/commands/` | slash-command `/ailed-bootstrap` (amorçage du framework)       |
 | `.claude/hooks/`    | `ailed-runtime-hook.js` + hooks `PreToolUse`/`PostToolUse` dans `settings.json`, qui alimentent le panneau de progression (`watch`/`dashboard`) et le **journal des transitions de tickets** (`.ailed/journal.jsonl`) |
 | `memory/`           | 17 fichiers de mémoire projet (dont `config.md`, `process.md`, `conventions.md`, `writing-rules.md`, `market-watch.md` et `observations.md`), dans la langue choisie |
@@ -119,7 +119,7 @@ les 12 règles ; seules les listes de tournures interdites diffèrent.
 volume : un rapport `détaillé` reste composé de phrases courtes et actives.
 
 **Trois niveaux d'application.** L'installation injecte le bloc de règles dans les 21 agents et
-les 11 skills concernés (une seule source, rendue à l'install). `memory/writing-rules.md` porte
+les 12 skills concernés (une seule source, rendue à l'install). `memory/writing-rules.md` porte
 le détail et les alternatives. Enfin un contrôle automatique vérifie les règles mesurables :
 
 ```bash
@@ -444,7 +444,7 @@ d'entrées seul ne mesurait pas ce qui coûte vraiment.
 | `@ailed-brainstorm`      | Besoin métier → SPEC challengée                           |
 | `@ailed-ux`              | SPEC → 3 wireframes + maquette finale                     |
 | `@ailed-pm`              | SPEC → EPICs + roadmap                                    |
-| `@ailed-architect`       | Impacts techniques + ADR · DDD & cibles déployables       |
+| `@ailed-architect`       | Impacts techniques + ADR · modèle de contexte & cibles    |
 | `@ailed-planner`         | EPICs → tickets atomiques `<TRIGRAMME>-*`                 |
 | `@ailed-dev`             | Implémente un ticket (branche + MR, ne fusionne jamais)   |
 | `@ailed-review`          | Revue de MR → `PASS` / `CHANGES REQUESTED`                |
@@ -460,8 +460,8 @@ d'entrées seul ne mesurait pas ce qui coûte vraiment.
 
 ## Les skills (préfixe `/ailed-`)
 
-`ailed-status`, `ailed-memory-diff`, `ailed-adr`, `ailed-architecture-map`, `ailed-git-flow`,
-`ailed-quality-gate`, `ailed-release-flow`, `ailed-promo`, `ailed-design-system`,
+`ailed-status`, `ailed-memory-diff`, `ailed-adr`, `ailed-architecture-map`, `ailed-context-model`,
+`ailed-git-flow`, `ailed-quality-gate`, `ailed-release-flow`, `ailed-promo`, `ailed-design-system`,
 `ailed-wireframe`, `ailed-mockup-preview`, `ailed-screens`.
 
 `ailed-design-system`, `ailed-wireframe` et `ailed-mockup-preview` enrichissent `@ailed-ux` (base

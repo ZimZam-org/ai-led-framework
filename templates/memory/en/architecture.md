@@ -14,8 +14,10 @@ Last Updated: {{DATE}}
 
 ### Business-domain breakdown (DDD)
 
-> Filled in by `@ailed-architect` **after the first SPEC** (`@ailed-brainstorm`) when
-> `conventions.md` imposes no technical framework. **Low confidence, human validation required.**
+> Filled in by `@ailed-architect` for every SPEC that creates a module or restructures an area.
+> Each bounded context has its model in `memory/contexts/<context>.md` (`/ailed-context-model`).
+> The `Domains (DDD)` column of the registry points to that file.
+> **Human validation required**: the model goes from `PROPOSED` to `VALIDATED`.
 > A target shares a domain with other targets, or keeps it for itself alone.
 > Each iteration enriches the existing breakdown. An ADR traces any structural rework.
 
