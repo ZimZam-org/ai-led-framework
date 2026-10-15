@@ -14,6 +14,7 @@ Livrer une version cohérente, tracée et conforme aux quality gates.
 - Créer le tag de version.
 - Générer les release notes.
 - Clôturer les tickets embarqués.
+- **Retirer le marquage `livré, non taggé`** des fonctionnalités embarquées dans `memory/features.md`.
 - **Nettoyer le kanban** : archiver les tickets `DONE` embarqués vers
   `memory/archive/kanban.md` — `npx @s2bp/ai-led-framework archive --apply` fait le
   déplacement ; simuler d'abord sans `--apply` (cf. « Rotation & nettoyage de la mémoire » dans

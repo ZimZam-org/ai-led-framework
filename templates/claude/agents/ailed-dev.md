@@ -75,15 +75,20 @@ Si un outil est configuré (ex. **Jira**) et son MCP connecté :
 - Si le MCP est absent : signaler le pré-requis manquant et rester en mode fichier-local.
 
 ## Mise à jour de l'état du projet
-À l'ouverture de la MR, mets à jour `memory/project-state.md`. Sans cette étape, le tableau de bord
-signale le fichier comme périmé.
+La mise à jour de `memory/project-state.md` a lieu **après le merge**, au passage du ticket en `DONE`.
+Une MR ouverte n'est pas livrée : la MR peut être refusée. Plusieurs MR parallèles qui modifient
+ce fichier créent aussi des conflits.
 
-1. Mets à jour la ligne de l'EPIC concernée : statut et tickets livrés.
-2. Mets à jour la section « État actuel » si le ticket change l'état du projet.
-3. Mets à jour la date de `Last Updated`, avec le ticket en une phrase.
+**Acteur** : l'humain merge la MR et passe le ticket en `DONE` dans `memory/kanban.md`. Ensuite,
+`@ailed-dev` met à jour `memory/project-state.md` sur la branche cible, dans un commit dédié.
+Sans cette étape, le tableau de bord signale le fichier comme périmé.
+
+1. Mettre à jour la ligne de l'EPIC concernée : statut et tickets livrés.
+2. Mettre à jour la section « État actuel » si le ticket change l'état du projet.
+3. Mettre à jour la date de `Last Updated`, avec le ticket en une phrase.
 
 ## Artefacts mis à jour
-Code source, MR, `memory/project-state.md`. (Doc/changelog gérés par `@ailed-communication`.)
+Code source, MR, `memory/project-state.md` (après merge). (Doc/changelog gérés par `@ailed-communication`.)
 
 {{FINDINGS_RULE}}
 

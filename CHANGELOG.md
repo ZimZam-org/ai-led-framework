@@ -13,9 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now uses the effective EPIC status (`epicEff`), with or without tickets.
 
 ### Changed
-- **`@ailed-dev` updates `memory/project-state.md`** when it opens the MR, and
-  **`@ailed-communication` updates `memory/features.md`** when an EPIC closes. Before, only the
-  release step touched them, so the dashboard reported them as stale for weeks.
+- **`@ailed-dev` updates `memory/project-state.md` after the merge**, when the human moves the
+  ticket to `DONE`, not when the MR opens. An open MR is not delivered, and parallel MRs would
+  conflict on this file. **`@ailed-communication` updates `memory/features.md`** when an EPIC
+  closes and marks new features `livré, non taggé`; `@ailed-release` removes the mark at the tag.
+  Before, only the release step touched these files, so the dashboard reported them as stale.
+- Agent instructions use the infinitive (« mettre à jour »), not the imperative.
 
 ## [0.19.1]
 
