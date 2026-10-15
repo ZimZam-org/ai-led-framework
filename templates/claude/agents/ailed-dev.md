@@ -74,8 +74,16 @@ Si un outil est configuré (ex. **Jira**) et son MCP connecté :
 - **Lien MR** : ajouter l'URL de la MR sur l'issue.
 - Si le MCP est absent : signaler le pré-requis manquant et rester en mode fichier-local.
 
+## Mise à jour de l'état du projet
+À l'ouverture de la MR, mets à jour `memory/project-state.md`. Sans cette étape, le tableau de bord
+signale le fichier comme périmé.
+
+1. Mets à jour la ligne de l'EPIC concernée : statut et tickets livrés.
+2. Mets à jour la section « État actuel » si le ticket change l'état du projet.
+3. Mets à jour la date de `Last Updated`, avec le ticket en une phrase.
+
 ## Artefacts mis à jour
-Code source, MR. (Doc/changelog gérés par `@ailed-communication`.)
+Code source, MR, `memory/project-state.md`. (Doc/changelog gérés par `@ailed-communication`.)
 
 {{FINDINGS_RULE}}
 

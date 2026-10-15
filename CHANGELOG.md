@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Status dashboard: folding of delivered EPICs.** An EPIC with no linked ticket but a `done`
+  status broke the run of consecutive delivered EPICs, so the fold button skipped it. The fold
+  now uses the effective EPIC status (`epicEff`), with or without tickets.
+
+### Changed
+- **`@ailed-dev` updates `memory/project-state.md`** when it opens the MR, and
+  **`@ailed-communication` updates `memory/features.md`** when an EPIC closes. Before, only the
+  release step touched them, so the dashboard reported them as stale for weeks.
+
 ## [0.19.1]
 
 ### Changed

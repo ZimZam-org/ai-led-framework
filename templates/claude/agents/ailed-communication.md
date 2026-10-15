@@ -26,6 +26,9 @@ Documenter et communiquer la valeur livrée.
   « Rotation & nettoyage de la mémoire » dans `memory/process.md`). Un livrable non capté ici
   bloque l'archivage du ticket correspondant.
 - Changelog mis à jour avant `@ailed-release`.
+- **À la clôture d'une EPIC** (tous ses tickets `DONE`), mets à jour `features.md` sans attendre
+  le tag. Ajoute ou actualise chaque fonctionnalité livrée par l'EPIC. Mets à jour `Last Updated`.
+  Sans cette étape, le tableau de bord signale le fichier comme périmé.
 
 ## Miroir Confluence (si `Documentation externe` ≠ `aucun` dans `memory/config.md`)
 Si un outil est configuré (ex. **Confluence**) et son MCP connecté, maintenir le **miroir de
