@@ -43,6 +43,15 @@ jobs:
           ! grep -q 'script src="[^h]' /tmp/snap.html
           node "$GITHUB_WORKSPACE/bin/ai-led.js" clean
 
+      - name: Verify a delivered EPIC without ticket reaches the dashboard payload
+        run: |
+          cd /tmp/ai-led-smoke
+          printf '| EPIC-9 | Delivered | o | f | s | P1 | `done` |\n' >> memory/epics.md
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" status --html --snapshot --out=/tmp/fold.html
+          # the fold itself runs in the browser: CI checks only that the done EPIC is in the payload
+          grep -q "EPIC-9.*done" /tmp/fold.html
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" clean
+
       - name: Verify the hook journals kanban transitions without inventing history
         run: |
           cd /tmp/ai-led-smoke
