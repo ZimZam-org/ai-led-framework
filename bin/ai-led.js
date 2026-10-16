@@ -1031,9 +1031,9 @@ function splitSectionsLines(md, maxDepth = HEADING_DEPTH_MAX) {
 // Replace, in `userMd`, the body of the named sections with the template's own. The
 // counterpart of the additive merge: used only under --refresh-rules, on the
 // framework-owned files, and only for sections the merge reported as drifted.
-function restoreSections(userMd, tplMd, titles) {
-  const u = splitSectionsLines(userMd);
-  const t = splitSectionsLines(tplMd);
+function restoreSections(userMd, tplMd, titles, maxDepth = HEADING_DEPTH_MAX) {
+  const u = splitSectionsLines(userMd, maxDepth);
+  const t = splitSectionsLines(tplMd, maxDepth);
   const want = new Set(titles);
   const tByKey = new Map(t.sections.map((x) => [x.key, x]));
   const out = u.pre.slice();
@@ -1157,7 +1157,7 @@ function updateMemory(cfg, memDir, projectDir, refreshRules = null) {
       // the rules of the version it was installed with. --refresh-rules is the explicit
       // way out: it restores the template body of the framework-owned sections.
       if (refreshRules && refreshRules.has(file) && changed.length) {
-        const restored = restoreSections(merged, rendered, changed);
+        const restored = restoreSections(merged, rendered, changed, MERGE_DEPTH[file] || HEADING_DEPTH_MAX);
         fs.writeFileSync(dest, restored);
         man.memory[file] = sha256(stableBody(restored));
         created++;
