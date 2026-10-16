@@ -415,34 +415,46 @@ const CONVENTIONS_PARTS = {
   en: ["In-place conventions", "DDD audit", "Target for new modules"],
 };
 const IN_PLACE_PART = { fr: CONVENTIONS_PARTS.fr[0], en: CONVENTIONS_PARTS.en[0] };
-const isPartHeading = (l) => /^##\s+\S/.test(l);
 const partTitle = (l) => l.replace(/^##\s+/, "").trim();
+
+// Each line with the level of the heading it carries, 0 for text. A line inside a fenced
+// code block is text whatever it starts with: a `# comment` in a shell snippet keeps its
+// mark. A fence opens with three backticks or tildes and closes with the same character.
+function markdownLines(md) {
+  let fence = null;
+  return md.split("\n").map((line) => {
+    const f = line.match(/^\s*(`{3,}|~{3,})/);
+    if (f && (!fence || f[1][0] === fence)) { fence = fence ? null : f[1][0]; return { line, level: 0 }; }
+    const h = fence ? null : line.match(/^(#{1,6})\s+\S/);
+    return { line, level: h ? h[1].length : 0 };
+  });
+}
+const partHeadings = (md) => markdownLines(md).map((x, i) => ({ ...x, i })).filter((x) => x.level === 2);
+const partIndex = (md, title) => (partHeadings(md).find((x) => partTitle(x.line) === title) || { i: -1 }).i;
 
 // Content placed under a part must nest below it: a document that brings its own `#` or `##`
 // would otherwise split the part in two and sit beside the audit and the target. Headings
 // move down together, so that the shallowest one becomes `###`.
 function demoteHeadings(md, minLevel = 3) {
-  const levels = md.split("\n").map((l) => (l.match(/^(#{1,6})\s+\S/) || [])[1]).filter(Boolean).map((h) => h.length);
+  const lines = markdownLines(md);
+  const levels = lines.filter((x) => x.level).map((x) => x.level);
   if (!levels.length) return md;
   const shift = Math.max(0, minLevel - Math.min(...levels));
   if (!shift) return md;
-  return md.split("\n").map((l) => {
-    const m = l.match(/^(#{1,6})(\s+\S.*)$/);
-    return m ? "#".repeat(Math.min(6, m[1].length + shift)) + m[2] : l;
-  }).join("\n");
+  return lines.map((x) => (x.level ? "#".repeat(Math.min(6, x.level + shift)) + x.line.slice(x.level) : x.line)).join("\n");
 }
 
 // Replace everything under the level-2 heading `title`, up to the next level-2 heading,
 // with `body`. The heading itself stays, so a later `update` still finds the part.
 function placeUnderPart(md, title, body) {
   const lines = md.split("\n");
-  const start = lines.findIndex((l) => isPartHeading(l) && partTitle(l) === title);
+  const start = partIndex(md, title);
   if (start < 0) {
     console.error(`\n${c.red("✗")} la partie « ${title} » est absente du template de conventions : import impossible.\n`);
     process.exit(1);
   }
-  let end = start + 1;
-  while (end < lines.length && !isPartHeading(lines[end])) end++;
+  const next = partHeadings(md).find((x) => x.i > start);
+  const end = next ? next.i : lines.length;
   return [...lines.slice(0, start + 1), "", demoteHeadings(body), "", ...lines.slice(end)].join("\n");
 }
 
@@ -453,8 +465,8 @@ function placeUnderPart(md, title, body) {
 // other two. A file that already has the first part is left as it is.
 function migrateConventionsParts(md, lang) {
   const lines = md.split("\n");
-  if (lines.some((l) => isPartHeading(l) && partTitle(l) === IN_PLACE_PART[lang])) return md;
-  const firstHeading = lines.findIndex((l) => /^#{2,6}\s+\S/.test(l));
+  if (partIndex(md, IN_PLACE_PART[lang]) >= 0) return md;
+  const firstHeading = markdownLines(md).findIndex((x) => x.level >= 2);
   const rule = lines.findIndex((l) => /^---\s*$/.test(l));
   const candidates = [firstHeading, rule < 0 ? -1 : rule + 1].filter((i) => i >= 0);
   if (!candidates.length) return md;
@@ -469,7 +481,7 @@ function migrateConventionsParts(md, lang) {
 // there sits beside the audit and the target, outside what the architect audits.
 function strayConventionParts(md, lang) {
   const parts = new Set(CONVENTIONS_PARTS[lang]);
-  return md.split("\n").filter(isPartHeading).map(partTitle).filter((t) => !parts.has(t));
+  return partHeadings(md).map((x) => partTitle(x.line)).filter((t) => !parts.has(t));
 }
 
 function importConventions(cfg) {
@@ -1922,7 +1934,7 @@ function doctorFindings(projectDir) {
     const conv = fs.readFileSync(convPath, "utf8");
     const partsLang = CONVENTIONS_PARTS[cfg.lang] ? cfg.lang : LANG_DEFAULT;
     const parts = CONVENTIONS_PARTS[partsLang];
-    const headings = conv.split("\n").filter(isPartHeading).map(partTitle);
+    const headings = partHeadings(conv).map((x) => partTitle(x.line));
     const missing = parts.filter((p) => !headings.includes(p));
     const stray = strayConventionParts(conv, partsLang);
     if (missing.length) {

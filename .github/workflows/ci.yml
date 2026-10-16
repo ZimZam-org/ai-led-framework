@@ -85,10 +85,12 @@ jobs:
           node "$GITHUB_WORKSPACE/bin/ai-led.js" doctor | grep -q 'Hors partie'
           # an imported document keeps its own headings, demoted under the first part
           mkdir -p /tmp/ai-led-conv && cd /tmp/ai-led-conv
-          printf '# Nos conventions\n\n## Nommage\n\nCamelCase partout.\n' > CONV.md
+          printf '# Nos conventions\n\n## Nommage\n\nCamelCase partout.\n\n```bash\n# lance les tests\nnpm test\n```\n' > CONV.md
           node "$GITHUB_WORKSPACE/bin/ai-led.js" init -y --conventions=CONV.md
           sed -n '/^## Conventions en place/,/^## Audit DDD/p' memory/conventions.md | grep -q '^#### Nommage'
           test "$(grep -c '^## ' memory/conventions.md)" = "3"
+          # a `#` inside a code block is a comment, never a heading to demote
+          grep -q '^# lance les tests' memory/conventions.md
           cd /tmp/ai-led-smoke
           # a mode left to set blocks the gate until a human writes it
           ! node "$GITHUB_WORKSPACE/bin/ai-led.js" doctor --quiet
