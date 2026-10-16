@@ -25,6 +25,9 @@ This project runs on the **AI-Led** framework (v{{FRAMEWORK_VERSION}}): persiste
    points of the workflows (`memory/process.md`).
 7. **Every text produced follows `memory/writing-rules.md`**: one idea per sentence, 20
    words at most, active voice, one term = one meaning. The language is that of `memory/`.
+8. **A new module follows its `VALIDATED` context model** (`memory/contexts/`) and the
+   *Target for new modules* of `memory/conventions.md`. Legacy code follows the *In-place
+   conventions*. The project mode in `memory/config.md` says which of the two applies.
 
 ### Getting started
 

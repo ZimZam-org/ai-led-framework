@@ -1,6 +1,6 @@
 ---
 name: ailed-quality-gate
-description: Vérifie que tous les critères de clôture d'un ticket sont remplis avant fusion ou release.
+description: Vérifie que tous les critères de clôture d'un ticket sont remplis avant fusion ou release, contrat de frontières et modèle de contexte compris.
 ---
 
 # Skill — ailed-quality-gate
@@ -18,6 +18,8 @@ Vérifier que tous les critères de clôture d'un ticket sont remplis avant fusi
 ✓ tests OK
 ✓ review PASS
 ✓ test PASS
+✓ modèle de contexte VALIDATED
+✓ frontières OK : aucune violation absente de la baseline
 ✓ documentation mise à jour
 ✓ changelog mis à jour
 ✓ feature list mise à jour
@@ -36,6 +38,31 @@ npx @s2bp/ai-led-framework lint
 La commande vérifie les règles mesurables de `memory/writing-rules.md` sur `memory/`.
 Une erreur bloque la gate. Un avertissement se corrige ou se justifie dans le rapport.
 Si la norme vaut `{{DISABLED}}` dans `memory/config.md`, le critère ne s'applique pas.
+
+## Contrôle du modèle de contexte
+Le ticket nomme son contexte dans la cellule `Détail technique` de `memory/kanban.md`. Le
+critère « modèle de contexte VALIDATED » s'obtient quand `memory/contexts/<contexte>.md` porte
+ce statut. Un ticket sans contexte dans cette cellule échoue le critère.
+
+Deux contextes n'ont pas de modèle, et le critère s'obtient alors par la partie de
+`memory/conventions.md` qui gouverne chaque fichier touché :
+- `transverse` : un ticket sans use case, qui livre de l'outillage, de la CI, une mise à jour de
+  dépendance, de la documentation ou un correctif des workflows Incident et Security ;
+- `ancien code` : un ticket d'un projet `brownfield` qui touche seulement le code existant.
+
+Une cellule sans contexte se lit `transverse` : les tickets écrits avant le modèle passent, et
+`@ailed-planner` nomme le contexte de chaque ticket qu'il crée. Le contrôle des frontières
+s'applique à chaque ticket.
+
+## Contrôle des frontières
+1. Lire l'outil, le contrat et la baseline dans la colonne `Contrat de frontières` du registre
+   de `memory/architecture.md`, pour la solution du ticket.
+2. Lancer l'outil sur le dépôt avec le contrat.
+3. Comparer chaque violation à la baseline. Une violation absente de la baseline bloque la
+   gate ; le rapport la cite avec son fichier et sa règle.
+
+Quand la solution attend encore son outil (ADR `provisoire`), le critère bloque jusqu'à ce que le
+premier ticket du contexte installe l'outil et confirme l'ADR.
 
 ## Exemple d'utilisation
 > « Applique la quality-gate sur {{TICKET_PREFIX}}-000001 » → produit le statut de chaque critère

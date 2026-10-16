@@ -138,6 +138,46 @@ function normWriting(v) {
   return WRITING_NORM_DEFAULT;
 }
 
+// ── project mode ──────────────────────────────────────────────
+// `greenfield` or `brownfield`. Every agent reads it from memory/config.md § Mode projet
+// before acting, so the value is never baked into an agent's text: a human corrects a
+// wrong detection in config.md and nothing needs reinstalling.
+const PROJECT_MODES = ["greenfield", "brownfield"];
+const MODE_UNSET = { fr: "à renseigner", en: "to set" };
+const SOURCE_EXT = new Set([
+  ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".vue", ".svelte", ".py", ".php", ".rb", ".go",
+  ".rs", ".java", ".kt", ".kts", ".scala", ".swift", ".m", ".mm", ".cs", ".fs", ".c", ".h",
+  ".cc", ".cpp", ".hpp", ".dart", ".ex", ".exs", ".erl", ".hs", ".clj", ".lua", ".sql", ".sh",
+  ".html", ".htm", ".css", ".scss", ".less", ".twig", ".erb", ".jsp",
+]);
+// deep enough for src/main/java/com/acme/app/Foo.java, which a shallow walk never reaches
+const SOURCE_SCAN_DEPTH = 10;
+const SOURCE_SKIP_DIRS = new Set(["node_modules", "vendor", "dist", "build", "target", "memory"]);
+// files the framework itself writes at the project root: never a sign of an existing project
+const SOURCE_SKIP_FILES = new Set(["ailed-status.html"]);
+
+function normMode(v) {
+  const m = String(v || "").trim().toLowerCase();
+  return PROJECT_MODES.includes(m) ? m : null;
+}
+
+// A repository holding sources outside the files ai-led installs is an existing project.
+// Hidden folders (.git, .claude, .ailed) and dependency folders never count as sources.
+function hasSources(dir, depth = SOURCE_SCAN_DEPTH) {
+  let entries;
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { return false; }
+  for (const e of entries) {
+    if (e.isDirectory()) {
+      if (depth > 0 && !e.name.startsWith(".") && !SOURCE_SKIP_DIRS.has(e.name) && hasSources(path.join(dir, e.name), depth - 1)) return true;
+      continue;
+    }
+    if (e.isFile() && !SOURCE_SKIP_FILES.has(e.name) && SOURCE_EXT.has(path.extname(e.name).toLowerCase())) return true;
+  }
+  return false;
+}
+
+function deriveMode() { return hasSources(cwd) ? "brownfield" : "greenfield"; }
+
 // ── per-agent LLM model policy ────────────────────────────────
 // Default tiering: which Claude model each agent runs on. The harness reads this
 // from each agent's frontmatter (`model:`), NOT from config.md at runtime — so we
@@ -222,13 +262,19 @@ async function resolveConfig() {
   if (!langs.includes(lang)) lang = LANG_DEFAULT;
   let disabled = DISABLED_WORD[lang] || "none";
 
-  const defaults = { trigram: deriveTrigram() };
+  const defaults = { trigram: deriveTrigram(), mode: deriveMode() };
+  if (flag("mode") && !normMode(flag("mode"))) {
+    console.error(`\n${c.yellow("--mode")} attend ${PROJECT_MODES.map((m) => "`" + m + "`").join(" ou ")} (lu : ${flag("mode")}).\n`);
+    process.exit(1);
+  }
 
   // explicit flags always win
   const cfg = {
     lang,
     disabled,
     trigram: (flag("trigram") || defaults.trigram).toUpperCase(),
+    // project mode: --mode wins, else deduced from the repository (sources present → brownfield)
+    mode: normMode(flag("mode")) || defaults.mode,
     monitoring: flag("monitoring") || disabled,
     e2e: flag("e2e") || disabled,
     promo: flag("promo") || disabled,
@@ -251,6 +297,7 @@ async function resolveConfig() {
     process.stdin.isTTY &&
     !flag("lang") &&
     !flag("trigram") &&
+    !flag("mode") &&
     !flag("monitoring") &&
     !flag("e2e") &&
     !flag("promo") &&
@@ -269,6 +316,12 @@ async function resolveConfig() {
     disabled = cfg.disabled = DISABLED_WORD[cfg.lang] || "none";
     console.log(c.dim(`(Entrée = valeur par défaut, \`${disabled}\` = intégration désactivée)\n`));
     cfg.trigram = (await ask(rl, "Trigramme du projet (préfixe de ticket) :", defaults.trigram)).toUpperCase();
+    for (;;) {
+      const typed = await ask(rl, "Mode projet (greenfield = projet neuf / brownfield = code existant) :", defaults.mode);
+      cfg.mode = normMode(typed);
+      if (cfg.mode) break;
+      console.log(`  ${c.yellow("!")} ${PROJECT_MODES.join(" ou ")} (lu : ${typed})`);
+    }
     cfg.monitoring = await ask(rl, "Outil de monitoring / logs :", disabled);
     cfg.e2e = await ask(rl, "Outil de tests end-to-end :", disabled);
     cfg.promo = await ask(rl, "Outil de génération promo :", disabled);
@@ -299,6 +352,7 @@ function substitute(content, cfg, agentName) {
     .replace(/{{MODEL}}/g, model)
     .replace(/{{MODELS_TABLE}}/g, () => renderModelsTable(models, cfg.lang))
     .replace(/{{TICKET_PREFIX}}/g, cfg.trigram)
+    .replace(/{{PROJECT_MODE}}/g, () => cfg.mode || MODE_UNSET[cfg.lang] || MODE_UNSET[LANG_DEFAULT])
     .replace(/{{MONITORING}}/g, cfg.monitoring)
     .replace(/{{E2E}}/g, cfg.e2e)
     .replace(/{{PROMO}}/g, cfg.promo)
@@ -355,8 +409,88 @@ function copyTree(src, dest, cfg, forceOverwrite = force) {
 }
 
 // ── optional: import an existing conventions file verbatim ────
-// Copies the user-provided file's content into memory/conventions.md, prefixed
-// with a provenance header so agents read it as memory and humans can re-sync.
+// The imported content becomes the first part of memory/conventions.md, the in-place
+// conventions: the audit and the target stay empty for @ailed-architect to fill. A
+// provenance line under the title lets agents read it as memory and humans re-sync it.
+const CONVENTIONS_PARTS = {
+  fr: ["Conventions en place", "Audit DDD", "Cible des nouveaux modules"],
+  en: ["In-place conventions", "DDD audit", "Target for new modules"],
+};
+const IN_PLACE_PART = { fr: CONVENTIONS_PARTS.fr[0], en: CONVENTIONS_PARTS.en[0] };
+const partTitle = (l) => l.replace(/^##\s+/, "").trim();
+
+// Each line with the level of the heading it carries, 0 for text. A line inside a fenced
+// code block is text whatever it starts with: a `# comment` in a shell snippet keeps its
+// mark. A fence opens with three backticks or tildes and closes with the same character.
+function markdownLines(md) {
+  let fence = null;
+  return md.split("\n").map((line) => {
+    const f = line.match(/^\s*(`{3,}|~{3,})/);
+    if (f && (!fence || f[1][0] === fence)) { fence = fence ? null : f[1][0]; return { line, level: 0 }; }
+    const h = fence ? null : line.match(/^(#{1,6})\s+\S/);
+    return { line, level: h ? h[1].length : 0 };
+  });
+}
+const partHeadings = (md) => markdownLines(md).map((x, i) => ({ ...x, i })).filter((x) => x.level === 2);
+const partIndex = (md, title) => (partHeadings(md).find((x) => partTitle(x.line) === title) || { i: -1 }).i;
+
+// Content placed under a part must nest below it: a document that brings its own `#` or `##`
+// would otherwise split the part in two and sit beside the audit and the target. Headings
+// move down together, so that the shallowest one becomes `###`.
+function demoteHeadings(md, minLevel = 3) {
+  const lines = markdownLines(md);
+  const levels = lines.filter((x) => x.level).map((x) => x.level);
+  if (!levels.length) return md;
+  const shift = Math.max(0, minLevel - Math.min(...levels));
+  if (!shift) return md;
+  return lines.map((x) => (x.level ? "#".repeat(Math.min(6, x.level + shift)) + x.line.slice(x.level) : x.line)).join("\n");
+}
+
+// Replace everything under the level-2 heading `title`, up to the next level-2 heading,
+// with `body`. The heading itself stays, so a later `update` still finds the part.
+function placeUnderPart(md, title, body) {
+  const lines = md.split("\n");
+  const start = partIndex(md, title);
+  if (start < 0) {
+    console.error(`\n${c.red("✗")} la partie « ${title} » est absente du template de conventions : import impossible.\n`);
+    process.exit(1);
+  }
+  const next = partHeadings(md).find((x) => x.i > start);
+  const end = next ? next.i : lines.length;
+  return [...lines.slice(0, start + 1), "", demoteHeadings(body), "", ...lines.slice(end)].join("\n");
+}
+
+// A conventions.md written before the three parts existed holds its rules at the top level:
+// the old template's five `##` sections, or an imported document after its `---`. The merge
+// alone would add the parts beside them, and the architect audits the first part only. So
+// everything after the header moves under the first part, demoted, before the merge adds the
+// other two. The header itself comes from the rendered template, whose intro presents the
+// three parts; the `Source` line of an import is the one header line a human owns, so it is
+// kept. A file that already has the first part is left as it is.
+function migrateConventionsParts(md, lang, rendered) {
+  const lines = md.split("\n");
+  if (partIndex(md, IN_PLACE_PART[lang]) >= 0) return md;
+  const firstHeading = markdownLines(md).findIndex((x) => x.level >= 2);
+  const rule = lines.findIndex((l) => /^---\s*$/.test(l));
+  const candidates = [firstHeading, rule < 0 ? -1 : rule + 1].filter((i) => i >= 0);
+  if (!candidates.length) return md;
+  const cut = Math.min(...candidates);
+  const body = lines.slice(cut).join("\n").trim();
+  if (!body) return md;
+  const source = lines.slice(0, cut).find((l) => /^Source\s*:/.test(l));
+  const partAt = partIndex(rendered, IN_PLACE_PART[lang]);
+  let head = (partAt >= 0 ? rendered.split("\n").slice(0, partAt) : lines.slice(0, cut)).join("\n").replace(/\n+$/, "");
+  if (source) head = head.replace(/^(Last Updated:[^\n]*)$/m, `$1\n${source}`);
+  return `${head}\n\n## ${IN_PLACE_PART[lang]}\n\n${demoteHeadings(body)}\n`;
+}
+
+// The `##` headings of conventions.md that are none of the three parts: a rule written
+// there sits beside the audit and the target, outside what the architect audits.
+function strayConventionParts(md, lang) {
+  const parts = new Set(CONVENTIONS_PARTS[lang]);
+  return partHeadings(md).map((x) => partTitle(x.line)).filter((t) => !parts.has(t));
+}
+
 function importConventions(cfg) {
   const src = path.resolve(cwd, cfg.conventions);
   const dest = path.join(cwd, "memory", "conventions.md");
@@ -365,14 +499,13 @@ function importConventions(cfg) {
     console.log(`  ${c.yellow("skip")} ${cfg.conventions} ${c.dim("(introuvable — le stub est conservé)")}`);
     return;
   }
-  const now = new Date().toISOString().slice(0, 10);
-  const title = cfg.lang === "en" ? "Conventions & technical organization" : "Conventions & organisation technique";
   const sourceNote =
     cfg.lang === "en"
       ? `Source: ${cfg.conventions} (imported at install — re-sync via @ailed-init-memory if the original changes)`
       : `Source : ${cfg.conventions} (importé à l'install — re-synchroniser via @ailed-init-memory si l'original évolue)`;
-  const header = `# ${title}\n\nLast Updated: ${now}\n${sourceNote}\n\n---\n\n`;
-  fs.writeFileSync(dest, header + fs.readFileSync(src, "utf8"));
+  const tpl = substitute(fs.readFileSync(path.join(TPL, "memory", cfg.lang, "conventions.md"), "utf8"), cfg, "conventions");
+  const imported = fs.readFileSync(src, "utf8").trim();
+  fs.writeFileSync(dest, placeUnderPart(tpl.replace(/^(Last Updated:[^\n]*\n)/m, `$1${sourceNote}\n`), IN_PLACE_PART[cfg.lang], imported));
   created++;
   console.log(`  ${c.green("+")}    memory/conventions.md ${c.dim(`(import: ${cfg.conventions})`)}`);
 }
@@ -601,7 +734,7 @@ async function init() {
 
   const cfg = await resolveConfig();
   console.log(
-    `\n${c.dim("Config")} : langue=${c.bold(cfg.lang)} · trigramme=${c.bold(cfg.trigram)} · monitoring=${cfg.monitoring} · e2e=${cfg.e2e} · promo=${cfg.promo} · veille=${cfg.watch} · seo/aso=${cfg.seo_aso} · ticketing=${cfg.ticketing} · doc=${cfg.documentation} · conventions=${cfg.conventions || cfg.disabled} · rédaction=${normWriting(cfg.writing) === "off" ? cfg.disabled : WRITING_NORM_DEFAULT}\n`
+    `\n${c.dim("Config")} : langue=${c.bold(cfg.lang)} · trigramme=${c.bold(cfg.trigram)} · mode=${c.bold(cfg.mode)} · monitoring=${cfg.monitoring} · e2e=${cfg.e2e} · promo=${cfg.promo} · veille=${cfg.watch} · seo/aso=${cfg.seo_aso} · ticketing=${cfg.ticketing} · doc=${cfg.documentation} · conventions=${cfg.conventions || cfg.disabled} · rédaction=${normWriting(cfg.writing) === "off" ? cfg.disabled : WRITING_NORM_DEFAULT}\n`
   );
 
   // 1. Agents  ->  .claude/agents/
@@ -658,6 +791,19 @@ async function init() {
 // ── re-read the installed config from memory/config.md ────────
 // Lets `update` re-apply the right placeholders without re-asking the user.
 // Returns null if config.md is absent (project not initialized yet).
+// The mode is the value of its own bullet, inside its own section, HTML comments removed: a
+// mention anywhere else in the file, or a commented-out former value, is never the mode.
+function readModeValue(txt) {
+  const lines = txt.replace(/<!--[\s\S]*?-->/g, "").split("\n");
+  const start = lines.findIndex((l) => /^##\s+(mode projet|project mode)\s*$/i.test(l));
+  if (start < 0) return null;
+  for (let i = start + 1; i < lines.length && !/^##\s/.test(lines[i]); i++) {
+    const m = lines[i].match(/^-\s*(?:mode projet|project mode)\s*:\s*`([^`]*)`/i);
+    if (m) return m[1].trim() || null;
+  }
+  return null;
+}
+
 function parseInstalledConfig(memDir) {
   const p = path.join(memDir, "config.md");
   if (!fs.existsSync(p)) return null;
@@ -684,10 +830,16 @@ function parseInstalledConfig(memDir) {
   const trig = txt.match(/trigram[^\n]*?`([^`]+)`/i);
   const trigram = ((trig ? trig[1] : deriveTrigram()).replace(/[^A-Za-z0-9]/g, "").slice(0, 5) || "PRJ").toUpperCase();
 
+  // project mode from its dedicated bullet (fr "Mode projet :" / en "Project mode:"). `modeRaw`
+  // keeps what the file says, so `doctor` can name an unreadable value; `mode` is null for an
+  // absent section, the unset word, or anything outside the two modes.
+  const modeRaw = readModeValue(txt);
   const cfg = {
     lang,
     disabled,
     trigram,
+    mode: modeRaw ? normMode(modeRaw) : null,
+    modeRaw,
     monitoring: disabled,
     e2e: disabled,
     promo: disabled,
@@ -797,7 +949,10 @@ function reportConfigWarnings(cfg) {
 // memory/ mixes two natures: framework-owned scaffolding whose *structure*
 // evolves (config.md, process.md) and pure project data (everything else).
 // `update` must bring structural changes in without ever clobbering user data.
-const FRAMEWORK_MEMORY = new Set(["config.md", "process.md", "writing-rules.md", "glossary.md", "observations.md"]);
+const FRAMEWORK_MEMORY = new Set(["config.md", "process.md", "writing-rules.md", "glossary.md", "observations.md", "conventions.md"]);
+// conventions.md is merged at the level of its three parts: the `###` stubs under a part are
+// placeholders, and a part a human or an import already filled keeps its own structure.
+const MERGE_DEPTH = { "conventions.md": 2 };
 const RULE_MEMORY = new Set(["process.md", "writing-rules.md", "observations.md"]);
 
 function sha256(s) { return crypto.createHash("sha256").update(s, "utf8").digest("hex"); }
@@ -850,9 +1005,11 @@ function recordMemoryManifest(cfg, memDir, projectDir, skip = new Set()) {
 // Split markdown into a leading preamble + a flat list of ATX-heading-delimited
 // sections. Concatenating pre + every section's lines reproduces the input
 // verbatim, so an insert-only merge leaves untouched sections byte-for-byte.
-function splitSectionsLines(md) {
+const HEADING_DEPTH_MAX = 6;
+
+function splitSectionsLines(md, maxDepth = HEADING_DEPTH_MAX) {
   const lines = md.split("\n");
-  const isHeading = (l) => /^#{1,6}\s+\S/.test(l);
+  const isHeading = (l) => /^#{1,6}\s+\S/.test(l) && (l.match(/^#+/)[0].length <= maxDepth);
   const norm = (l) => l.replace(/^#{1,6}\s+/, "").trim().toLowerCase().replace(/\s+/g, " ");
   const title = (l) => l.replace(/^#{1,6}\s+/, "").trim();
   let i = 0;
@@ -874,9 +1031,9 @@ function splitSectionsLines(md) {
 // Replace, in `userMd`, the body of the named sections with the template's own. The
 // counterpart of the additive merge: used only under --refresh-rules, on the
 // framework-owned files, and only for sections the merge reported as drifted.
-function restoreSections(userMd, tplMd, titles) {
-  const u = splitSectionsLines(userMd);
-  const t = splitSectionsLines(tplMd);
+function restoreSections(userMd, tplMd, titles, maxDepth = HEADING_DEPTH_MAX) {
+  const u = splitSectionsLines(userMd, maxDepth);
+  const t = splitSectionsLines(tplMd, maxDepth);
   const want = new Set(titles);
   const tByKey = new Map(t.sections.map((x) => [x.key, x]));
   const out = u.pre.slice();
@@ -889,9 +1046,9 @@ function restoreSections(userMd, tplMd, titles) {
   return merged;
 }
 
-function mergeSections(userMd, tplMd) {
-  const u = splitSectionsLines(userMd);
-  const t = splitSectionsLines(tplMd);
+function mergeSections(userMd, tplMd, maxDepth = HEADING_DEPTH_MAX) {
+  const u = splitSectionsLines(userMd, maxDepth);
+  const t = splitSectionsLines(tplMd, maxDepth);
   const have = new Set(u.sections.map((s) => s.key));
   const tByKey = new Map(t.sections.map((s) => [s.key, s]));
   const normBody = (ls) => ls.join("\n").replace(/\s+/g, " ").trim();
@@ -992,26 +1149,28 @@ function updateMemory(cfg, memDir, projectDir, refreshRules = null) {
     // edited locally (or no baseline): framework files get additive sections,
     // project data is preserved verbatim.
     if (FRAMEWORK_MEMORY.has(file)) {
-      const { merged, added, changed } = mergeSections(current, rendered);
+      const base = file === "conventions.md" ? migrateConventionsParts(current, cfg.lang, rendered) : current;
+      const { merged, added, changed } = mergeSections(base, rendered, MERGE_DEPTH[file] || HEADING_DEPTH_MAX);
       // The merge is additive by design: it never overwrites a section a human may
       // have adapted. But when *every* heading already matches, a framework rule that
       // changed wording inside a section can never land, and the project keeps running
       // the rules of the version it was installed with. --refresh-rules is the explicit
       // way out: it restores the template body of the framework-owned sections.
       if (refreshRules && refreshRules.has(file) && changed.length) {
-        const restored = restoreSections(merged, rendered, changed);
+        const restored = restoreSections(merged, rendered, changed, MERGE_DEPTH[file] || HEADING_DEPTH_MAX);
         fs.writeFileSync(dest, restored);
         man.memory[file] = sha256(stableBody(restored));
         created++;
         console.log(`  ${c.green("↻")}    ${rel} ${c.dim(`(${changed.length} section(s) réalignée(s) : ${changed.join(", ")})`)}`);
         continue;
       }
-      if (added.length) {
+      if (added.length || base !== current) {
         fs.writeFileSync(dest, merged);
         // merged = framework sections + user edits → never mark pristine again.
         delete man.memory[file];
         created++;
-        console.log(`  ${c.green("+")}    ${rel} ${c.dim(`(+${added.length} section(s) : ${added.join(", ")})`)}`);
+        const moved = base !== current ? ` · contenu déplacé sous « ${IN_PLACE_PART[cfg.lang]} »` : "";
+        console.log(`  ${c.green("+")}    ${rel} ${c.dim(`(+${added.length} section(s) : ${added.join(", ")}${moved})`)}`);
       } else {
         skipped++;
         console.log(`  ${c.yellow("skip")} ${rel} ${c.dim("(aucune section manquante)")}`);
@@ -1063,8 +1222,14 @@ async function update() {
   // dim line nobody read; a missing row now stops the update outright.
   reportConfigWarnings(cfg);
 
+  // An install that predates the mode receives the value init would have deduced, so a CI
+  // that runs doctor after update stays green. The summary says it, and a human corrects
+  // config.md when the deduction is wrong.
+  const modeDeduced = !cfg.mode;
+  if (modeDeduced) cfg.mode = deriveMode();
+
   console.log(
-    `\n${c.dim("Config relue depuis memory/config.md")} : langue=${c.bold(cfg.lang)} · trigramme=${c.bold(cfg.trigram)} · monitoring=${cfg.monitoring} · e2e=${cfg.e2e} · promo=${cfg.promo} · veille=${cfg.watch} · seo/aso=${cfg.seo_aso} · ticketing=${cfg.ticketing} · doc=${cfg.documentation} · style=${cfg.style} · rédaction=${normWriting(cfg.writing) === "off" ? cfg.disabled : WRITING_NORM_DEFAULT}\n`
+    `\n${c.dim("Config relue depuis memory/config.md")} : langue=${c.bold(cfg.lang)} · trigramme=${c.bold(cfg.trigram)} · mode=${c.bold(cfg.mode)}${modeDeduced ? c.dim(" (déduit du dépôt)") : ""} · monitoring=${cfg.monitoring} · e2e=${cfg.e2e} · promo=${cfg.promo} · veille=${cfg.watch} · seo/aso=${cfg.seo_aso} · ticketing=${cfg.ticketing} · doc=${cfg.documentation} · style=${cfg.style} · rédaction=${normWriting(cfg.writing) === "off" ? cfg.disabled : WRITING_NORM_DEFAULT}\n`
   );
 
   // 1. Agents — always overwritten (framework-owned)
@@ -1760,6 +1925,42 @@ function doctorFindings(projectDir) {
         "garde la cellule Outil réduite au nom de l'outil ; mets le commentaire sous le tableau");
     } else {
       add("ok", "config", `${label} = \`${val}\`${val === cfg.disabled ? c.dim(" (désactivé)") : ""}`);
+    }
+  }
+
+  // 2b. project mode. Every agent picks its branch from it; a value nobody can read leaves
+  //     the architect auditing nothing and the planner cutting a model that is not validated.
+  if (!cfg.modeRaw) {
+    add("error", "mode", "aucune valeur lisible dans memory/config.md § Mode projet — les agents ne savent pas quelle branche suivre.",
+      "npx @s2bp/ai-led-framework update, puis écris `greenfield` ou `brownfield` dans la section");
+  } else if (Object.values(MODE_UNSET).includes(cfg.modeRaw)) {
+    add("error", "mode", "mode projet non renseigné — les agents ne savent pas quelle branche suivre.",
+      `écris \`${PROJECT_MODES.join("\` ou \`")}\` dans memory/config.md § Mode projet`);
+  } else if (!cfg.mode) {
+    add("error", "mode", `mode projet \`${cfg.modeRaw}\` inconnu — valeurs : ${PROJECT_MODES.join(" · ")}.`,
+      "écris la valeur dans memory/config.md § Mode projet");
+  } else {
+    add("ok", "mode", `mode projet \`${cfg.mode}\`.`);
+  }
+
+  // 2c. conventions.md parts. The architect audits the first part only: a rule written
+  //     beside the three parts, or a file that predates them, is a rule nobody audits.
+  const convPath = path.join(memDir, "conventions.md");
+  if (fs.existsSync(convPath)) {
+    const conv = fs.readFileSync(convPath, "utf8");
+    const partsLang = CONVENTIONS_PARTS[cfg.lang] ? cfg.lang : LANG_DEFAULT;
+    const parts = CONVENTIONS_PARTS[partsLang];
+    const headings = partHeadings(conv).map((x) => partTitle(x.line));
+    const missing = parts.filter((p) => !headings.includes(p));
+    const stray = strayConventionParts(conv, partsLang);
+    if (missing.length) {
+      add("warn", "conventions", `memory/conventions.md sans la partie « ${missing.join(" », « ")} » — l'audit DDD n'a pas de place.`,
+        "npx @s2bp/ai-led-framework update");
+    } else if (stray.length) {
+      add("warn", "conventions", `memory/conventions.md : « ${stray.join(" », « ")} » hors des trois parties — l'architecte n'audite que « ${parts[0]} ».`,
+        `déplace ces sections sous « ${parts[0]} » (titres en \`###\`)`);
+    } else {
+      add("ok", "conventions", "memory/conventions.md porte ses trois parties.");
     }
   }
 
@@ -4584,7 +4785,7 @@ const LINT_ACRONYM_OK = new Set([
   "MFA", "OWASP", "CVE", "CVSS", "RGPD", "GDPR", "KPI", "MVP", "ROI", "ETA", "UTC",
   "ISO", "ASD", "STE", "STE100", "FAQ", "TODO", "DONE", "PASS", "FAIL", "OK", "KO", "NA",
   "CRITICAL", "HIGH", "MEDIUM", "LOW", "NONE", "README", "CHANGELOG", "LICENSE",
-  "FPS", "TTI", "RAM", "CPU", "SLA", "SLO",
+  "FPS", "TTI", "RAM", "CPU", "SLA", "SLO", "DDD",
 ]);
 
 const LINT_RULES = {
@@ -4879,6 +5080,7 @@ ${c.bold("Options de init")}
   --style=NIVEAU      Style de sortie agents/rapports : concis | standard | détaillé (défaut : standard)
   --writing=NORME     Norme de rédaction des textes produits : ste | aucun (défaut : ste)
   --conventions=CHEMIN  Importe un fichier de conventions/organisation technique dans memory/conventions.md (facultatif)
+  --mode=MODE         Mode projet : greenfield | brownfield (défaut : déduit du dépôt, brownfield dès qu'il contient des sources)
   --model-<agent>=TIER  Modèle d'un agent (ex. --model-dev=opus) ; TIER : opus | sonnet | haiku | inherit
   -y, --yes           Mode non interactif (valeurs par défaut / flags fournis)
   -f, --force         Écrase les fichiers existants (par défaut : ignorés)

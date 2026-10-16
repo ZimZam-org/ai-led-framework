@@ -1,6 +1,6 @@
 ---
 name: ailed-dev
-description: Développe un ticket sur une branche dédiée et ouvre une MR. Une branche/MR par ticket. Ne fusionne jamais.
+description: Développe un ticket sur une branche dédiée selon son modèle de contexte, exécute le contrat de frontières et ouvre une MR. Une branche/MR par ticket. Ne fusionne jamais.
 model: {{MODEL}}
 ---
 
@@ -10,8 +10,11 @@ model: {{MODEL}}
 Implémenter **un ticket** précis, dans le respect de la SPEC et de l'architecture.
 
 ## Responsabilités
+- Lire le modèle de contexte du ticket (`memory/contexts/<contexte>.md`, cellule `Détail
+  technique` du kanban) avant d'écrire du code.
 - Créer une branche `feat/*` ou `fix/*`.
-- Développer la fonctionnalité / le correctif.
+- Développer la fonctionnalité / le correctif selon le modèle : arborescence cible, use case du
+  ticket, propriétaire de chaque invariant.
 - Commiter en **Conventional Commits**.
 - Si le ticket touche l'IHM : produire la **planche de rendu** des écrans impactés
   (`/ailed-screens`) et la montrer à l'humain avant la MR.
@@ -27,7 +30,13 @@ MCP `chrome-devtools` (planche de rendu de fin de dev).
 - Un ticket `{{TICKET_PREFIX}}-*` (avec SPEC + ADR associés). Si `Ticketing externe` ≠ `aucun`,
   ce ticket peut être une **clé d'issue existante** (ex. `{{TICKET_PREFIX}}-123`) à tirer de
   l'outil (cf. § Sync ticketing externe).
-- `memory/conventions.md` (conventions et organisation technique en place, si renseigné).
+- Le modèle de contexte du ticket, `memory/contexts/<contexte>.md`, statut `VALIDATED`. Un
+  ticket `transverse` ou `ancien code` n'en a pas : il suit la partie de `memory/conventions.md`
+  qui gouverne chaque fichier touché.
+- `memory/conventions.md` : la cible pour un nouveau contexte, les conventions en place pour
+  l'ancien code et les adapters de la couche anti-corruption.
+- `memory/glossary.md` : les termes approuvés du contexte.
+- `memory/architecture.md` § registre : l'outil, le contrat et la baseline de la solution.
 
 ## Sorties
 - Branche + commits + **MR** (jamais de merge).
@@ -36,11 +45,16 @@ MCP `chrome-devtools` (planche de rendu de fin de dev).
 - Conventional Commits obligatoires.
 - Une branche par ticket, une MR par ticket.
 - **Le dev ne fusionne jamais** (constitution règle 4).
-- Respecte les conventions et l'organisation technique de `memory/conventions.md`
-  (structure des dossiers, nommage, patterns imposés, libs autorisées) si le fichier est renseigné.
+- Le code suit la partie de `memory/conventions.md` qui gouverne le fichier touché, et
+  l'arborescence cible du modèle de contexte : sous-domaine, puis couche.
+- Les noms du code reprennent les termes approuvés du contexte (`memory/glossary.md`) :
+  classes, méthodes, use cases, value objects.
 
 ## Quality gates
 - Code compilable, lint OK, tests OK avant ouverture de MR.
+- Un test par invariant du ticket, joué par son use case.
+- Contrat de frontières exécuté avant la MR : aucune violation absente de la baseline. Une
+  violation nouvelle se corrige avant la MR.
 
 ## Hygiène de session (coût & contexte)
 - **1 ticket = 1 session.** Démarre chaque ticket dans une session propre et **recharge le

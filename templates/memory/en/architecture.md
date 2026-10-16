@@ -9,17 +9,29 @@ Last Updated: {{DATE}}
 > The `short ID` (e.g. `mobile`, `backoffice`, `site`) is the **tag** reused across
 > `roadmap.md`, `epics.md` and `kanban.md`. Maintained by `@ailed-architect` / `@ailed-init-memory`.
 
-| Short ID | Type | Stack | Description | Domains (DDD) |
-| -------- | ---- | ----- | ----------- | ------------- |
+| Short ID | Type | Stack | Description | Domains (DDD) | Boundary contract |
+| -------- | ---- | ----- | ----------- | ------------- | ----------------- |
 
 ### Business-domain breakdown (DDD)
 
-> Filled in by `@ailed-architect` **after the first SPEC** (`@ailed-brainstorm`) when
-> `conventions.md` imposes no technical framework. **Low confidence, human validation required.**
+> Filled in by `@ailed-architect` for every SPEC that creates a module or restructures an area.
+> Each bounded context has its model in `memory/contexts/<context>.md` (`/ailed-context-model`).
+> The `Domains (DDD)` column of the registry points to that file. The `Boundary contract`
+> column names the chosen tool, its ADR and its baseline: one tool per solution.
+>
+> **Human validation required**: the model goes from `PROPOSED` to `VALIDATED`.
 > A target shares a domain with other targets, or keeps it for itself alone.
 > Each iteration enriches the existing breakdown. An ADR traces any structural rework.
 
-TODO
+#### Context map
+
+> One context per row, with its neighbours and the port that joins them. On a `brownfield`
+> project, legacy code is a context of its own: every boundary with it carries the
+> anti-corruption layer. `@ailed-init-memory` lists the existing modules here as candidate
+> contexts, at low confidence.
+
+| Context | Model | Neighbours (relation · port) | Anti-corruption layer | Confidence |
+| ------- | ----- | ---------------------------- | --------------------- | ---------- |
 
 ## Application architecture
 

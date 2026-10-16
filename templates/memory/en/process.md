@@ -7,6 +7,10 @@ Describes the agent-driven workflows. Each step consumes the artefacts of the pr
 ## Principles
 
 - No development without a ticket; no ticket without a human-validated SPEC.
+- No ticket on a context without a `VALIDATED` context model (`memory/contexts/`). Two
+  contexts have no model and follow `memory/conventions.md`. `transverse` holds a ticket with no
+  use case: tooling, CI, dependency, documentation, incident or security fix. `legacy code` holds
+  a ticket of a `brownfield` project that touches the existing code alone.
 - **No agent creates work outside its mission** (see § "Unrequested findings").
 - Each agent has defined inputs/outputs (see `.claude/agents/`).
 - The Step 8 quality gates must be green before closing a ticket.
@@ -134,14 +138,14 @@ integration is set to `{{DISABLED}}` in `config.md`.
 
 ## Feature workflow
 
-`Brainstorm → UX → PM → Architect → Planner → Dev → Review → Test → Communication → Release`
+`Brainstorm → UX → PM → Architect → [human validation] → Planner → Dev → Review → Test → Communication → Release`
 
 ```mermaid
 flowchart LR
     BS[Brainstorm<br/>SPEC] --> UX[UX<br/>wireframes]
     UX --> PM[PM<br/>EPIC + roadmap]
-    PM --> AR[Architect<br/>ADR]
-    AR --> PL[Planner<br/>tickets {{TICKET_PREFIX}}-*]
+    PM --> AR[Architect<br/>audit · context model · contract · ADR]
+    AR -. human validation .-> PL[Planner<br/>tickets {{TICKET_PREFIX}}-*]
     PL --> DEV[Dev<br/>branch + MR]
     DEV --> RV{Review}
     RV -- CHANGES REQUESTED --> DEV
@@ -153,7 +157,12 @@ flowchart LR
 ```
 
 **Human validation points**: after `Brainstorm` (SPEC), after `UX` (mockup),
-before `Release`.
+after `Architect` (conventions audit, target, context model), before `Release`.
+
+At the `Architect` point, the human reads the audit and the target in `memory/conventions.md`
+and the model in `memory/contexts/<context>.md`. The human validates the three and sets the model
+from `PROPOSED` to `VALIDATED`. Otherwise the human returns the batch to `@ailed-architect` with
+corrections. `@ailed-planner` waits for that status.
 
 ---
 

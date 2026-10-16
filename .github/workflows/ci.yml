@@ -26,6 +26,98 @@ jobs:
           node "$GITHUB_WORKSPACE/bin/ai-led.js" init --trigram=TST -y
           test -d .claude && test -d memory
 
+      - name: Verify the architect ships the context model skill
+        run: |
+          cd /tmp/ai-led-smoke
+          test -s .claude/skills/context-model/SKILL.md
+          grep -q "ailed-context-model" .claude/agents/ailed-architect.md
+          grep -q "memory/contexts/" .claude/agents/ailed-architect.md
+
+      - name: Verify the project mode and the DDD path reach the installed project
+        run: |
+          cd /tmp/ai-led-smoke
+          # an empty directory is a greenfield project, and the mode lands in config.md
+          grep -q '^- Mode projet : `greenfield`' memory/config.md
+          # an unreadable mode blocks the CI gate, a valid one lifts it
+          node -e "const fs=require('fs'),f='memory/config.md';
+            fs.writeFileSync(f, fs.readFileSync(f,'utf8').replace('- Mode projet : \`greenfield\`', '- Mode projet : \`sandbox\`'));"
+          ! node "$GITHUB_WORKSPACE/bin/ai-led.js" doctor --quiet
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" doctor | grep -q "sandbox"
+          node -e "const fs=require('fs'),f='memory/config.md';
+            fs.writeFileSync(f, fs.readFileSync(f,'utf8').replace('- Mode projet : \`sandbox\`', '- Mode projet : \`brownfield\`'));"
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" doctor --quiet
+          # a commented-out former value is never the mode: the gate stays red on `sandbox`
+          node -e "const fs=require('fs'),f='memory/config.md';
+            fs.writeFileSync(f, fs.readFileSync(f,'utf8')
+              .replace('## Mode projet', '<!-- Ancien mode projet : \`greenfield\` -->\n## Mode projet')
+              .replace('- Mode projet : \`brownfield\`', '- Mode projet : \`sandbox\`'));"
+          ! node "$GITHUB_WORKSPACE/bin/ai-led.js" doctor --quiet
+          node -e "const fs=require('fs'),f='memory/config.md';
+            fs.writeFileSync(f, fs.readFileSync(f,'utf8').replace('- Mode projet : \`sandbox\`', '- Mode projet : \`brownfield\`'));"
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" doctor --quiet
+          # an install that predates the mode and the three conventions parts: update adds the
+          # mode section, and moves the rules the old file holds under the first part, where the
+          # architect audits them, before it adds the two other parts
+          node -e "const fs=require('fs');
+            const c='memory/config.md';
+            fs.writeFileSync(c, fs.readFileSync(c,'utf8').replace(/## Mode projet[\s\S]*?(?=\n## )/, ''));
+            fs.writeFileSync('memory/conventions.md', [
+              '# Conventions & organisation technique', '', 'Last Updated: 2026-01-01',
+              'Source : CONV.md (importé à l\'install)', '', '---', '',
+              '# Nos conventions', '', '## Nommage', '', 'CamelCase partout.', '',
+              '## Section maison', '', 'Ne pas ecraser.', ''].join('\n'));"
+          ! grep -q '^## Mode projet' memory/config.md
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" update -y
+          grep -q '^## Mode projet' memory/config.md
+          # the section comes back with the deduced value, so a doctor run after update stays green
+          grep -q '^- Mode projet : `greenfield`' memory/config.md
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" doctor --quiet
+          grep -q '^## Conventions en place' memory/conventions.md
+          grep -q '^## Audit DDD' memory/conventions.md
+          grep -q '^## Cible des nouveaux modules' memory/conventions.md
+          # the old rules sit between the first part and the audit, demoted, title kept once
+          sed -n '/^## Conventions en place/,/^## Audit DDD/p' memory/conventions.md | grep -q '^### Nos conventions'
+          sed -n '/^## Conventions en place/,/^## Audit DDD/p' memory/conventions.md | grep -q '^#### Section maison'
+          sed -n '/^## Conventions en place/,/^## Audit DDD/p' memory/conventions.md | grep -q 'Ne pas ecraser'
+          test "$(grep -c '^# ' memory/conventions.md)" = "1"
+          # the header comes from the template, intro of the three parts included, Source line kept
+          grep -q '^> Trois parties' memory/conventions.md
+          grep -q '^Source : CONV.md' memory/conventions.md
+          # a second update changes nothing more
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" update -y | grep -q 'conventions.md (aucune section manquante)'
+          # a `##` written beside the three parts is reported: the architect audits the first part only
+          printf '\n## Hors partie\n\nTexte.\n' >> memory/conventions.md
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" doctor | grep -q 'Hors partie'
+          # an imported document keeps its own headings, demoted under the first part
+          mkdir -p /tmp/ai-led-conv && cd /tmp/ai-led-conv
+          printf '# Nos conventions\n\n## Nommage\n\nCamelCase partout.\n\n```bash\n# lance les tests\nnpm test\n```\n' > CONV.md
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" init -y --conventions=CONV.md
+          sed -n '/^## Conventions en place/,/^## Audit DDD/p' memory/conventions.md | grep -q '^#### Nommage'
+          test "$(grep -c '^## ' memory/conventions.md)" = "3"
+          # a `#` inside a code block is a comment, never a heading to demote
+          grep -q '^# lance les tests' memory/conventions.md
+          cd /tmp/ai-led-smoke
+          # a mode left to set by hand blocks the gate until a human writes it
+          node -e "const fs=require('fs'),f='memory/config.md';
+            fs.writeFileSync(f, fs.readFileSync(f,'utf8').replace('- Mode projet : \`greenfield\`', '- Mode projet : \`à renseigner\`'));"
+          ! node "$GITHUB_WORKSPACE/bin/ai-led.js" doctor --quiet
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" doctor | grep -q 'non renseigné'
+          node -e "const fs=require('fs'),f='memory/config.md';
+            fs.writeFileSync(f, fs.readFileSync(f,'utf8').replace('- Mode projet : \`à renseigner\`', '- Mode projet : \`greenfield\`'));"
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" doctor --quiet
+          # the installed architect carries both mode branches, the audit step, the grid and its permissions
+          A=.claude/agents/ailed-architect.md
+          grep -q 'greenfield' $A
+          grep -q 'brownfield' $A
+          grep -q 'Audit' $A
+          grep -q 'Grille' $A
+          grep -q '^## Autorisations' $A
+          test -s .claude/skills/context-model/SKILL.md
+          test -s .claude/skills/ddd-checklist/SKILL.md
+          grep -q 'baseline' .claude/skills/quality-gate/SKILL.md
+          grep -q 'VALIDATED' .claude/skills/quality-gate/SKILL.md
+          grep -q 'ancien code' .claude/skills/quality-gate/SKILL.md
+
       - name: Verify the dashboard splits shell from payload
         run: |
           cd /tmp/ai-led-smoke
