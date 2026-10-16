@@ -44,10 +44,15 @@ Le ticket nomme son contexte dans la cellule `Détail technique` de `memory/kanb
 critère « modèle de contexte VALIDATED » s'obtient quand `memory/contexts/<contexte>.md` porte
 ce statut. Un ticket sans contexte dans cette cellule échoue le critère.
 
-Un ticket sur le contexte `ancien code` d'un projet `brownfield`, correctif d'un workflow
-Incident ou Security compris, porte ce nom dans la cellule et n'a pas de modèle : le critère
-s'obtient par la partie *Conventions en place* de `memory/conventions.md`, suivie dans chaque
-fichier touché. Le contrôle des frontières s'applique à ce ticket comme aux autres.
+Deux contextes n'ont pas de modèle, et le critère s'obtient alors par la partie de
+`memory/conventions.md` qui gouverne chaque fichier touché :
+- `transverse` : un ticket sans use case, qui livre de l'outillage, de la CI, une mise à jour de
+  dépendance, de la documentation ou un correctif des workflows Incident et Security ;
+- `ancien code` : un ticket d'un projet `brownfield` qui touche seulement le code existant.
+
+Une cellule sans contexte se lit `transverse` : les tickets écrits avant le modèle passent, et
+`@ailed-planner` nomme le contexte de chaque ticket qu'il crée. Le contrôle des frontières
+s'applique à chaque ticket.
 
 ## Contrôle des frontières
 1. Lire l'outil, le contrat et la baseline dans la colonne `Contrat de frontières` du registre

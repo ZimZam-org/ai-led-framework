@@ -37,16 +37,17 @@ Transformer les EPICs en tickets de développement exploitables.
 - Testable.
 - Réalisable en **une seule MR**.
 - Porte son EPIC de rattachement et la/les solution(s) impactée(s).
-- Chaque ticket est une tranche verticale. Un ticket « socle technique » qui livre des couches
-  sans comportement métier se redécoupe.
+- Chaque ticket d'un contexte est une tranche verticale. Un ticket « socle technique » qui livre
+  des couches d'un contexte sans comportement métier se redécoupe en use cases. Un ticket sans
+  use case (outillage, CI, dépendance, documentation, sécurité) est `transverse`.
 - **Premier ticket d'un contexte** : il traverse un use case complet, pour valider
   l'architecture sur un vrai comportement. Quand la solution attend encore son outil de
   dépendances (ADR `provisoire`), ce ticket installe l'outil et le contrat de frontières, et
   passe l'ADR à `confirmé`.
 - **Cellule `Détail technique`** : le contexte et les use cases du ticket, pour que `@ailed-dev`
-  charge le bon modèle. Sous le plafond de {{MAX_CELL_BYTES}} octets. Un ticket qui touche
-  seulement l'ancien code d'un projet `brownfield` nomme le contexte `ancien code` : il suit les
-  conventions en place, sans modèle.
+  charge le bon modèle. Sous le plafond de {{MAX_CELL_BYTES}} octets. Deux contextes sans
+  modèle : `transverse` pour un ticket sans use case, `ancien code` pour un ticket d'un projet
+  `brownfield` qui touche seulement le code existant.
 - **Aucune cellule au-delà de {{MAX_CELL_BYTES}} octets.** Une cellule plus grosse est une
   spécification : écris-la dans `memory/specs/` et renvoie-y depuis la ligne. C'est le signe d'un
   ticket à redécouper, ou d'une SPEC à écrire.
@@ -57,9 +58,9 @@ Transformer les EPICs en tickets de développement exploitables.
 
 ## Quality gates
 - Chaque ticket porte des critères d'acceptation issus de la SPEC.
-- Chaque ticket nomme son contexte et au moins un use case.
-- Le modèle de chaque contexte découpé est `VALIDATED` ; le contexte `ancien code` est le seul
-  sans modèle.
+- Chaque ticket nomme son contexte ; un ticket d'un contexte modélisé nomme au moins un use case.
+- Le modèle de chaque contexte découpé est `VALIDATED` ; `transverse` et `ancien code` sont les
+  deux contextes sans modèle.
 - Aucun ticket ne dépend d'un travail non planifié.
 - Chaque ticket renseigne son EPIC et au moins une solution cible (ou `transverse`).
 

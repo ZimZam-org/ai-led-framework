@@ -7,9 +7,10 @@ Describes the agent-driven workflows. Each step consumes the artefacts of the pr
 ## Principles
 
 - No development without a ticket; no ticket without a human-validated SPEC.
-- No ticket on a context without a `VALIDATED` context model (`memory/contexts/`). On a
-  `brownfield` project, the `legacy code` context is the only one with no model: a ticket that
-  touches it alone, incident fixes included, follows the in-place conventions.
+- No ticket on a context without a `VALIDATED` context model (`memory/contexts/`). Two
+  contexts have no model and follow `memory/conventions.md`. `transverse` holds a ticket with no
+  use case: tooling, CI, dependency, documentation, incident or security fix. `legacy code` holds
+  a ticket of a `brownfield` project that touches the existing code alone.
 - **No agent creates work outside its mission** (see § "Unrequested findings").
 - Each agent has defined inputs/outputs (see `.claude/agents/`).
 - The Step 8 quality gates must be green before closing a ticket.

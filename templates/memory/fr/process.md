@@ -7,9 +7,10 @@ Décrit les workflows pilotés par agents. Chaque étape consomme les artefacts 
 ## Principes
 
 - Aucun développement sans ticket ; aucun ticket sans SPEC validée par un humain.
-- Aucun ticket sur un contexte sans modèle de contexte `VALIDATED` (`memory/contexts/`). Sur un
-  projet `brownfield`, le contexte `ancien code` est le seul sans modèle : un ticket qui le touche
-  seulement, correctif d'incident compris, suit les conventions en place.
+- Aucun ticket sur un contexte sans modèle de contexte `VALIDATED` (`memory/contexts/`). Deux
+  contextes n'ont pas de modèle et suivent `memory/conventions.md`. `transverse` porte un ticket
+  sans use case : outillage, CI, dépendance, documentation, correctif d'incident ou de sécurité.
+  `ancien code` porte un ticket d'un projet `brownfield` qui touche seulement le code existant.
 - **Aucun agent ne crée de tâche hors de sa mission** (cf. § « Constats non demandés »).
 - Chaque agent a des entrées/sorties définies (voir `.claude/agents/`).
 - Les quality gates de l'Étape 8 doivent être verts avant clôture d'un ticket.
