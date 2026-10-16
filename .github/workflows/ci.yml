@@ -69,7 +69,9 @@ jobs:
           ! grep -q '^## Mode projet' memory/config.md
           node "$GITHUB_WORKSPACE/bin/ai-led.js" update -y
           grep -q '^## Mode projet' memory/config.md
-          grep -q '^- Mode projet : `à renseigner`' memory/config.md
+          # the section comes back with the deduced value, so a doctor run after update stays green
+          grep -q '^- Mode projet : `greenfield`' memory/config.md
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" doctor --quiet
           grep -q '^## Conventions en place' memory/conventions.md
           grep -q '^## Audit DDD' memory/conventions.md
           grep -q '^## Cible des nouveaux modules' memory/conventions.md
@@ -95,8 +97,11 @@ jobs:
           # a `#` inside a code block is a comment, never a heading to demote
           grep -q '^# lance les tests' memory/conventions.md
           cd /tmp/ai-led-smoke
-          # a mode left to set blocks the gate until a human writes it
+          # a mode left to set by hand blocks the gate until a human writes it
+          node -e "const fs=require('fs'),f='memory/config.md';
+            fs.writeFileSync(f, fs.readFileSync(f,'utf8').replace('- Mode projet : \`greenfield\`', '- Mode projet : \`à renseigner\`'));"
           ! node "$GITHUB_WORKSPACE/bin/ai-led.js" doctor --quiet
+          node "$GITHUB_WORKSPACE/bin/ai-led.js" doctor | grep -q 'non renseigné'
           node -e "const fs=require('fs'),f='memory/config.md';
             fs.writeFileSync(f, fs.readFileSync(f,'utf8').replace('- Mode projet : \`à renseigner\`', '- Mode projet : \`greenfield\`'));"
           node "$GITHUB_WORKSPACE/bin/ai-led.js" doctor --quiet

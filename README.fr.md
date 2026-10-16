@@ -259,8 +259,8 @@ invariant et exécute le contrat avant la MR. `@ailed-review` applique la checkl
 et l'emplacement sur chaque constat. `/ailed-quality-gate` gagne deux critères : un modèle
 `VALIDATED`, et aucune violation hors baseline.
 
-Sur une installation existante, `update` ajoute la section *Mode projet* et les trois parties de
-`conventions.md` : les règles que le fichier porte déjà passent sous *Conventions en place*, titres
+Sur une installation existante, `update` ajoute la section *Mode projet*, avec le mode déduit du
+dépôt comme le ferait `init`, et les trois parties de `conventions.md` : les règles que le fichier porte déjà passent sous *Conventions en place*, titres
 rétrogradés, pour que l'architecte les audite. `doctor` avertit sur une section `##` hors des trois
 parties. Deux gestes restent à ta main : lancer
 `update --refresh-rules=process.md` pour recevoir le nouveau point de validation du workflow

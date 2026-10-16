@@ -11,8 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Project mode.** `init` records `greenfield` or `brownfield` in `memory/config.md` § *Project
   mode*, deduced from the repository (sources present → `brownfield`) or forced with `--mode=`.
   Every agent reads it before acting, so a human corrects a wrong detection in `config.md` with no
-  reinstall. `update` adds the section to an existing install as `to set`, and `doctor` blocks
-  (exit 1) while the value is absent, unset or unknown.
+  reinstall. `update` adds the section to an existing install with the value `init` would have
+  deduced, and says so, so a `doctor` run after the update stays green; `doctor` blocks (exit 1)
+  while the value is absent, left unset by hand, or unknown.
 - **`/ailed-context-model`** — the tactical design of a bounded context, written by
   `@ailed-architect` into `memory/contexts/<context>.md` for every SPEC that creates a module or
   restructures an area: language, aggregates with their invariants and the owning method, value

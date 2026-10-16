@@ -249,8 +249,8 @@ invariant and runs the contract before the MR. `@ailed-review` applies the check
 rule and the location on every finding. `/ailed-quality-gate` gains two criteria: a `VALIDATED`
 model, and no violation outside the baseline.
 
-On an existing install, `update` adds the *Project mode* section and the three parts of
-`conventions.md`: the rules the file already holds move under *In-place conventions*, headings
+On an existing install, `update` adds the *Project mode* section, with the mode deduced from the
+repository as `init` would, and the three parts of `conventions.md`: the rules the file already holds move under *In-place conventions*, headings
 demoted, so the architect audits them. `doctor` warns on a `##` section outside the three parts.
 Two steps stay yours: run
 `update --refresh-rules=process.md` to receive the new validation point in the Feature workflow,

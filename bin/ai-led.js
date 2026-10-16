@@ -161,6 +161,8 @@ const SOURCE_EXT = new Set([
 // deep enough for src/main/java/com/acme/app/Foo.java, which a shallow walk never reaches
 const SOURCE_SCAN_DEPTH = 10;
 const SOURCE_SKIP_DIRS = new Set(["node_modules", "vendor", "dist", "build", "target", "memory"]);
+// files the framework itself writes at the project root: never a sign of an existing project
+const SOURCE_SKIP_FILES = new Set(["ailed-status.html"]);
 
 function normMode(v) {
   const m = String(v || "").trim().toLowerCase();
@@ -177,7 +179,7 @@ function hasSources(dir, depth = SOURCE_SCAN_DEPTH) {
       if (depth > 0 && !e.name.startsWith(".") && !SOURCE_SKIP_DIRS.has(e.name) && hasSources(path.join(dir, e.name), depth - 1)) return true;
       continue;
     }
-    if (e.isFile() && SOURCE_EXT.has(path.extname(e.name).toLowerCase())) return true;
+    if (e.isFile() && !SOURCE_SKIP_FILES.has(e.name) && SOURCE_EXT.has(path.extname(e.name).toLowerCase())) return true;
   }
   return false;
 }
@@ -1220,8 +1222,14 @@ async function update() {
   // dim line nobody read; a missing row now stops the update outright.
   reportConfigWarnings(cfg);
 
+  // An install that predates the mode receives the value init would have deduced, so a CI
+  // that runs doctor after update stays green. The summary says it, and a human corrects
+  // config.md when the deduction is wrong.
+  const modeDeduced = !cfg.mode;
+  if (modeDeduced) cfg.mode = deriveMode();
+
   console.log(
-    `\n${c.dim("Config relue depuis memory/config.md")} : langue=${c.bold(cfg.lang)} · trigramme=${c.bold(cfg.trigram)} · mode=${c.bold(cfg.mode || cfg.modeRaw || MODE_UNSET[cfg.lang])} · monitoring=${cfg.monitoring} · e2e=${cfg.e2e} · promo=${cfg.promo} · veille=${cfg.watch} · seo/aso=${cfg.seo_aso} · ticketing=${cfg.ticketing} · doc=${cfg.documentation} · style=${cfg.style} · rédaction=${normWriting(cfg.writing) === "off" ? cfg.disabled : WRITING_NORM_DEFAULT}\n`
+    `\n${c.dim("Config relue depuis memory/config.md")} : langue=${c.bold(cfg.lang)} · trigramme=${c.bold(cfg.trigram)} · mode=${c.bold(cfg.mode)}${modeDeduced ? c.dim(" (déduit du dépôt)") : ""} · monitoring=${cfg.monitoring} · e2e=${cfg.e2e} · promo=${cfg.promo} · veille=${cfg.watch} · seo/aso=${cfg.seo_aso} · ticketing=${cfg.ticketing} · doc=${cfg.documentation} · style=${cfg.style} · rédaction=${normWriting(cfg.writing) === "off" ? cfg.disabled : WRITING_NORM_DEFAULT}\n`
   );
 
   // 1. Agents — always overwritten (framework-owned)
@@ -1925,8 +1933,11 @@ function doctorFindings(projectDir) {
   if (!cfg.modeRaw) {
     add("error", "mode", "aucune valeur lisible dans memory/config.md § Mode projet — les agents ne savent pas quelle branche suivre.",
       "npx @s2bp/ai-led-framework update, puis écris `greenfield` ou `brownfield` dans la section");
+  } else if (Object.values(MODE_UNSET).includes(cfg.modeRaw)) {
+    add("error", "mode", "mode projet non renseigné — les agents ne savent pas quelle branche suivre.",
+      `écris \`${PROJECT_MODES.join("\` ou \`")}\` dans memory/config.md § Mode projet`);
   } else if (!cfg.mode) {
-    add("error", "mode", `mode projet \`${cfg.modeRaw}\` illisible — valeurs : ${PROJECT_MODES.join(" · ")}.`,
+    add("error", "mode", `mode projet \`${cfg.modeRaw}\` inconnu — valeurs : ${PROJECT_MODES.join(" · ")}.`,
       "écris la valeur dans memory/config.md § Mode projet");
   } else {
     add("ok", "mode", `mode projet \`${cfg.mode}\`.`);
