@@ -462,8 +462,10 @@ function placeUnderPart(md, title, body) {
 // the old template's five `##` sections, or an imported document after its `---`. The merge
 // alone would add the parts beside them, and the architect audits the first part only. So
 // everything after the header moves under the first part, demoted, before the merge adds the
-// other two. A file that already has the first part is left as it is.
-function migrateConventionsParts(md, lang) {
+// other two. The header itself comes from the rendered template, whose intro presents the
+// three parts; the `Source` line of an import is the one header line a human owns, so it is
+// kept. A file that already has the first part is left as it is.
+function migrateConventionsParts(md, lang, rendered) {
   const lines = md.split("\n");
   if (partIndex(md, IN_PLACE_PART[lang]) >= 0) return md;
   const firstHeading = markdownLines(md).findIndex((x) => x.level >= 2);
@@ -471,9 +473,12 @@ function migrateConventionsParts(md, lang) {
   const candidates = [firstHeading, rule < 0 ? -1 : rule + 1].filter((i) => i >= 0);
   if (!candidates.length) return md;
   const cut = Math.min(...candidates);
-  const head = lines.slice(0, cut).join("\n").replace(/\n+$/, "");
   const body = lines.slice(cut).join("\n").trim();
   if (!body) return md;
+  const source = lines.slice(0, cut).find((l) => /^Source\s*:/.test(l));
+  const partAt = partIndex(rendered, IN_PLACE_PART[lang]);
+  let head = (partAt >= 0 ? rendered.split("\n").slice(0, partAt) : lines.slice(0, cut)).join("\n").replace(/\n+$/, "");
+  if (source) head = head.replace(/^(Last Updated:[^\n]*)$/m, `$1\n${source}`);
   return `${head}\n\n## ${IN_PLACE_PART[lang]}\n\n${demoteHeadings(body)}\n`;
 }
 
@@ -1142,7 +1147,7 @@ function updateMemory(cfg, memDir, projectDir, refreshRules = null) {
     // edited locally (or no baseline): framework files get additive sections,
     // project data is preserved verbatim.
     if (FRAMEWORK_MEMORY.has(file)) {
-      const base = file === "conventions.md" ? migrateConventionsParts(current, cfg.lang) : current;
+      const base = file === "conventions.md" ? migrateConventionsParts(current, cfg.lang, rendered) : current;
       const { merged, added, changed } = mergeSections(base, rendered, MERGE_DEPTH[file] || HEADING_DEPTH_MAX);
       // The merge is additive by design: it never overwrites a section a human may
       // have adapted. But when *every* heading already matches, a framework rule that

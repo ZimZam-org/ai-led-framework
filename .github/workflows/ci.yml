@@ -78,6 +78,9 @@ jobs:
           sed -n '/^## Conventions en place/,/^## Audit DDD/p' memory/conventions.md | grep -q '^#### Section maison'
           sed -n '/^## Conventions en place/,/^## Audit DDD/p' memory/conventions.md | grep -q 'Ne pas ecraser'
           test "$(grep -c '^# ' memory/conventions.md)" = "1"
+          # the header comes from the template, intro of the three parts included, Source line kept
+          grep -q '^> Trois parties' memory/conventions.md
+          grep -q '^Source : CONV.md' memory/conventions.md
           # a second update changes nothing more
           node "$GITHUB_WORKSPACE/bin/ai-led.js" update -y | grep -q 'conventions.md (aucune section manquante)'
           # a `##` written beside the three parts is reported: the architect audits the first part only
