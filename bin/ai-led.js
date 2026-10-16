@@ -138,14 +138,6 @@ function normWriting(v) {
   return WRITING_NORM_DEFAULT;
 }
 
-// ── per-agent LLM model policy ────────────────────────────────
-// Default tiering: which Claude model each agent runs on. The harness reads this
-// from each agent's frontmatter (`model:`), NOT from config.md at runtime — so we
-// render it into the frontmatter at install and mirror it into config.md as the
-// human-editable source of truth (change it there, then `ai-led models sync`).
-//   opus   = deep reasoning / judgment / high leverage (a bad output costs rework)
-//   sonnet = capable standard execution, high volume
-//   haiku  = mechanical collection / extraction, little reasoning
 // ── project mode ──────────────────────────────────────────────
 // `greenfield` or `brownfield`. Every agent reads it from memory/config.md § Mode projet
 // before acting, so the value is never baked into an agent's text: a human corrects a
@@ -186,6 +178,14 @@ function hasSources(dir, depth = SOURCE_SCAN_DEPTH) {
 
 function deriveMode() { return hasSources(cwd) ? "brownfield" : "greenfield"; }
 
+// ── per-agent LLM model policy ────────────────────────────────
+// Default tiering: which Claude model each agent runs on. The harness reads this
+// from each agent's frontmatter (`model:`), NOT from config.md at runtime — so we
+// render it into the frontmatter at install and mirror it into config.md as the
+// human-editable source of truth (change it there, then `ai-led models sync`).
+//   opus   = deep reasoning / judgment / high leverage (a bad output costs rework)
+//   sonnet = capable standard execution, high volume
+//   haiku  = mechanical collection / extraction, little reasoning
 const MODEL_TIERS = ["opus", "sonnet", "haiku", "inherit"];
 const AGENT_MODEL_TIERS = {
   // reasoning / judgment / critical review
