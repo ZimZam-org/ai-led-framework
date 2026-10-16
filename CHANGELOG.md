@@ -6,7 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-
 ### Added
 - **Project mode.** `init` records `greenfield` or `brownfield` in `memory/config.md` § *Project
   mode*, deduced from the repository (sources present → `brownfield`) or forced with `--mode=`.
@@ -66,6 +65,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`memory/architecture.md`** registry gains a `Boundary contract` column and a context map.
 - **Framework contract** (`CLAUDE.md` block) gains rule 8: a new module follows its `VALIDATED`
   context model and the target conventions; legacy code follows the in-place ones.
+- **`@ailed-dev` updates `memory/project-state.md` after the merge**, when the human moves the
+  ticket to `DONE`, not when the MR opens. An open MR is not delivered, and parallel MRs would
+  conflict on this file. **`@ailed-communication` updates `memory/features.md`** when an EPIC
+  closes and marks new features `livré, non taggé`; `@ailed-release` removes the mark at the tag.
+  Before, only the release step touched these files, so the dashboard reported them as stale.
+- Agent instructions use the infinitive (« mettre à jour »), not the imperative.
+
+### Fixed
+- **Status dashboard: folding of delivered EPICs.** An EPIC with no linked ticket but a `done`
+  status broke the run of consecutive delivered EPICs, so the fold button skipped it. The fold
+  now uses the effective EPIC status (`epicEff`), with or without tickets.
 
 ## [0.19.1]
 

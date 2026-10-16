@@ -3545,7 +3545,7 @@ const HTML_TEMPLATE = `<!doctype html>
     // apprendre au lecteur : la série entière tient dans un bouton qui porte son compte.
     // Dépliée, la série s'affiche derrière ce bouton. Sous FOLD_MIN, la série reste dépliée.
     var FOLD_MIN=3;
-    function fullyDone(e){ var p=epicProgress(e.id); return !!(p && p.done===p.total); }
+    function fullyDone(e){ return epicEff(e,tickets)==='done'; }
     function foldLi(key, n){
       var open=!!TL_FOLD[key.toUpperCase()];
       return '<li class="done ep-fold" data-fold="'+esc(key)+'" data-n="'+n+'">'
